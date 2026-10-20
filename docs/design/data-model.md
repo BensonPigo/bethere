@@ -38,12 +38,18 @@ erDiagram
 | name | text | 例：「2027/06/06 婚宴」 |
 | eventDate | date | |
 | timezone | text | 預設 `Asia/Taipei` |
-| status | enum | `Draft` / `Live` / `Ended`（B6：Live 後只有總召可異動） |
+| status | enum | 儲存 `Draft` / `Live`（B6：Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |
 | liveStartedAt | timestamp? | 按「開始活動」的時間 |
-| endedAt | timestamp? | Ended 後 Token 失效，90 天後刪除資料（C5） |
 | activeCueId | ID? | 目前進行中的 Cue |
+| recoveryCodeHash | text | 復原碼的雜湊（見 `access-control.md` 第 2 節） |
 
-> README 的 `GlobalOffsetMinutes` **不再存為欄位**，改為由 Cue 偏移推導（見 4.2），避免兩份真相。
+`timezone` 建立後不可修改；`eventDate` 只能以復原碼、在 Draft 階段修改（見 `access-control.md` 第 2 節）。「開始活動」只能在 `eventDate` 當天（依 `timezone`）執行。
+
+**衍生值（不存）**
+- `endsAt` = `eventDate` 隔天 04:00（依 `timezone` 換算為 UTC）。
+- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 90 天刪除（C5）。結束判斷不需要排程器；90 天刪除由定期清理作業執行（技術選型時決定）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
+
+> 初版規格（`EventState`）的 `GlobalOffsetMinutes` **不再存為欄位**，改為由 Cue 偏移推導（見 4.3），避免兩份真相。
 
 ### Cue（流程節點）
 | 欄位 | 型別 | 說明 |
@@ -65,13 +71,6 @@ erDiagram
 - `effectiveStart = scheduledStart + offsetMin`
 - `effectiveEnd = effectiveStart + durationMin`
 
-### Owner（擁有者）
-Event 的管理者，**不是 Role**，沒有 Token，用管理密碼登入（見 `access-control.md` P1）。
-| 欄位 | 說明 |
-| --- | --- |
-| eventId | 所屬活動 |
-| passwordHash | 管理密碼的雜湊 |
-
 ### Role（角色）
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
@@ -81,7 +80,7 @@ Event 的管理者，**不是 Role**，沒有 Token，用管理密碼登入（�
 | type | enum | `Master` / `Stylist` / `Media` / `StageAV` / `VenueLead` / `Reception` / `Cashier` / `Runner` / `Host` |
 | displayOrder | int | |
 
-`type` 決定使用哪種視圖與可做的動作。**一個 Role 是一個「位子」**，同一位子可被多支手機同時使用；兩位攝影師就建兩個 Role。
+`type` 決定使用哪種視圖與可做的動作，建立後不可修改。每個活動只有一個 `Master` 角色，在建立活動時產生，不能新增、刪除。一般角色只能在 Draft 階段刪除，刪除時在同一交易內撤銷其 Token 並移除 CueRole。**一個 Role 是一個「位子」**，同一位子可被多支手機同時使用；兩位攝影師就建兩個 Role。
 
 ### AccessToken（存取憑證）
 | 欄位 | 型別 | 說明 |
@@ -90,14 +89,12 @@ Event 的管理者，**不是 Role**，沒有 Token，用管理密碼登入（�
 | roleId | ID | |
 | tokenHash | text | 只存雜湊，明文僅在產生時顯示一次 |
 | createdAt | timestamp | |
-| notBefore | timestamp | 生效時間，預設為活動前一天 |
-| expiresAt | timestamp | 預設為活動結束後 |
 | revokedAt | timestamp? | F1：撤銷 |
-| lastSeenAt | timestamp? | 最近一次使用，供總召查看連結是否在使用 |
+| lastSeenAt | timestamp? | 最近一次使用（最多每分鐘更新一次），供總召查看連結是否在使用 |
 
-規則：每個 Role 同一時間最多一個有效 Token；重發 = 撤銷舊的並建立新的。
+規則：每個 Role 同一時間最多一個有效 Token；重發 = 撤銷舊的並建立新的。Token 沒有自己的到期時間，跟著 `Event.endsAt`。
 
-### CueRole（角色與 Cue 的關聯，即 README 的 RoleCueMapping）
+### CueRole（角色與 Cue 的關聯，即初版規格的 RoleCueMapping）
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
 | cueId, roleId | ID | 複合唯一 |
@@ -131,7 +128,7 @@ Event 的管理者，**不是 Role**，沒有 Token，用管理密碼登入（�
 只記錄**實際被改到**的 Cue，這樣復原只要把 `appliedDeltaMin` 反向扣回。
 
 ### ActionLog（操作紀錄，C3）
-`id, eventId, actor, at, type, payload`。`actor` 為 Role 或 Owner。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷。事後檢討與除錯用。
+`id, eventId, actor, at, type, payload`。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（C3）。
 
 ## 4. 核心行為規則
 
@@ -149,11 +146,11 @@ Pending ──► InProgress ──► Completed
 輸入：`fromCueId`、`deltaMin`、`excludedCueIds`（總召取消勾選的）。
 
 1. 取得 `seq >= from.seq` 的 Cue。
-2. 只保留：`status = Pending`、`isFixed = false`、不在 `excludedCueIds`。
-3. 對每個保留的 Cue：`offsetMin += deltaMin`，並寫入 `ShiftLogEntry`。
-4. **負值檢查**（A3）：若任一 Cue 的新 `effectiveStart` 早於「現在」，整次操作拒絕並說明是哪個 Cue。
+2. 只保留：`status = Pending`、`isFixed = false`、不在 `excludedCueIds`；`deltaMin < 0` 時，另外排除平移前 `effectiveStart` 就已早於「現在」的 Cue（已逾時）。
+3. **負值檢查**（A3，只在 `deltaMin < 0` 時進行）：若任一保留的 Cue 平移後的 `effectiveStart` 早於「現在」，整次操作拒絕並說明是哪個 Cue。正值平移不做這項檢查，因為延誤時平移後仍早於現在是正常情況。
+4. 對每個保留的 Cue：`offsetMin += deltaMin`，並寫入 `ShiftLogEntry`。
 5. **Fixed 衝突檢查**：平移後，若某 Cue 的 `effectiveEnd` 晚於其後最近一個 Fixed Cue 的 `scheduledStart`，**不阻擋**，但標記衝突並在主控台顯示（A2）。
-6. 整個過程是單一交易，完成後一次廣播新狀態。
+6. 整個過程是單一交易，完成後 `eventVersion + 1`，各端在下一次輪詢取得新狀態。
 
 `InProgress` 的 Cue 不被平移（它已經開始了）；若總召想延長目前環節，用平移其下一個 Cue 起算。
 
@@ -163,7 +160,7 @@ Pending ──► InProgress ──► Completed
 ### 4.4 角色視圖的資料範圍
 | 角色 | 可讀 | 可寫（動作） |
 | --- | --- | --- |
-| Master | 全部 | 推進、略過、平移、復原、代打卡、重發 Token、編輯 Rundown |
+| Master | 全部 | 推進、略過、平移、復原、代打卡、重發非 Master 的 Token、編輯 Rundown（Live 時限縮，見 `access-control.md` P8） |
 | Stylist / Media / StageAV | 自己有 CueRole 的 Cue + 該 Cue 的 `roleNote` | 自己的就位打卡 |
 | 其餘 P1 角色 | 同上 | 各自動作（P1 再定義） |
 
@@ -187,3 +184,5 @@ Pending ──► InProgress ──► Completed
 | M5 | `InProgress` 的 Cue 不被平移 | 是 ☑ |
 | M6 | 平移造成 Fixed 衝突時：警告而不阻擋 | 是 ☑ |
 | M7 | 「復原」只回退最近一步 | 是 ☑ |
+| M8 | 平移的「不得早於現在」檢查 | 只在負值平移時檢查，已逾時的 Cue 自動排除（4.2）✎ 2026-10-20 |
+| M9 | 活動結束時間 | 不儲存，由 `eventDate` 與 `timezone` 即時算出 `endsAt`；Token 不另存到期時間 ✎ 2026-10-20 |
