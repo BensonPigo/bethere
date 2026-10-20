@@ -47,7 +47,7 @@ erDiagram
 
 **衍生值（不存）**
 - `endsAt` = `eventDate` 隔天 04:00（依 `timezone` 換算為 UTC）。
-- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 90 天刪除（C5）。結束判斷不需要排程器；90 天刪除由定期清理作業執行（技術選型時決定）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
+- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 80 天刪除，伺服器端所有副本 90 天內消失（C5，✎ 2026-10-20）。結束判斷不需要排程器；刪除由伺服器內的每日排程執行（`tech-stack.md` T10）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
 
 > 初版規格（`EventState`）的 `GlobalOffsetMinutes` **不再存為欄位**，改為由 Cue 偏移推導（見 4.3），避免兩份真相。
 
@@ -90,7 +90,7 @@ erDiagram
 | tokenHash | text | 只存雜湊，明文僅在產生時顯示一次 |
 | createdAt | timestamp | |
 | revokedAt | timestamp? | F1：撤銷 |
-| lastSeenAt | timestamp? | 最近一次使用（最多每分鐘更新一次），供總召查看連結是否在使用 |
+| lastSeenAt | timestamp? | 最近一次使用，供總召查看連結是否在使用。**不存資料庫**，只存在伺服器記憶體，重啟後歸零（`tech-stack.md` T7，✎ 2026-10-20） |
 
 規則：每個 Role 同一時間最多一個有效 Token；重發 = 撤銷舊的並建立新的。Token 沒有自己的到期時間，跟著 `Event.endsAt`。
 
