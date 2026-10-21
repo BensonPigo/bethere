@@ -59,7 +59,7 @@
 | T17 | 型別 | 手寫 `web/src/api.ts`；後端以測試比對快照 JSON 的鍵集合，防止前後端欄位漂移 | 快照僅十幾個欄位，不值得引入產生器 |
 | T18 | 離線外殼 | `vite-plugin-pwa`（Workbox `generateSW`）預先快取打包產物（含三個入口）；`/api/` 一律不攔截；`skipWaiting` + `clientsClaim`；註冊腳本以外部檔案載入（不用 inline）；不產生 manifest | 對應 `sync-and-offline.md` 第 6 節；活動前 7 天凍結部署，當天不會出現前後端版本不一致 |
 | T19 | Web App manifest | P0 不提供；依 R1 實機結果再決定 | 避免 `start_url` 蓋掉帶 Token 的網址 |
-| T20 | 本機快照 | `localStorage`，鍵為 `snap:` + Token 的 SHA-256（`crypto.subtle`，HTTPS 下必定可用）；不在本機儲存明文 Token | 共用裝置上列舉 localStorage 不會取得 Token |
+| T20 | 本機快照 | `localStorage`，鍵為 `snap:` + SHA-256（`"bethere-local:"` + Token）（`crypto.subtle`，HTTPS 下必定可用），不等於伺服器的 Token 雜湊（✎ 2026-10-21，`api.md` A16）；不在本機儲存明文 Token | 共用裝置上列舉 localStorage 不會取得 Token |
 | T21 | 備援 Rundown | 列印專用網頁 `/print`（`@media print`），由瀏覽器列印或另存 PDF；資料來自目前快照（離線時用本機快照）。Master 的快照帶**完整 CueRole**（各角色與 `roleNote`），Master 版才能從快照產生 | 不需 PDF 函式庫；Safari／Chrome 離線也能匯出 |
 | T22 | LINE 內建瀏覽器 | 視為**受限環境**：預設 Service Worker 不可用（iOS 版 LINE 為 WKWebView）、列印可能無效。偵測到 LINE 時在畫面上引導「以 Safari／Chrome 開啟」，V5 一律引導改用系統瀏覽器列印 | 離線外殼與列印都依賴系統瀏覽器 |
 
