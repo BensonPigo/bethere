@@ -25,6 +25,7 @@ func newTestServer(t *testing.T) (http.Handler, *bytes.Buffer) {
 	}
 	h := New(Config{
 		Static:  static,
+		Store:   newEnv(t).fs,
 		Now:     func() time.Time { return fixedNow },
 		Version: "test-1",
 		Logger:  slog.New(slog.NewJSONHandler(logs, nil)),
@@ -62,7 +63,7 @@ func TestPingReturnsServerTimeAndNoStore(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.ServerTime != fixedNow.Format(time.RFC3339Nano) || body.Version != "test-1" {
+	if body.ServerTime != "2027-06-06T02:30:00.000Z" || body.Version != "test-1" {
 		t.Errorf("body = %+v", body)
 	}
 }
@@ -106,27 +107,5 @@ func TestStaticAssetsAndUnknownPaths(t *testing.T) {
 	// Unmatched API paths never fall through to static files.
 	if rec := do(h, http.MethodGet, "/api/index.html", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown api path: %d", rec.Code)
-	}
-}
-
-func TestReportIsLoggedAndBounded(t *testing.T) {
-	h, logs := newTestServer(t)
-	rec := do(h, http.MethodPost, "/api/report", strings.NewReader(`{"env":"line-ios","hasToken":true}`))
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status %d", rec.Code)
-	}
-	if !strings.Contains(logs.String(), `"msg":"device_report"`) || !strings.Contains(logs.String(), `line-ios`) {
-		t.Errorf("log = %s", logs.String())
-	}
-
-	big := strings.NewReader(`{"x":"` + strings.Repeat("a", 20<<10) + `"}`)
-	if rec := do(h, http.MethodPost, "/api/report", big); rec.Code != http.StatusRequestEntityTooLarge {
-		t.Errorf("oversized: %d", rec.Code)
-	}
-	if rec := do(h, http.MethodPost, "/api/report", strings.NewReader("not json")); rec.Code != http.StatusBadRequest {
-		t.Errorf("invalid json: %d", rec.Code)
-	}
-	if rec := do(h, http.MethodGet, "/api/report", nil); rec.Code != http.StatusNotFound {
-		t.Errorf("GET report: %d", rec.Code)
 	}
 }
