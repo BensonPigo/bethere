@@ -1,0 +1,53 @@
+/* App screens: V1 Master, V2a Stylist, V6 banners. Print page styles stay in style.css. */
+html, body, #app { height: 100%; }
+.app { height: 100%; display: flex; flex-direction: column; }
+.app.full { align-items: center; justify-content: center; text-align: center; padding: 24px; }
+.msg { font-size: 28px; font-weight: 600; line-height: 1.4; }
+
+.line-banner, .offline-banner, .notice {
+  flex: none; padding: 10px 16px; text-align: center; font-weight: 600;
+}
+.line-banner { background: #5f4b00; color: #ffe9a8; }
+.offline-banner { background: #8c1d18; color: #fff; }
+.notice { background: #174ea6; color: #fff; }
+
+.master { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
+.timeline { overflow-y: auto; background: var(--card); border-radius: 12px; padding: 8px; position: relative; }
+.cue { display: grid; grid-template-columns: 32px 64px 1fr auto; gap: 8px; align-items: center; min-height: 56px; padding: 6px 10px; border-radius: 8px; font-size: 19px; }
+.cue .time { font-variant-numeric: tabular-nums; color: var(--muted); }
+.cue .mark { color: var(--muted); font-size: 14px; white-space: nowrap; }
+.cue.completed { opacity: 0.5; }
+.cue.inprogress { background: #1f3a5f; font-weight: 700; }
+.cue.inprogress .time, .cue.inprogress .mark { color: var(--fg); }
+
+.panel { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+.panel-head { color: var(--muted); }
+.current { background: var(--card); border-radius: 12px; padding: 16px; }
+.current .label { color: var(--muted); font-size: 15px; }
+.current .cue-title { font-size: 34px; font-weight: 700; margin: 4px 0; }
+.current .elapsed { font-size: 22px; }
+.current .next { margin-top: 8px; color: var(--muted); font-size: 18px; }
+
+button.big { flex: 1; min-height: 120px; font-size: 44px; font-weight: 800; border-radius: 16px; }
+button.undo { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #3c4043; color: var(--fg); }
+button.undo small { font-weight: 400; color: var(--muted); }
+.reason { color: var(--bad); font-weight: 600; }
+
+@media (max-width: 800px) {
+  .master { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+}
+
+.stylist { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 16px; background: var(--bg); }
+.stylist.amber { background: #8a5a00; color: #fff; }
+.stylist.red, .stylist.overdue { background: #a3191a; color: #fff; }
+.stylist.overdue { animation: blink 1s steps(2, start) infinite; }
+@keyframes blink { 50% { background: #3d0707; } }
+.stylist .top { font-size: 22px; margin-bottom: 8px; }
+.stylist .big-num { font-size: 42vw; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stylist .big-num.mss { font-size: 28vw; }
+.stylist .big-num.overdue-text { font-size: 15vw; }
+.stylist .unit { font-size: 12vw; margin-left: 2vw; }
+.stylist .target { font-size: 22px; margin-top: 12px; }
+.stylist .status-text { font-size: 20px; margin-top: 4px; opacity: 0.85; }
+.stylist .msg { font-size: 9vw; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; background: rgba(0, 0, 0, 0.88); color: #fff; font-size: 7vw; font-weight: 700; z-index: 10; }
