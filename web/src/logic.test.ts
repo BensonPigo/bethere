@@ -1,0 +1,202 @@
+import { describe, expect, it } from "vitest";
+import { classifyResponse, shouldWipeLocalData } from "./api";
+import type { RoleCue, RoleSnapshot } from "./api";
+import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
+import { isLineBrowser, tokenFromHash } from "./env";
+import { dateInZone, formatHM } from "./format";
+import { isStaleLive, pruneStale, snapKey } from "./storage";
+import { countdownText, levelFor, nextPendingCue, stylistView } from "./stylistView";
+
+const MIN = 60000;
+const JSON_CT = "application/json; charset=utf-8";
+
+function cue(over: Partial<RoleCue>): RoleCue {
+  return {
+    id: 1, seq: 1, title: "T", effectiveStart: "2027-06-06T03:00:00Z", durationMin: 10,
+    isFixed: false, offsetMin: 0, status: "Pending", notePublic: null, roleNote: null, ...over,
+  };
+}
+function snap(over: Partial<RoleSnapshot>): RoleSnapshot {
+  return {
+    eventVersion: 1, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+    role: { type: "Stylist", name: "新秘" }, cues: [], ...over,
+  };
+}
+const okBody = { result: "ok", snapshot: snap({}) };
+
+describe("clock skew (sync-and-offline 4)", () => {
+  it("median of odd and even sample counts", () => {
+    expect(median([5, 1, 3])).toBe(3);
+    expect(median([1, 2, 3, 10])).toBe(2.5);
+    expect(median([])).toBe(0);
+  });
+  it("skew = serverTime - local; the median ignores one slow outlier", () => {
+    let s: number[] = [];
+    for (const d of [1000, 1010, 990, 5000, 1005]) s = addSkewSample(s, 10_000 + d, 10_000);
+    expect(currentSkew(s)).toBe(1005);
+  });
+  it("keeps only the most recent samples", () => {
+    let s: number[] = [];
+    for (let i = 0; i < 20; i++) s = addSkewSample(s, i, 0);
+    expect(s.length).toBeLessThanOrEqual(9);
+    expect(s[s.length - 1]).toBe(19);
+  });
+  it("countdown = effectiveStart - (now + skew)", () => {
+    expect(remainingMs(100_000, 40_000, 10_000)).toBe(50_000);
+    expect(remainingMs(100_000, 120_000, 0)).toBe(-20_000);
+  });
+});
+
+describe("US-ST-1.3 colour thresholds and text", () => {
+  it("levels", () => {
+    expect(levelFor(15 * MIN + 1)).toBe("calm");
+    expect(levelFor(15 * MIN)).toBe("amber");
+    expect(levelFor(5 * MIN)).toBe("amber");
+    expect(levelFor(5 * MIN - 1)).toBe("red");
+    expect(levelFor(0)).toBe("red");
+    expect(levelFor(-1)).toBe("overdue");
+  });
+  it("minutes above 5, M:SS below 5, overdue text", () => {
+    expect(countdownText(18 * MIN + 30000)).toEqual({ big: "18", unit: "分" });
+    expect(countdownText(4 * MIN + 5000)).toEqual({ big: "4:05", unit: "" });
+    expect(countdownText(0).big).toBe("0:00");
+    expect(countdownText(-2 * MIN - 1).big).toBe("已逾時 3 分");
+  });
+});
+
+describe("US-ST-1.1 next assigned pending cue", () => {
+  it("picks the lowest seq among Pending, ignoring order and other statuses", () => {
+    const cues = [
+      cue({ id: 1, seq: 4 }), cue({ id: 2, seq: 2, status: "Completed" }),
+      cue({ id: 3, seq: 3 }), cue({ id: 4, seq: 1, status: "InProgress" }),
+    ];
+    expect(nextPendingCue(cues)?.id).toBe(3);
+  });
+  it("none when nothing is pending", () => {
+    expect(nextPendingCue([cue({ status: "Completed" })])).toBeNull();
+  });
+});
+
+describe("stylist view", () => {
+  const start = Date.parse("2027-06-06T03:00:00Z");
+  const now = start - 10 * MIN;
+  it("US-ST-1.5 Draft", () => {
+    expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), now, 0).kind).toBe("draft");
+  });
+  it("no assigned cues", () => {
+    expect(stylistView(snap({}), now, 0).kind).toBe("none");
+  });
+  it("US-ST-1.1 countdown with skew, 準備中 top line", () => {
+    const v = stylistView(snap({ cues: [cue({})] }), now - 2 * MIN, 2 * MIN);
+    expect(v).toMatchObject({ kind: "countdown", remaining: 10 * MIN, level: "amber", topLine: "準備中" });
+  });
+  it("top line names the assigned in-progress cue", () => {
+    const v = stylistView(
+      snap({ cues: [cue({ id: 9, seq: 1, title: "一進造型", status: "InProgress" }), cue({ id: 2, seq: 2 })] }), now, 0);
+    expect(v).toMatchObject({ kind: "countdown", topLine: "一進造型（進行中）" });
+  });
+  it("US-ST-1.4 in progress only, then done", () => {
+    expect(stylistView(snap({ cues: [cue({ title: "造型", status: "InProgress" })] }), now, 0))
+      .toMatchObject({ kind: "inProgress" });
+    expect(stylistView(snap({ cues: [cue({ status: "Completed" })] }), now, 0).kind).toBe("done");
+  });
+});
+
+describe("local data wipe rules (access-control 3.3, api A15)", () => {
+  const wipes = (status: number, ct: string | null, body: unknown) =>
+    shouldWipeLocalData(classifyResponse(status, ct, body));
+
+  it("200 + JSON + invalid/ended wipes", () => {
+    expect(wipes(200, JSON_CT, { result: "invalid" })).toBe(true);
+    expect(wipes(200, "application/json", { result: "ended" })).toBe(true);
+  });
+  it("ok never wipes and yields a snapshot", () => {
+    const o = classifyResponse(200, JSON_CT, okBody);
+    expect(o.kind).toBe("ok");
+    expect(shouldWipeLocalData(o)).toBe(false);
+  });
+  it("401/403/500 never wipe, even with result in the body", () => {
+    for (const st of [401, 403, 500]) {
+      expect(wipes(st, JSON_CT, { result: "invalid" })).toBe(false);
+      expect(wipes(st, JSON_CT, { error: "internal" })).toBe(false);
+    }
+  });
+  it("409 never wipes and carries the snapshot", () => {
+    const o = classifyResponse(409, JSON_CT, { error: "version_conflict", snapshot: snap({}) });
+    expect(o.kind).toBe("conflict");
+    expect(shouldWipeLocalData(o)).toBe(false);
+    expect(wipes(409, JSON_CT, { result: "invalid" })).toBe(false);
+  });
+  it("non-JSON content type, unparseable body, unknown result never wipe", () => {
+    expect(wipes(200, "text/html", { result: "invalid" })).toBe(false);
+    expect(wipes(200, null, { result: "ended" })).toBe(false);
+    expect(wipes(200, JSON_CT, undefined)).toBe(false);
+    expect(wipes(200, JSON_CT, { result: "INVALID" })).toBe(false);
+    expect(wipes(200, JSON_CT, "invalid")).toBe(false);
+  });
+  it("422 is a rejection, not a wipe", () => {
+    expect(classifyResponse(422, JSON_CT, { error: "not_event_day" })).toEqual({ kind: "rejected", error: "not_event_day" });
+  });
+  it("network failure is represented as failure and never wipes", () => {
+    expect(shouldWipeLocalData({ kind: "failure" })).toBe(false);
+  });
+});
+
+describe("A16 local key", () => {
+  it("is snap: + SHA-256('bethere-local:' + token), never the token", async () => {
+    const token = "AAAAAAAAAAAAAAAAAAAAAA";
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("bethere-local:" + token));
+    const hex = Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join("");
+    const key = await snapKey(token);
+    expect(key).toBe("snap:" + hex);
+    expect(key).toMatch(/^snap:[0-9a-f]{64}$/);
+    expect(key).not.toContain(token);
+    expect(await snapKey("BBBBBBBBBBBBBBBBBBBBBB")).not.toBe(key);
+  });
+  it("known vector for SHA-256('bethere-local:abc')", async () => {
+    const key = await snapKey("abc");
+    const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("bethere-local:abc"));
+    expect(key.length).toBe(5 + 64);
+    expect(key.slice(5)).toBe(Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join(""));
+  });
+});
+
+describe("stale local snapshots", () => {
+  const now = Date.parse("2027-06-10T00:00:00Z");
+  it("Live older than 2 days is stale; Draft and recent Live are kept", () => {
+    expect(isStaleLive({ eventStatus: "Live", serverTime: "2027-06-07T00:00:00Z" }, now)).toBe(true);
+    expect(isStaleLive({ eventStatus: "Live", serverTime: "2027-06-08T12:00:00Z" }, now)).toBe(false);
+    expect(isStaleLive({ eventStatus: "Draft", serverTime: "2027-01-01T00:00:00Z" }, now)).toBe(false);
+  });
+  it("pruneStale removes only stale snap: entries", () => {
+    const m = new Map<string, string>([
+      ["snap:a", JSON.stringify({ eventStatus: "Live", serverTime: "2027-06-01T00:00:00Z" })],
+      ["snap:b", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-01T00:00:00Z" })],
+      ["other", "x"],
+    ]);
+    const store = {
+      get length() { return m.size; },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => m.get(k) ?? null,
+      removeItem: (k: string) => void m.delete(k),
+    } as unknown as Storage;
+    pruneStale(store, now);
+    expect([...m.keys()].sort()).toEqual(["other", "snap:b"]);
+  });
+});
+
+describe("misc helpers", () => {
+  it("formats 24-hour HH:MM in Asia/Taipei", () => {
+    expect(formatHM("2027-06-06T03:15:00.123Z")).toBe("11:15");
+    expect(formatHM("2027-06-05T16:05:00Z")).toBe("00:05");
+  });
+  it("date in zone", () => {
+    expect(dateInZone(Date.parse("2027-06-05T16:30:00Z"), "Asia/Taipei")).toBe("2027-06-06");
+  });
+  it("token from fragment, LINE detection", () => {
+    expect(tokenFromHash("#t=abc")).toBe("abc");
+    expect(tokenFromHash("")).toBeNull();
+    expect(isLineBrowser("Mozilla/5.0 Safari/604.1 Line/26.16.0")).toBe(true);
+    expect(isLineBrowser("Mozilla/5.0 Safari/604.1")).toBe(false);
+  });
+});

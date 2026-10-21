@@ -1,16 +1,17 @@
 import { render } from "preact";
-import { DeviceCheck } from "./DeviceCheck";
+import { App } from "./App";
 import { PrintPage } from "./PrintPage";
 import "./style.css";
+import "./app.css";
 
 // tech-stack.md T16: the path picks the entry; the fragment carries the token.
-function App() {
+function Root() {
   switch (location.pathname) {
     case "/print":
       return <PrintPage />;
     default:
-      return <DeviceCheck />;
+      return <App />;
   }
 }
 
-render(<App />, document.getElementById("app")!);
+render(<Root />, document.getElementById("app")!);
