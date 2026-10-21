@@ -47,7 +47,7 @@
 - **已完成**：需求與 P0 設計；技術選型（`design/tech-stack.md`）；iOS 實機驗證（`tech-stack.md` 5.1）；`internal/domain` 與 `internal/store`。
 - **P0 範圍**：2026-10-21 縮小，CSV 匯入、以角色預覽、連結管理介面延到 P1（`requirements/clarification.md`）。
 - **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
-- **已知問題**：store 測試在 Windows 上失敗（路徑轉 URI），M0 修正。
+- **已知問題**：無。
 - **已知且接受的風險（store 層）**：角色類型權限（`access-control.md` 第 4 節）由呼叫端檢查；復原碼可在 Draft 階段把日期延到 2199 年以延長保留（屬「復原碼外流＝完全接管」）；`secure_delete` 的檔案層抹除待 checkpoint，需演練驗證；非 Master 的 Cue 寫入不檢查版本；舊版回退後新格式的最後一步無法復原。
 - **尚未完成**：API 層、前端正式畫面、Android 實機驗證、當天維運腳本與演練（`tech-stack.md` 3.1 仍為要求草案）。
 - **未定**：當天的總召與備援操作者人選。
