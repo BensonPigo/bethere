@@ -3,22 +3,22 @@ package server
 
 import (
 	"encoding/json"
-	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-)
 
-const maxReportBytes = 16 << 10
+	"github.com/BensonPigo/bethere/internal/api"
+)
 
 // Entry paths all render the single-page app; see tech-stack.md T16.
 var entryPaths = []string{"/", "/print", "/recover"}
 
 type Config struct {
 	Static  fs.FS
-	Now     func() time.Time
+	Store   api.Store
+	Now     func() time.Time // serve passes time.Now only (api.md A13)
 	Version string
 	Logger  *slog.Logger
 }
@@ -30,29 +30,18 @@ func New(cfg Config) http.Handler {
 		w.Write([]byte("ok\n"))
 	})
 
+	// Deployment check without credentials and without event data (A6).
 	mux.HandleFunc("GET /api/ping", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]string{
-			"serverTime": cfg.Now().UTC().Format(time.RFC3339Nano),
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"serverTime": api.FormatTime(cfg.Now()),
 			"version":    cfg.Version,
 		})
 	})
 
-	// Device-check results from the prototype page (tech-stack.md section 5).
-	mux.HandleFunc("POST /api/report", func(w http.ResponseWriter, r *http.Request) {
-		var report map[string]any
-		err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReportBytes)).Decode(&report)
-		var tooLarge *http.MaxBytesError
-		switch {
-		case errors.As(err, &tooLarge):
-			http.Error(w, "too large", http.StatusRequestEntityTooLarge)
-			return
-		case err != nil:
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		cfg.Logger.Info("device_report", "report", report)
-		w.WriteHeader(http.StatusNoContent)
-	})
+	// The token-authenticated API (api.md section 3). The prototype's
+	// POST /api/report is gone (A7).
+	api.New(api.Config{Store: cfg.Store, Now: cfg.Now, Logger: cfg.Logger}).Register(mux)
 
 	index := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -68,7 +57,7 @@ func New(cfg Config) http.Handler {
 
 	files := http.FileServerFS(cfg.Static)
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		if isAPI(r) {
 			http.NotFound(w, r)
 			return
 		}
@@ -82,7 +71,21 @@ func New(cfg Config) http.Handler {
 		files.ServeHTTP(w, r)
 	})
 
-	return securityHeaders(mux)
+	return securityHeaders(noStoreAPI(mux))
+}
+
+func isAPI(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/api/") }
+
+// noStoreAPI sets Cache-Control: no-store on every /api/ response before
+// any handler runs, so router 404 and 405 responses, body errors and 500s
+// carry it too (api.md section 1, F9).
+func noStoreAPI(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPI(r) {
+			w.Header().Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -94,10 +97,4 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		next.ServeHTTP(w, r)
 	})
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(v)
 }
