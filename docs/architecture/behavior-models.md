@@ -44,7 +44,7 @@ stateDiagram-v2
     Completed --> InProgress: 復原上一步
 
     note right of InProgress
-        同一時間最多一個（activeCueId）
+        同一時間最多一個（activeCueId 由此推得）
         平移不移動進行中的 Cue
     end note
 ```
@@ -138,7 +138,7 @@ stateDiagram-v2
 
 ## 6. 領域類別圖
 
-對應：`data-model.md` 第 2～4 節。只列與行為有關的欄位與操作；方法名稱是設計層級的示意，實作時以 Go 慣例命名。
+對應：`data-model.md` 第 2～4 節；Cue 操作的實作在 `internal/domain`（✎ 2026-10-21）。只列與行為有關的欄位與操作。
 
 ```mermaid
 classDiagram
@@ -149,7 +149,6 @@ classDiagram
         +Date eventDate
         +string timezone
         +EventStatus status
-        +ID activeCueId
         +string recoveryCodeHash
         +endsAt() Time
         +isEnded(now) bool
@@ -184,25 +183,30 @@ classDiagram
         +ID byRoleId
         +Time undoneAt
     }
-    class ShiftLog {
-        +int deltaMin
-        +ID fromCueId
-        +Time undoneAt
-    }
-    class ShiftLogEntry {
-        +int appliedDeltaMin
-    }
     class ActionLog {
         +string actor
         +string type
         +json payload
+        +Time undoneAt
+    }
+    class Op {
+        +OpKind kind
+        +bool undone
+        +Change[] changes
+        +applyTo(cues) Cue[]
+    }
+    class Change {
+        +Cue before
+        +Cue after
     }
 
-    class ShiftPlanner {
+    class CueRules {
         <<service>>
-        +preview(cues, from, delta, excluded, now) ShiftPlan
-        +apply(plan) ShiftLog
-        +undo(log) void
+        +PlanShift(cues, req, now) ShiftPlan
+        +Conflicts(cues) Conflict[]
+        +Advance(cues, now) Op
+        +Skip(cues, id) Op
+        +Undo(cues, op) Op
     }
     class SnapshotBuilder {
         <<service>>
@@ -225,13 +229,13 @@ classDiagram
     Cue "1" -- "many" CueRole
     Role "1" -- "many" CueRole
     Role "1" -- "many" CheckIn
-    Event "1" *-- "many" ShiftLog
-    ShiftLog "1" *-- "many" ShiftLogEntry
-    ShiftLogEntry --> Cue
     Event "1" *-- "many" ActionLog
+    Op "1" *-- "many" Change
+    Change --> Cue
+    ActionLog ..> Op : payload
 
-    ShiftPlanner ..> Cue : 改 offsetMin
-    ShiftPlanner ..> ShiftLog : 建立
+    CueRules ..> Cue : 讀取
+    CueRules ..> Op : 產生
     SnapshotBuilder ..> CueRole : 依角色過濾
     TokenVerifier ..> AccessToken
     TokenVerifier ..> Event : endsAt
@@ -240,6 +244,6 @@ classDiagram
 
 | 服務 | 規則 | 測試重點 |
 | --- | --- | --- |
-| ShiftPlanner | `preview` 與 `apply` 用同一套計算；`apply` 是單一交易並使 `eventVersion + 1` | 固定 Cue、排除勾選、進行中不動、負值時排除已逾時並拒絕早於現在、Fixed 衝突只警告、復原精確 |
+| CueRules（`internal/domain`） | `PlanShift` 同時供預覽與正式寫入；Op 由 `internal/store` 在單一交易內寫入並使 `eventVersion + 1` | 固定 Cue、排除勾選、進行中不動、負值時排除已逾時並拒絕早於現在、Fixed 衝突只警告、復原精確 |
 | SnapshotBuilder | 只含該角色可見的 Cue 與欄位；Master 帶完整 CueRole 與維護旗標 | 每種角色的鍵集合；Host 不含 Cue |
 | TokenVerifier | 依序判斷無效 → 已結束 → 有效；儲存層錯誤回錯誤而非「無效」 | 撤銷、過期、時區邊界、資料庫錯誤 |

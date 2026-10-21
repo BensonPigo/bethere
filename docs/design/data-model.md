@@ -22,9 +22,6 @@ erDiagram
     Role ||--o{ AccessToken : "has (一個有效)"
     Cue ||--o{ CueRole : "assigned to"
     Role ||--o{ CueRole : "sees"
-    Event ||--o{ ShiftLog : records
-    ShiftLog ||--o{ ShiftLogEntry : affects
-    Cue ||--o{ ShiftLogEntry : "changed by"
     Role ||--o{ CheckIn : "reports"
     Event ||--o{ ActionLog : audits
 ```
@@ -36,11 +33,11 @@ erDiagram
 | --- | --- | --- |
 | id | ID | |
 | name | text | 例：「2027/06/06 婚宴」 |
-| eventDate | date | |
-| timezone | text | 預設 `Asia/Taipei` |
+| eventDate | date | 年份限 2000～2199，Cue 時間同樣限在這個範圍，確保以奈秒儲存與日期運算不會溢位（✎ 2026-10-21） |
+| timezone | text | 預設 `Asia/Taipei`；只接受程式內的時區清單（目前只有 `Asia/Taipei`），確保在任何主機都讀得回來（✎ 2026-10-21） |
 | status | enum | 儲存 `Draft` / `Live`（B6：Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |
 | liveStartedAt | timestamp? | 按「開始活動」的時間 |
-| activeCueId | ID? | 目前進行中的 Cue |
+| activeCueId | ID? | 目前進行中的 Cue。**不儲存**，由狀態為 `InProgress` 的 Cue 推得，避免兩份真相（✎ 2026-10-21） |
 | recoveryCodeHash | text | 復原碼的雜湊（見 `access-control.md` 第 2 節） |
 
 `timezone` 建立後不可修改；`eventDate` 只能以復原碼、在 Draft 階段修改（見 `access-control.md` 第 2 節）。「開始活動」只能在 `eventDate` 當天（依 `timezone`）執行。
@@ -114,21 +111,11 @@ erDiagram
 
 一個 Role 目前是否就位 = 存在未取消的 CheckIn。
 
-### ShiftLog / ShiftLogEntry（時間平移紀錄）
-**ShiftLog**
-| 欄位 | 說明 |
-| --- | --- |
-| id, eventId | |
-| deltaMin | 平移量（可為負，A3） |
-| fromCueId | 起點 Cue（含） |
-| createdAt, byRoleId | |
-| undoneAt | 復原時填入 |
-
-**ShiftLogEntry**：`shiftLogId`, `cueId`, `appliedDeltaMin`。
-只記錄**實際被改到**的 Cue，這樣復原只要把 `appliedDeltaMin` 反向扣回。
+### 平移紀錄（✎ 2026-10-21，原 ShiftLog / ShiftLogEntry）
+不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供 C3 事後檢討。復原就是把這些 Cue 還原成操作前的狀態；原設計的 `appliedDeltaMin` 等於前後 `offsetMin` 之差。理由見 `docs/adr/0015-cue-ops-in-action-log.md`。
 
 ### ActionLog（操作紀錄，C3）
-`id, eventId, actor, at, type, payload`。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（C3）。
+`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（M7）。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（C3）。
 
 ## 4. 核心行為規則
 
@@ -150,7 +137,7 @@ Pending ──► InProgress ──► Completed
 1. 取得 `seq >= from.seq` 的 Cue。
 2. 只保留：`status = Pending`、`isFixed = false`、不在 `excludedCueIds`；`deltaMin < 0` 時，另外排除平移前 `effectiveStart` 就已早於「現在」的 Cue（已逾時）。
 3. **負值檢查**（A3，只在 `deltaMin < 0` 時進行）：若任一保留的 Cue 平移後的 `effectiveStart` 早於「現在」，整次操作拒絕並說明是哪個 Cue。正值平移不做這項檢查，因為延誤時平移後仍早於現在是正常情況。
-4. 對每個保留的 Cue：`offsetMin += deltaMin`，並寫入 `ShiftLogEntry`。
+4. 對每個保留的 Cue：`offsetMin += deltaMin`，並在 ActionLog 記下該 Cue 平移前後的狀態。
 5. **Fixed 衝突檢查**：平移後，若某 Cue 的 `effectiveEnd` 晚於其後最近一個 Fixed Cue 的 `scheduledStart`，**不阻擋**，但標記衝突並在主控台顯示（A2）。
 6. 整個過程是單一交易，完成後 `eventVersion + 1`，各端在下一次輪詢取得新狀態。
 

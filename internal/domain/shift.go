@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// MaxShiftMin bounds a single shift; a wedding day has no use for more and
+// it keeps offset arithmetic far from overflow.
+const MaxShiftMin = 24 * 60
+
 type ShiftRequest struct {
 	FromCueID int64
 	DeltaMin  int
@@ -40,15 +44,24 @@ func (e *ShiftTooEarlyError) Unwrap() error { return ErrShiftTooEarly }
 // serves the preview and the real write (tech-stack.md T5). Rules follow
 // data-model.md 4.2.
 func PlanShift(cues []Cue, req ShiftRequest, now time.Time) (ShiftPlan, error) {
-	if req.DeltaMin == 0 {
+	if req.DeltaMin == 0 || req.DeltaMin > MaxShiftMin || req.DeltaMin < -MaxShiftMin {
 		return ShiftPlan{}, ErrInvalidDelta
 	}
 	from, ok := find(cues, req.FromCueID)
 	if !ok {
 		return ShiftPlan{}, ErrCueNotFound
 	}
+	// Keep only exclusions that name a cue of this rundown, once each; the
+	// request is logged for the after-event review (C3).
+	var excluded []int64
+	for _, id := range req.Excluded {
+		if _, ok := find(cues, id); ok && !slices.Contains(excluded, id) {
+			excluded = append(excluded, id)
+		}
+	}
+	req.Excluded = excluded
 
-	op := Op{Kind: OpShift}
+	op := Op{Kind: OpShift, Shift: &req}
 	for _, c := range bySeq(cues) {
 		if c.Seq < from.Seq || c.Status != Pending || c.IsFixed || slices.Contains(req.Excluded, c.ID) {
 			continue
