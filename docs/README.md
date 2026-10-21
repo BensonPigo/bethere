@@ -14,6 +14,7 @@
 | --- | --- |
 | [user-stories.md](requirements/user-stories.md) | 角色、現場使用情境與使用者故事 |
 | [clarification.md](requirements/clarification.md) | 需求釐清清單與已確認決定、MVP（P0／P1／P2）範圍 |
+| [m1-acceptance.md](requirements/m1-acceptance.md) | M1 最小閉環的故事與驗收條件（功能條件與情境條件） |
 
 ## design/ 設計（P0 範圍）
 
@@ -43,7 +44,7 @@
 
 > 只寫現況；歷史見 git log。
 
-- **目前里程碑**：M0 準備（`process/development-process.md` 第 3 節）。下一個是 M1 最小閉環，目標 2026-11 中。
+- **目前里程碑**：M1 最小閉環，目標 2026-11 中；M0 已於 2026-10-21 完成。驗收條件草稿見 `requirements/m1-acceptance.md`。
 - **已完成**：需求與 P0 設計；技術選型（`design/tech-stack.md`）；iOS 實機驗證（`tech-stack.md` 5.1）；`internal/domain` 與 `internal/store`。
 - **P0 範圍**：2026-10-21 縮小，CSV 匯入、以角色預覽、連結管理介面延到 P1（`requirements/clarification.md`）。
 - **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
