@@ -236,6 +236,25 @@ func TestContextErrorsAreNeverInvalidToken(t *testing.T) {
 	}
 }
 
+// The token query itself failing inside the transaction (here: its table
+// is gone) is a database error, never "no such token" (T3b). The
+// cancelled-context cases above fail earlier, at BEGIN, so they alone
+// would not catch a lookup that maps query errors to ErrInvalidToken.
+func TestFailingTokenQueryIsNeverInvalid(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.s.w.Exec(`ALTER TABLE access_tokens RENAME TO access_tokens_moved`); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"master", "unknown"} {
+		if _, err := f.s.LookupToken(ctx, hash(h), at(12, 0)); err == nil || errors.Is(err, ErrInvalidToken) {
+			t.Errorf("LookupToken(%s): err = %v, want a database error", h, err)
+		}
+		if _, err := f.s.Snapshot(ctx, hash(h), at(12, 0)); err == nil || errors.Is(err, ErrInvalidToken) {
+			t.Errorf("Snapshot(%s): err = %v, want a database error", h, err)
+		}
+	}
+}
+
 // Cancellation racing a lookup of a valid token yields the owner or a
 // context error, never ErrInvalidToken.
 func TestCancellationRacingALookupIsNeverInvalid(t *testing.T) {
