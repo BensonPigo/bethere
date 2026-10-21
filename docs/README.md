@@ -24,6 +24,7 @@
 | [sync-and-offline.md](design/sync-and-offline.md) | 即時同步、快照、離線快取、備援 Rundown |
 | [access-control.md](design/access-control.md) | Token 設計、角色權限、撤銷 |
 | [screen-design.md](design/screen-design.md) | 各角色畫面的資訊架構 |
+| [api.md](design/api.md) | API 規格：驗證結果、端點、權限、各角色快照、錯誤對照（依里程碑追加） |
 | [tech-stack.md](design/tech-stack.md) | 技術選型、部署與託管（S7）、當天維運、實機驗證項目 |
 
 ## architecture/ 架構視圖
