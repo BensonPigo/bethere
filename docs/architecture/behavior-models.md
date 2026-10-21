@@ -31,7 +31,7 @@ stateDiagram-v2
 
 ## 2. Cue 狀態
 
-對應：`data-model.md` 4.1、M3、M7。
+對應：`data-model.md` 4.1、M3、M7、M10。
 
 ```mermaid
 stateDiagram-v2
@@ -40,6 +40,7 @@ stateDiagram-v2
     InProgress --> Completed: 推進（填 actualEnd）
     Pending --> Skipped: 略過
     InProgress --> Pending: 復原上一步
+    Skipped --> Pending: 復原上一步
     Completed --> InProgress: 復原上一步
 
     note right of InProgress
@@ -50,7 +51,7 @@ stateDiagram-v2
 
 - 主控台的「推進：完成並開始下一個」在同一筆交易內把目前 Cue 改為 Completed、下一個 Pending 改為 InProgress；復原時兩者一起回退（依 V1 按鈕語意推定，`data-model.md` 未明寫）。
 - 只有 Pending 且非 Fixed 的 Cue 會被平移（`data-model.md` 4.2）。
-- **待確認**：「略過」能否以「復原上一步」回到 Pending。`data-model.md` 4.1 的圖沒有畫這條，但 A7 說復原可以回退最近一次操作。實作前要在 `data-model.md` 補上。
+- 略過可以用「復原上一步」回到 Pending（`data-model.md` M10，2026-10-21 確認）。
 
 ## 3. 角色連結（AccessToken）
 
