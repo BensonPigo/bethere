@@ -141,26 +141,43 @@ func (s *Store) LookupToken(ctx context.Context, tokenHash []byte, now time.Time
 		return TokenOwner{}, err
 	}
 	defer tx.Rollback()
+	o, _, _, err := resolveToken(ctx, tx, tokenHash, now)
+	return o, err
+}
+
+// resolveToken is the lookup of access-control.md 3.3 inside the caller's
+// transaction, so LookupToken and Snapshot share one rule and one order:
+// ErrInvalidToken only when the query succeeded and found no active token,
+// then ErrEventEnded, otherwise the owner with its event and version. Any
+// other failure, a cancelled or expired context included, is returned as
+// is and never as ErrInvalidToken (T3b).
+func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time) (TokenOwner, domain.Event, int64, error) {
 	var o TokenOwner
-	err = tx.QueryRowContext(ctx, `SELECT r.id, r.event_id, r.type, r.name
+	err := tx.QueryRowContext(ctx, `SELECT r.id, r.event_id, r.type, r.name
 		FROM access_tokens t JOIN roles r ON r.id = t.role_id
 		WHERE t.token_hash = ? AND t.revoked_at IS NULL`, tokenHash).
 		Scan(&o.RoleID, &o.EventID, &o.RoleType, &o.RoleName)
 	if errors.Is(err, sql.ErrNoRows) {
-		return TokenOwner{}, ErrInvalidToken
+		// database/sql reports a context cancelled before the row was read
+		// as the context's error, not ErrNoRows; checking ctx as well keeps
+		// a miss that raced with a cancellation from being trusted.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return TokenOwner{}, domain.Event{}, 0, ctxErr
+		}
+		return TokenOwner{}, domain.Event{}, 0, ErrInvalidToken
 	}
 	if err != nil {
-		return TokenOwner{}, err
+		return TokenOwner{}, domain.Event{}, 0, err
 	}
-	e, _, err := loadEvent(ctx, tx, o.EventID)
+	e, v, err := loadEvent(ctx, tx, o.EventID)
 	if err != nil {
-		return TokenOwner{}, err
+		return TokenOwner{}, domain.Event{}, 0, err
 	}
 	if e.Ended(now) {
-		return TokenOwner{}, ErrEventEnded
+		return TokenOwner{}, domain.Event{}, 0, ErrEventEnded
 	}
 	o.Actor = Actor{kind: actorRole, roleID: o.RoleID, eventID: o.EventID, cred: credential(tokenHash)}
-	return o, nil
+	return o, e, v, nil
 }
 
 // LookupRecoveryCode proves a recovery code and returns the actor that may
