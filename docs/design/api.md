@@ -1,6 +1,6 @@
 # API 規格 (API) — M1 範圍
 
-> 狀態：已經安全審查（2026-10-21，無 P0／P1，發現已處理，見第 10 節），待 PO 核准。
+> 狀態：PO 核准（2026-10-21）；已經安全審查，無 P0／P1，發現已處理（第 10 節）。
 > 範圍：`requirements/m1-acceptance.md` 的 US-M-1、US-M-3、US-M-4、US-ST-1、US-X-1；之後的里程碑在本文件追加端點。
 > 依據：`access-control.md`（身分、驗證結果、權限表）、`sync-and-offline.md`（輪詢與快照）、`data-model.md`（狀態轉換）、`tech-stack.md`（T3b、T6、T7、T13、T14）。本文件的決定以 A 編號列在第 9 節。
 
