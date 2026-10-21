@@ -2,7 +2,10 @@ module github.com/BensonPigo/bethere
 
 go 1.26.0
 
-require modernc.org/sqlite v1.60.1
+require (
+	golang.org/x/term v0.46.0
+	modernc.org/sqlite v1.60.1
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
