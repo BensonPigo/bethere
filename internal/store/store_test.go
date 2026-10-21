@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -489,8 +490,11 @@ func TestWriteWaitsForAnotherProcess(t *testing.T) {
 // Paths with URI metacharacters must open exactly that file (round 1:
 // "?" and "#" cut the name short and created another, empty database).
 func TestOpenUsesTheExactPath(t *testing.T) {
-	for _, name := range []string{"data?v1.db", "h#x.db", "p%20x.db", "with space.db"} {
+	for _, name := range []string{"data?v1.db", "h#x.db", "p%20x.db", "with space.db", "婚禮.db"} {
 		t.Run(name, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.Contains(name, "?") {
+				t.Skip(`"?" is not allowed in Windows file names`)
+			}
 			dir := t.TempDir()
 			path := filepath.Join(dir, name)
 			s, err := Open(ctx, path, true)
@@ -504,6 +508,11 @@ func TestOpenUsesTheExactPath(t *testing.T) {
 				t.Fatal(err)
 			}
 			s.Close()
+			// The data is in the named file itself, not somewhere the URI
+			// resolved to outside dir.
+			if fi, err := os.Stat(path); err != nil || fi.Size() == 0 {
+				t.Fatalf("named file missing or empty: %v", err)
+			}
 			entries, _ := os.ReadDir(dir)
 			for _, e := range entries {
 				if n := e.Name(); n != name && n != name+"-wal" && n != name+"-shm" {
@@ -536,6 +545,32 @@ func TestDSNNeverCreatesTheFile(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("file was created: %v", err)
+	}
+
+	// Positive control: the same DSN opens an existing database, so the
+	// case above cannot pass merely because the URI is malformed.
+	_, existing := newStore(t)
+	ok, err := sql.Open("sqlite", dsn(existing, "rw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ok.Close()
+	if err := ok.Ping(); err != nil {
+		t.Errorf("opening an existing file failed: %v", err)
+	}
+}
+
+// Unix paths must produce exactly the DSN they did before Windows support;
+// Windows drive paths gain the leading slash SQLite expects.
+func TestDSNForm(t *testing.T) {
+	const q = "?mode=rw&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	if got, want := dsn("/tmp/x.db", "rw"), "file:///tmp/x.db"+q; got != want {
+		t.Errorf("unix: got %q, want %q", got, want)
+	}
+	if runtime.GOOS == "windows" {
+		if got, want := dsn(`C:\x\y.db`, "rw"), "file:///C:/x/y.db"+q; got != want {
+			t.Errorf("windows: got %q, want %q", got, want)
+		}
 	}
 }
 
