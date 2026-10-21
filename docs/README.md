@@ -2,6 +2,12 @@
 
 建議閱讀順序：先需求、再設計。後面的文件依賴前面的。想先看全貌，從 `architecture/architecture-overview.md` 開始；想知道某個決定為什麼這樣選，看 `adr/`。
 
+## process/ 開發流程
+
+| 文件 | 內容 |
+| --- | --- |
+| [development-process.md](process/development-process.md) | 輕量版開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI、待決定事項 |
+
 ## requirements/ 需求
 
 | 文件 | 內容 |
@@ -35,12 +41,13 @@
 
 ## 狀態
 
-- 需求與 P0 設計決定皆已確認。
-- 2026-10-20 依設計 review 修訂：合併 Owner 與 Master、管理密碼改為復原碼、同步改為輪詢、Token 保留在網址、活動自動結束、平移檢查與新秘倒數規則（各文件以 ✎ 標示）。
-- 2026-10-20 完成技術選型（`tech-stack.md`）：Go + SQLite 後端、Preact 前端、GCE 台灣單一 VM + Litestream→GCS（同日由 Fly.io 改為 GCE）；C5 改為伺服器端所有副本 90 天內消失。經七輪三方抗辯審查。
-- 2026-10-21 完成 iOS 實機驗證（`tech-stack.md` 5.1）：R1～R5 成立；LINE 內建瀏覽器無法離線開啟；重開頁面後需點擊才能常亮，`screen-design.md` V2a 加上常亮提示層。
-- 2026-10-21 新增架構視圖（`architecture/`）與 14 份架構決策紀錄（`adr/`），內容整理自既有設計文件，未新增或改變決定。同日確認略過可以復原（`data-model.md` M10）。
-- 2026-10-21 開始正式實作：`internal/domain`（平移、狀態轉換、活動生命週期）與 `internal/store`（SQLite）。平移紀錄改記在 ActionLog（ADR-0015），`activeCueId` 改為推得。store 經三輪三方抗辯修正：空檔與無結構描述的檔案拒絕啟動且不改動、路徑以跳脫過的 URI 開啟、寫入綁定操作者所屬活動、復原碼綁定活動、查 Token 直接回傳「無效／已結束」。
-- 2026-10-21 `internal/store` 經六輪三方抗辯（第 1～6 輪結論 B：1/3、0/3、0/3、1/3、2/3、0/3），各輪推翻理由皆已修正並以「改回去→測試失敗」驗證；尚未達到「連續兩輪無推翻理由」，第 7 輪起待 API 層實作時一併審查。
-- 已知且接受的風險（store 層）：角色類型權限（`access-control.md` 第 4 節）由呼叫端檢查；復原碼可在 Draft 階段把日期延到 2199 年以延長保留（屬「復原碼外流＝完全接管」）；`secure_delete` 的檔案層抹除待 checkpoint，需演練驗證；非 Master 的 Cue 寫入不檢查版本；舊版回退後新格式的最後一步無法復原。
-- 尚未完成：`tech-stack.md` 3.1 當天維運手冊為要求草案，待實作時寫成腳本並演練驗證；Android 實機驗證；API 層、前端正式畫面。
+> 只寫現況；歷史見 git log。
+
+- **目前里程碑**：M0 準備（`process/development-process.md` 第 3 節）。下一個是 M1 最小閉環，目標 2026-11 中。
+- **已完成**：需求與 P0 設計；技術選型（`design/tech-stack.md`）；iOS 實機驗證（`tech-stack.md` 5.1）；`internal/domain` 與 `internal/store`。
+- **P0 範圍**：2026-10-21 縮小，CSV 匯入、以角色預覽、連結管理介面延到 P1（`requirements/clarification.md`）。
+- **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
+- **已知問題**：store 測試在 Windows 上失敗（路徑轉 URI），M0 修正。
+- **已知且接受的風險（store 層）**：角色類型權限（`access-control.md` 第 4 節）由呼叫端檢查；復原碼可在 Draft 階段把日期延到 2199 年以延長保留（屬「復原碼外流＝完全接管」）；`secure_delete` 的檔案層抹除待 checkpoint，需演練驗證；非 Master 的 Cue 寫入不檢查版本；舊版回退後新格式的最後一步無法復原。
+- **尚未完成**：API 層、前端正式畫面、Android 實機驗證、當天維運腳本與演練（`tech-stack.md` 3.1 仍為要求草案）。
+- **未定**：當天的總召與備援操作者人選。
