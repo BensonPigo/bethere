@@ -135,12 +135,14 @@ erDiagram
 ### 4.1 狀態轉換
 ```
 Pending ──► InProgress ──► Completed
-   │             │              │
-   └──► Skipped  └─(復原)─► Pending / InProgress ◄─(復原)
+   │
+   └──► Skipped
+
+復原上一步：InProgress → Pending、Completed → InProgress、Skipped → Pending
 ```
 - 同一時間只有一個 `InProgress` 的 Cue（`Event.activeCueId`）。若現場要重疊進行，列為後續需求。
 - 推進為 InProgress 時填 `actualStart`；Completed 時填 `actualEnd`。
-- 「復原上一步」只能回退最近一次操作，並寫入 ActionLog。
+- 「復原上一步」只能回退最近一次操作，並寫入 ActionLog。略過也可以復原，Cue 回到 `Pending`（✎ 2026-10-21）。
 
 ### 4.2 時間平移演算法（A1～A3）
 輸入：`fromCueId`、`deltaMin`、`excludedCueIds`（總召取消勾選的）。
@@ -186,3 +188,4 @@ Pending ──► InProgress ──► Completed
 | M7 | 「復原」只回退最近一步 | 是 ☑ |
 | M8 | 平移的「不得早於現在」檢查 | 只在負值平移時檢查，已逾時的 Cue 自動排除（4.2）✎ 2026-10-20 |
 | M9 | 活動結束時間 | 不儲存，由 `eventDate` 與 `timezone` 即時算出 `endsAt`；Token 不另存到期時間 ✎ 2026-10-20 |
+| M10 | 略過能否復原 | 可以，以「復原上一步」回到 `Pending`（4.1）✎ 2026-10-21 |
