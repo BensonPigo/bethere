@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type EventStatus string
 
@@ -16,6 +19,41 @@ type Date struct {
 	Month time.Month
 	Day   int
 }
+
+// timeZones are the event time zones BeThere accepts. Only names that the
+// embedded tzdata holds verbatim are listed, so an event reads back on any
+// host (T12); a host's own zoneinfo may accept variants such as
+// "asia/taipei" that others cannot load. Add zones here when needed.
+var timeZones = []string{"Asia/Taipei"}
+
+func SupportedTimeZone(name string) bool { return slices.Contains(timeZones, name) }
+
+// MinYear and MaxYear bound event dates and cue times. Times are stored
+// as Unix nanoseconds, which end in 2262; well inside that, day arithmetic
+// never overflows either.
+const (
+	MinYear = 2000
+	MaxYear = 2199
+)
+
+// Valid reports whether d is a real calendar day within MinYear–MaxYear.
+func (d Date) Valid() bool {
+	if d.Year < MinYear || d.Year > MaxYear {
+		return false
+	}
+	y, m, day := d.midnightUTC().Date()
+	return y == d.Year && m == d.Month && day == d.Day
+}
+
+// String formats d as YYYY-MM-DD, the form stored in the database.
+func (d Date) String() string { return d.midnightUTC().Format("2006-01-02") }
+
+func (d Date) midnightUTC() time.Time {
+	return time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, time.UTC)
+}
+
+// InRange reports whether t falls within MinYear–MaxYear.
+func InRange(t time.Time) bool { return t.Year() >= MinYear && t.Year() <= MaxYear }
 
 type Event struct {
 	ID            int64
@@ -72,6 +110,9 @@ func (e Event) RequireLive(now time.Time) error {
 // be revived. Every cue moves by the same number of days, keeping its
 // local wall-clock time (access-control.md section 2).
 func (e Event) Reschedule(to Date, cues []Cue, now time.Time) (Event, []Cue, error) {
+	if !to.Valid() {
+		return e, nil, ErrInvalidDate
+	}
 	if e.Ended(now) {
 		return e, nil, ErrEnded
 	}
@@ -83,8 +124,7 @@ func (e Event) Reschedule(to Date, cues []Cue, now time.Time) (Event, []Cue, err
 	if moved.Ended(now) {
 		return e, nil, ErrEnded
 	}
-	days := int(time.Date(to.Year, to.Month, to.Day, 0, 0, 0, 0, time.UTC).
-		Sub(time.Date(e.Date.Year, e.Date.Month, e.Date.Day, 0, 0, 0, 0, time.UTC)) / (24 * time.Hour))
+	days := int((to.midnightUTC().Unix() - e.Date.midnightUTC().Unix()) / (24 * 60 * 60))
 	out := make([]Cue, len(cues))
 	for i, c := range cues {
 		c.ScheduledStart = c.ScheduledStart.In(e.Location).AddDate(0, 0, days)

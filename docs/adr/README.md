@@ -23,7 +23,7 @@
 | [0003](0003-single-master-with-recovery-code.md) | 只有 Master 一種管理身分，另以復原碼救援 | 已接受 | P1、P5 |
 | [0004](0004-polling-full-snapshots.md) | 同步採每 2 秒輪詢完整快照，不用推送 | 已接受 | S1、S2、S3 |
 | [0005](0005-optimistic-writes-no-offline-queue.md) | 寫入以版本號拒絕過期操作，離線時不排隊 | 已接受 | S5、S6、M7 |
-| [0006](0006-per-cue-offset-and-shift-log.md) | 偏移存在每個 Cue 上，平移留紀錄以精確復原 | 已接受 | M1、M5、M6、M8、A1～A3 |
+| [0006](0006-per-cue-offset-and-shift-log.md) | 偏移存在每個 Cue 上，平移留紀錄以精確復原 | 已接受（儲存方式由 0015 修訂） | M1、M5、M6、M8、A1～A3 |
 | [0007](0007-server-side-domain-logic.md) | 領域邏輯與資料過濾只在伺服器 | 已接受 | T5、F3、E7 |
 | [0008](0008-go-backend-preact-frontend.md) | 後端 Go、前端 Preact + TypeScript | 已接受 | T-A、T1～T17 |
 | [0009](0009-single-gce-vm-sqlite-litestream.md) | 單一 GCE VM + SQLite + Litestream 備份 | 已接受 | S7、T-B、T3 |
@@ -32,3 +32,4 @@
 | [0012](0012-fail-safe-startup-and-maintenance-mode.md) | 失效安全：不自動建庫、維護模式 | 已接受 | T3b、T3c、T3d |
 | [0013](0013-day-of-operations-by-backup-operator.md) | 當天維運交給備援操作者，不做跨區域備援 | 已接受 | T-E |
 | [0014](0014-printable-backup-rundown.md) | 備援 Rundown 用列印專用網頁 | 已接受 | T-C、T21 |
+| [0015](0015-cue-ops-in-action-log.md) | Cue 操作以前後狀態記在 ActionLog，取代 ShiftLog | 已接受 | M7、M10、T4 |

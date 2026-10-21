@@ -99,7 +99,7 @@ sequenceDiagram
     S-->>V1: 新預覽
     M->>V1: 確認
     V1->>S: POST 平移（version、起點、+10、排除清單）
-    S->>D: 單一交易：寫 ShiftLog 與 ShiftLogEntry、更新 offsetMin、寫 ActionLog、version + 1
+    S->>D: 單一交易：更新 offsetMin、ActionLog 記下前後狀態、version + 1
     S-->>V1: 新快照（含衝突標記）
     Note over V2: 最多 2 秒後的下一次輪詢
     V2->>S: GET 快照

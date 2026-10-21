@@ -16,14 +16,16 @@ import (
 
 var (
 	ErrCueNotFound        = errors.New("cue not found")
-	ErrInvalidDelta       = errors.New("shift delta must be non-zero")
+	ErrInvalidDelta       = errors.New("shift delta must be non-zero and within a day")
 	ErrShiftTooEarly      = errors.New("shift would move a cue before now")
 	ErrNothingToAdvance   = errors.New("no cue left to advance")
 	ErrMultipleInProgress = errors.New("more than one cue in progress")
 	ErrNotPending         = errors.New("cue is not pending")
 	ErrUndoStale          = errors.New("cues changed since the operation")
+	ErrEmptyOp            = errors.New("operation changes no cue")
 	ErrNotDraft           = errors.New("event is not in draft")
 	ErrNotLive            = errors.New("event is not live")
 	ErrEnded              = errors.New("event has ended")
 	ErrNotEventDay        = errors.New("not the event day")
+	ErrInvalidDate        = errors.New("date must be a real day with a four-digit year")
 )

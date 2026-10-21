@@ -14,11 +14,12 @@ type Change struct {
 }
 
 // Op is a single undoable operation. Undo yields another Op of the same
-// kind with Undone set and each Change reversed.
+// kind with each Change reversed. Shift keeps what the Master asked for,
+// for the after-event review (C3).
 type Op struct {
 	Kind    OpKind
-	Undone  bool
 	Changes []Change
+	Shift   *ShiftRequest
 }
 
 // ApplyTo returns a copy of cues with every changed cue replaced by its
@@ -40,7 +41,10 @@ func (op Op) ApplyTo(cues []Cue) []Cue {
 // M7). Every cue it touched must still be exactly in its After state;
 // otherwise something else changed it and the undo is refused.
 func Undo(cues []Cue, op Op) (Op, error) {
-	rev := Op{Kind: op.Kind, Undone: true, Changes: make([]Change, len(op.Changes))}
+	if len(op.Changes) == 0 {
+		return Op{}, ErrEmptyOp
+	}
+	rev := Op{Kind: op.Kind, Shift: op.Shift, Changes: make([]Change, len(op.Changes))}
 	for i, ch := range op.Changes {
 		cur, ok := find(cues, ch.After.ID)
 		if !ok || !sameState(cur, ch.After) {

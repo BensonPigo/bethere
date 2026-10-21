@@ -621,3 +621,84 @@ func TestUndoKeepsLiveTitleEdits(t *testing.T) {
 		t.Errorf("got %q %s, want the edited title back in Pending", got.Title, got.Status)
 	}
 }
+
+func TestUndoRejectsEmptyOp(t *testing.T) {
+	if _, err := Undo([]Cue{cue(1, 9, 30, 30, Pending)}, Op{Kind: OpSkip}); !errors.Is(err, ErrEmptyOp) {
+		t.Errorf("err = %v, want ErrEmptyOp", err)
+	}
+}
+
+func TestShiftOpKeepsTheRequest(t *testing.T) {
+	req := ShiftRequest{FromCueID: 3, DeltaMin: 10, Excluded: []int64{4}}
+	plan, err := PlanShift(shiftRundown(), req, at(10, 20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Op.Shift == nil || plan.Op.Shift.FromCueID != 3 || plan.Op.Shift.DeltaMin != 10 || len(plan.Op.Shift.Excluded) != 1 {
+		t.Errorf("Op.Shift = %+v, want the request", plan.Op.Shift)
+	}
+}
+
+func TestPlanShiftBoundsTheRequest(t *testing.T) {
+	for _, d := range []int{MaxShiftMin + 1, -MaxShiftMin - 1, -200000000} {
+		if _, err := PlanShift(shiftRundown(), ShiftRequest{FromCueID: 3, DeltaMin: d}, at(10, 20)); !errors.Is(err, ErrInvalidDelta) {
+			t.Errorf("delta %d: err = %v, want ErrInvalidDelta", d, err)
+		}
+	}
+	plan, err := PlanShift(shiftRundown(), ShiftRequest{FromCueID: 3, DeltaMin: 10, Excluded: []int64{4, 4, 999, 6}}, at(10, 20))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Op.Shift.Excluded; !equalIDs(got, []int64{4, 6}) {
+		t.Errorf("logged exclusions = %v, want [4 6]", got)
+	}
+}
+
+func TestRescheduleRejectsInvalidDates(t *testing.T) {
+	e := Event{Date: Date{2027, time.June, 6}, Location: taipei, Status: Draft}
+	now := time.Date(2027, 5, 1, 12, 0, 0, 0, taipei)
+	for _, d := range []Date{{2027, time.June, 31}, {10000, 1, 1}, {}} {
+		if _, _, err := e.Reschedule(d, nil, now); !errors.Is(err, ErrInvalidDate) {
+			t.Errorf("Reschedule(%v): err = %v, want ErrInvalidDate", d, err)
+		}
+	}
+}
+
+func TestSupportedTimeZone(t *testing.T) {
+	if !SupportedTimeZone("Asia/Taipei") {
+		t.Error("Asia/Taipei not supported")
+	}
+	for _, z := range []string{"", "asia/taipei", "UTC", "Local"} {
+		if SupportedTimeZone(z) {
+			t.Errorf("%q supported", z)
+		}
+	}
+}
+
+// Dates are limited to years whose times fit the store's Unix-nanosecond
+// columns (round 6: 2262+ wrapped around to the 1700s).
+func TestDateRangeAndDayCount(t *testing.T) {
+	for _, d := range []Date{{1999, 12, 31}, {2200, 1, 1}, {2262, 6, 13}, {9999, 6, 13}} {
+		if d.Valid() {
+			t.Errorf("%v accepted", d)
+		}
+	}
+	for _, d := range []Date{{2000, 1, 1}, {2199, 12, 31}} {
+		if !d.Valid() {
+			t.Errorf("%v rejected", d)
+		}
+	}
+	if got := (Date{2027, time.June, 6}).String(); got != "2027-06-06" {
+		t.Errorf("String = %q", got)
+	}
+	e := Event{Date: Date{2027, time.June, 6}, Location: taipei, Status: Draft}
+	cues := []Cue{cue(1, 10, 0, 30, Pending)}
+	now := time.Date(2027, 5, 1, 12, 0, 0, 0, taipei)
+	_, moved, err := e.Reschedule(Date{2199, time.June, 6}, cues, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2199, 6, 6, 10, 0, 0, 0, taipei); !moved[0].ScheduledStart.Equal(want) {
+		t.Errorf("cue moved to %v, want %v", moved[0].ScheduledStart, want)
+	}
+}
