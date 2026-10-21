@@ -32,7 +32,7 @@ export type MasterSnapshot = SnapshotBase & {
   event: { name: string; date: string; timezone: string };
   cues: MasterCue[];
   activeCueId: string | number | null;
-  undo: { available: boolean; description: string };
+  undo: { available: boolean; description: string | null };
   roles: { id: string | number; name: string; type: string }[];
 };
 
