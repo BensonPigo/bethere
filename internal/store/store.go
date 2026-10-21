@@ -170,10 +170,15 @@ func probeVersion(ctx context.Context, abs string) (int, error) {
 // dsn builds a file: URI with the path escaped, so "?", "#" or "%" in it
 // cannot cut the file name short. mode is "ro" or "rw", never "rwc":
 // SQLite itself refuses to create a missing file. Every PRAGMA is in the
-// DSN so each pooled connection gets it.
+// DSN so each pooled connection gets it. A Windows path (C:\x) becomes
+// /C:/x, the form SQLite's URI parser takes for a drive letter.
 func dsn(abs, mode string, params ...string) string {
 	common := []string{"mode=" + mode, "_pragma=busy_timeout(5000)", "_pragma=foreign_keys(1)"}
-	u := url.URL{Scheme: "file", Path: abs, RawQuery: strings.Join(append(common, params...), "&")}
+	p := filepath.ToSlash(abs)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: strings.Join(append(common, params...), "&")}
 	return u.String()
 }
 
