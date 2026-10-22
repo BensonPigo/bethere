@@ -7,6 +7,8 @@ set -euo pipefail
 id bethere >/dev/null 2>&1 || useradd --system --home /var/lib/bethere --create-home --shell /usr/sbin/nologin bethere
 id caddy >/dev/null 2>&1 || useradd --system --home /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
 mkdir -p /opt/bethere /etc/caddy
+# The test service's own directory (ADR-0029); the real database is never in it.
+install -d -o bethere -g bethere -m 750 /var/lib/bethere-e2e
 
 if [ ! -f /swapfile ]; then
   fallocate -l 1G /swapfile && chmod 600 /swapfile && mkswap /swapfile
@@ -34,7 +36,12 @@ case "$1" in
   bethere) v="$(md bethere-version)"; install_bin bethere "$v" "bethere/$v/bethere" ;;
   caddy)
     v="$(md caddy-version)"; install_bin caddy "$v" "caddy/$v/caddy"
-    printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$(md bethere-domain)" > /etc/caddy/Caddyfile ;;
+    printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$(md bethere-domain)" > /etc/caddy/Caddyfile
+    # The test service, once ops/gcp/e2e-setup.sh has named its domain (ADR-0029).
+    e2e="$(md bethere-e2e-domain 2>/dev/null || true)"
+    if [ -n "$e2e" ]; then
+      printf '%s {\n\treverse_proxy 127.0.0.1:8081\n}\n' "$e2e" >> /etc/caddy/Caddyfile
+    fi ;;
 esac
 EOF
 chmod 755 /opt/bethere/prepare.sh
@@ -51,6 +58,29 @@ ExecStartPre=+/opt/bethere/prepare.sh bethere
 # The database is never created here (tech-stack.md 2.1「不自動建庫」): the first
 # deployment creates it once with ops/gcp/init-db.sh.
 ExecStart=/opt/bethere/bethere serve -db /var/lib/bethere/bethere.db -addr 127.0.0.1:8080
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# The test service of the end-to-end routes (ADR-0029): the same release on
+# its own database and port. It only runs once its database exists, which
+# ops/gcp/e2e-setup.sh and every test run create; it never opens the real one.
+cat > /etc/systemd/system/bethere-e2e.service <<'EOF'
+[Unit]
+Description=BeThere test service (end-to-end routes)
+Wants=network-online.target
+After=network-online.target bethere.service
+ConditionPathExists=/var/lib/bethere-e2e/e2e.db
+
+[Service]
+User=bethere
+ExecStartPre=+/opt/bethere/prepare.sh bethere
+ExecStart=/opt/bethere/bethere serve -db /var/lib/bethere-e2e/e2e.db -addr 127.0.0.1:8081
 Restart=on-failure
 RestartSec=5
 StartLimitIntervalSec=0
@@ -82,3 +112,4 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now bethere.service caddy.service
+systemctl enable bethere-e2e.service
