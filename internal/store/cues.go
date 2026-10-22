@@ -120,12 +120,33 @@ func loadCues(ctx context.Context, q querier, eventID int64) ([]domain.Cue, erro
 // changes nothing is not written.
 func (s *Store) ApplyCueOp(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time,
 	build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error) {
+	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, false, build)
+}
+
+// Advance is the Master's advance. On the event day a draft event is
+// started by it in the same transaction, so there is no separate step to
+// forget (ADR-0020); undoing this advance reverts the cues only and the
+// event stays live.
+func (s *Store) Advance(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time) (int64, domain.Op, error) {
+	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, true,
+		func(cues []domain.Cue) (domain.Op, error) { return domain.Advance(cues, now) })
+}
+
+func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time,
+	startDraft bool, build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error) {
 	version := expectVersion
 	var op domain.Op
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		e, err := guardVersion(ctx, tx, eventID, expectVersion, actor, now)
 		if err != nil {
 			return err
+		}
+		started := false
+		if startDraft && e.Status == domain.Draft {
+			if e, err = startEvent(ctx, tx, e, actor, now); err != nil {
+				return err
+			}
+			started = true
 		}
 		if err := e.RequireLive(now); err != nil {
 			return err
@@ -137,14 +158,16 @@ func (s *Store) ApplyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 		if op, err = build(cues); err != nil {
 			return err
 		}
-		if len(op.Changes) == 0 {
+		if len(op.Changes) == 0 && !started {
 			return nil
 		}
-		if err := writeChanges(ctx, tx, eventID, op); err != nil {
-			return err
-		}
-		if err := logAction(ctx, tx, eventID, actor, opLogPrefix+string(op.Kind), encodeOp(op), now); err != nil {
-			return err
+		if len(op.Changes) > 0 {
+			if err := writeChanges(ctx, tx, eventID, op); err != nil {
+				return err
+			}
+			if err := logAction(ctx, tx, eventID, actor, opLogPrefix+string(op.Kind), encodeOp(op), now); err != nil {
+				return err
+			}
 		}
 		version, err = bumpVersion(ctx, tx, eventID)
 		return err

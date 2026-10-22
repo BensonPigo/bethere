@@ -217,7 +217,9 @@ func guardVersion(ctx context.Context, tx *sql.Tx, eventID, expectVersion int64,
 	return e, nil
 }
 
-// StartEvent moves a draft event to live (access-control.md section 4).
+// StartEvent moves a draft event to live on its own. The API starts an
+// event with its first advance instead (ADR-0020); this stays for tools
+// and tests.
 func (s *Store) StartEvent(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time) (int64, error) {
 	var version int64
 	err := s.write(ctx, func(tx *sql.Tx) error {
@@ -225,20 +227,27 @@ func (s *Store) StartEvent(ctx context.Context, eventID, expectVersion int64, ac
 		if err != nil {
 			return err
 		}
-		if e, err = e.Start(now); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE events SET status = ?, live_started_at = ? WHERE id = ?`,
-			e.Status, toNS(e.LiveStartedAt), eventID); err != nil {
-			return err
-		}
-		if err := logAction(ctx, tx, eventID, actor, "start-event", nil, now); err != nil {
+		if _, err := startEvent(ctx, tx, e, actor, now); err != nil {
 			return err
 		}
 		version, err = bumpVersion(ctx, tx, eventID)
 		return err
 	})
 	return version, err
+}
+
+// startEvent applies domain Event.Start (event day only) and logs it,
+// inside the caller's write transaction.
+func startEvent(ctx context.Context, tx *sql.Tx, e domain.Event, actor Actor, now time.Time) (domain.Event, error) {
+	e, err := e.Start(now)
+	if err != nil {
+		return e, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE events SET status = ?, live_started_at = ? WHERE id = ?`,
+		e.Status, toNS(e.LiveStartedAt), e.ID); err != nil {
+		return e, err
+	}
+	return e, logAction(ctx, tx, e.ID, actor, "start-event", nil, now)
 }
 
 // RescheduleEvent changes a draft event's date with its recovery code,
