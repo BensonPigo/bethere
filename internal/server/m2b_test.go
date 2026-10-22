@@ -726,3 +726,54 @@ func TestM2bCapabilityTableEveryCell(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------- 5.7 conditional requests
+
+func (e *env) getIfNoneMatch(token string, tags ...string) resp {
+	e.t.Helper()
+	r := e.request(http.MethodGet, pathSnapshot, token, "")
+	for _, tag := range tags {
+		r.Header.Add("If-None-Match", tag)
+	}
+	return e.doReq(r)
+}
+
+func TestSnapshotETagAnd304(t *testing.T) {
+	e := newEnv(t)
+	r := e.get(e.stylist)
+	tag := r.Header().Get("ETag")
+	if !strings.HasPrefix(tag, `"`) || len(tag) != 45 || r.Header().Get("X-Server-Time") != r.snapshot(t)["serverTime"] {
+		t.Fatalf("ETag %q, X-Server-Time %q, serverTime %v", tag, r.Header().Get("X-Server-Time"), r.snapshot(t)["serverTime"])
+	}
+	// Time passing alone changes only serverTime: still 304.
+	e.setClock(at(9, 0).Add(1500 * time.Millisecond))
+	nm := e.getIfNoneMatch(e.stylist, tag)
+	if nm.Code != http.StatusNotModified || nm.Body.Len() != 0 || nm.Header().Get("ETag") != tag ||
+		nm.Header().Get("X-Server-Time") != "2027-06-06T01:00:01.500Z" || nm.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("got %d %q, headers %v", nm.Code, nm.Body.String(), nm.Header())
+	}
+	// Anything but one exact strong tag is a full answer.
+	for name, tags := range map[string][]string{
+		"star": {"*"}, "list": {tag + `, "x"`}, "two lines": {tag, tag}, "weak": {"W/" + tag}, "other": {`"x"`},
+	} {
+		if r := e.getIfNoneMatch(e.stylist, tags...); r.Code != http.StatusOK {
+			t.Errorf("%s: %d", name, r.Code)
+		}
+	}
+	// Another role with this tag gets its own snapshot.
+	if r := e.getIfNoneMatch(e.stylistBTok, tag); r.Code != http.StatusOK || r.snapshot(t)["role"].(map[string]any)["name"] != "新秘B" {
+		t.Errorf("新秘B with 新秘's tag: %d", r.Code)
+	}
+	// A change to what the role sees is a new tag.
+	e.checkIn(e.stylist, true).wantResult(t, "ok")
+	if r := e.getIfNoneMatch(e.stylist, tag); r.Code != http.StatusOK || r.Header().Get("ETag") == tag {
+		t.Errorf("after check-in: %d, same tag %v", r.Code, r.Header().Get("ETag") == tag)
+	}
+	tag = e.get(e.stylist).Header().Get("ETag")
+	// Revoked or ended: the result, never 304 (ADR-0023).
+	e.post(pathRevoke, e.master, map[string]any{"roleId": e.stylistRole}).wantResult(t, "ok")
+	e.getIfNoneMatch(e.stylist, tag).wantResult(t, "invalid")
+	btag := e.get(e.stylistBTok).Header().Get("ETag")
+	e.setClock(time.Date(2027, 6, 7, 4, 0, 0, 0, taipei))
+	e.getIfNoneMatch(e.stylistBTok, btag).wantResult(t, "ended")
+}
