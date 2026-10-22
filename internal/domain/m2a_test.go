@@ -43,6 +43,12 @@ func TestUS_H_1_2_DelayIsOffsetPlusOverrun(t *testing.T) {
 	if got := DelayMin(cues, at(10, 39)); got != 10 {
 		t.Errorf("DelayMin before the next cue = %d, want 10", got)
 	}
+	// Shifting from the next cue leaves the cue in progress at offset 0;
+	// the delay still counts the shift (ADR-0026).
+	fromNext := []Cue{cue(1, 10, 0, 30, InProgress), offset(cue(2, 10, 30, 15, Pending), 10)}
+	if got := DelayMin(fromNext, at(10, 45)); got != 15 {
+		t.Errorf("DelayMin after shifting from the next cue = %d, want 15", got)
+	}
 	// Between cues the next pending cue's offset is the one shown.
 	between := []Cue{cue(1, 10, 0, 30, Completed), offset(cue(2, 10, 30, 15, Pending), 5)}
 	if got := DisplayOffsetMin(between); got != 5 {

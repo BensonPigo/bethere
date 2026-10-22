@@ -47,10 +47,16 @@ func DisplayOffsetMin(cues []Cue) int {
 	return 0
 }
 
-// DelayMin is the hosts' "延誤 N 分": the shift already made plus the
-// overrun the Master has not shifted yet (ADR-0022).
+// DelayMin is the hosts' "延誤 N 分": how late the next pending cue is
+// against the rundown, that is its shift plus the overrun the Master has
+// not shifted yet (ADR-0026). It is measured on the next pending cue, the
+// same one as the overrun, because the cue in progress keeps the offset it
+// had when it started. With nothing pending, the shown offset is used.
 func DelayMin(cues []Cue, now time.Time) int {
-	return DisplayOffsetMin(cues) + OverrunMin(cues, now)
+	if c, ok := nextPending(cues); ok {
+		return c.OffsetMin + OverrunMin(cues, now)
+	}
+	return DisplayOffsetMin(cues)
 }
 
 // SuggestedShiftMin rounds an overrun up to the next multiple of 5, the

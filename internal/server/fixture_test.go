@@ -103,13 +103,16 @@ func (f *faultStore) around(ctx context.Context, now time.Time, write func(conte
 	return err
 }
 
-func (f *faultStore) StartEvent(ctx context.Context, eventID, v int64, a store.Actor, now time.Time) (int64, error) {
-	var nv int64
+func (f *faultStore) Advance(ctx context.Context, eventID, v int64, a store.Actor, now time.Time) (int64, domain.Op, error) {
+	var (
+		nv int64
+		op domain.Op
+	)
 	err := f.around(ctx, now, func(ctx context.Context, now time.Time) (err error) {
-		nv, err = f.Store.StartEvent(ctx, eventID, v, a, now)
+		nv, op, err = f.Store.Advance(ctx, eventID, v, a, now)
 		return err
 	})
-	return nv, err
+	return nv, op, err
 }
 
 func (f *faultStore) ApplyCueOp(ctx context.Context, eventID, v int64, a store.Actor, now time.Time,
@@ -451,6 +454,16 @@ func byTitle(t *testing.T, snap map[string]any, title string) map[string]any {
 }
 
 func versionBody(v int64) string { return `{"version":` + jsonInt(v) + `}` }
+
+// shiftBody is a shift request; the version is left out for a preview.
+func shiftBody(v, fromCueID int64, deltaMin int, excluded ...int64) string {
+	b := map[string]any{"fromCueId": fromCueID, "deltaMin": deltaMin, "excluded": append([]int64{}, excluded...)}
+	if v > 0 {
+		b["version"] = v
+	}
+	j, _ := json.Marshal(b)
+	return string(j)
+}
 
 func jsonInt(v int64) string { b, _ := json.Marshal(v); return string(b) }
 

@@ -39,7 +39,8 @@
 | [0019](0019-additive-only-migrations.md) | 資料庫遷移只做向後相容的新增，正式資料前允許一次重建 | 已接受 |
 | [0020](0020-draft-view-and-start-on-first-advance.md) | Draft 階段照常顯示角色的 Cue，第一次推進即開始活動 | 已接受 |
 | [0021](0021-live-cue-insert-and-role-assignment.md) | 活動中可新增 Cue 並指派角色，被指派的角色會收到變更提示 | 已接受 |
-| [0022](0022-overrun-prompt-and-delay-display.md) | 超時提示總召平移，新人儀表板的延誤含超時 | 已接受 |
+| [0022](0022-overrun-prompt-and-delay-display.md) | 超時提示總召平移，新人儀表板的延誤含超時 | 已接受（延誤算法由 0026 修訂） |
 | [0023](0023-snapshot-etag-by-content.md) | 快照條件請求以內容指紋判斷，就位打卡不改版本號 | 已接受 |
 | [0024](0024-external-monitoring-and-alerts.md) | 外部監控伺服器與備份，告警在活動前改送備援操作者 | 已接受 |
 | [0025](0025-screens-by-usage-situation.md) | 畫面依使用情況分類，與角色類型分開 | 已接受 |
+| [0026](0026-delay-measured-on-next-pending-cue.md) | 新人儀表板的延誤以下一個待辦 Cue 為準 | 已接受 |

@@ -18,14 +18,32 @@ import (
 
 const (
 	pathSnapshot = "/api/snapshot"
-	pathStart    = "/api/event/start"
 	pathAdvance  = "/api/cues/advance"
 	pathUndo     = "/api/cues/undo"
+	pathShift    = "/api/cues/shift"
+	pathPreview  = "/api/cues/shift/preview"
 )
 
-// write sends a Master write with the current version.
+// start makes the event live without moving any cue, as M1's separate
+// start did; the API now starts it with the first advance (ADR-0020).
+func (e *env) start() {
+	e.t.Helper()
+	owner, err := e.st.LookupToken(bg, auth.HashToken(e.master), e.clock())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if _, err := e.st.StartEvent(bg, e.eventID, e.version(), owner.Actor, e.clock()); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// write sends a Master write with the current version; a shift moves
+// 迎賓 and what follows by 5 minutes.
 func (e *env) write(path, token string) resp {
 	e.t.Helper()
+	if path == pathShift {
+		return e.do(http.MethodPost, path, token, shiftBody(e.version(), e.cue["迎賓"], 5))
+	}
 	return e.do(http.MethodPost, path, token, versionBody(e.version()))
 }
 
@@ -68,7 +86,7 @@ func TestUS_X_1_1_TheLinkDecidesTheView(t *testing.T) {
 func TestUS_X_1_2_StylistSeesOnlyItsOwnCuesAndNotes(t *testing.T) {
 	e := newEnv(t)
 	e.setClock(at(9, 0))
-	e.mustWrite(pathStart)
+	e.start()
 	e.mustWrite(pathAdvance) // 新娘化妝 in progress (assigned)
 	e.mustWrite(pathAdvance) // 迎賓 in progress (not assigned to 新秘)
 
@@ -113,7 +131,7 @@ func TestUS_X_1_3_UnknownOrRevokedLinkIsInvalid(t *testing.T) {
 	if err := h.RevokeToken(bg, e.stylistRole, owner.Actor, e.clock()); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{pathSnapshot, pathStart, pathAdvance, pathUndo} {
+	for _, p := range []string{pathSnapshot, pathAdvance, pathUndo, pathShift} {
 		method := http.MethodPost
 		if p == pathSnapshot {
 			method = http.MethodGet
@@ -123,7 +141,7 @@ func TestUS_X_1_3_UnknownOrRevokedLinkIsInvalid(t *testing.T) {
 	old := e.master
 	e.replaceMasterLink()
 	e.get(old).wantResult(t, "invalid")
-	e.do(http.MethodPost, pathStart, old, versionBody(e.version())).wantResult(t, "invalid")
+	e.do(http.MethodPost, pathAdvance, old, versionBody(e.version())).wantResult(t, "invalid")
 }
 
 func TestUS_X_1_4_EndedEventAnswersEndedWithNoData(t *testing.T) {
@@ -136,7 +154,7 @@ func TestUS_X_1_4_EndedEventAnswersEndedWithNoData(t *testing.T) {
 		if strings.Contains(r.Body.String(), "婚宴") {
 			t.Errorf("ended response carries event data: %s", r.Body.String())
 		}
-		for _, p := range []string{pathStart, pathAdvance, pathUndo} {
+		for _, p := range []string{pathAdvance, pathUndo, pathShift} {
 			e.do(http.MethodPost, p, tok, versionBody(e.version())).wantResult(t, "ended")
 		}
 	}
@@ -149,7 +167,7 @@ func TestUS_X_1_4_EndedEventAnswersEndedWithNoData(t *testing.T) {
 func TestUS_X_1_5_StylistCannotActAsMasterAndStaysLinked(t *testing.T) {
 	e := newEnv(t)
 	v := e.version()
-	for _, p := range []string{pathStart, pathAdvance, pathUndo} {
+	for _, p := range []string{pathAdvance, pathUndo, pathShift} {
 		e.do(http.MethodPost, p, e.stylist, versionBody(v)).wantError(t, http.StatusForbidden, "forbidden")
 	}
 	if e.version() != v {
@@ -165,13 +183,13 @@ func TestUS_X_1_6_ServerErrorsAreNeverInvalidOrEnded(t *testing.T) {
 	e.get(e.master).wantError(t, http.StatusInternalServerError, "internal")
 	e.fs.snapshotErr = nil
 	e.fs.lookupErr = sql.ErrConnDone
-	e.write(pathStart, e.master).wantError(t, http.StatusInternalServerError, "internal")
+	e.write(pathAdvance, e.master).wantError(t, http.StatusInternalServerError, "internal")
 	e.fs.lookupErr = nil
 
 	// The real store, closed underneath the server.
 	e.st.Close()
 	e.get(e.master).wantError(t, http.StatusInternalServerError, "internal")
-	e.do(http.MethodPost, pathStart, e.master, versionBody(1)).wantError(t, http.StatusInternalServerError, "internal")
+	e.do(http.MethodPost, pathAdvance, e.master, versionBody(1)).wantError(t, http.StatusInternalServerError, "internal")
 }
 
 // ---------------------------------------------------------------- US-M-1
@@ -225,7 +243,7 @@ func TestUS_M_1_2_ActiveCueWithStartAndLength(t *testing.T) {
 	if s := e.snap(e.master); s["activeCueId"] != nil {
 		t.Errorf("activeCueId before start = %v, want null", s["activeCueId"])
 	}
-	e.mustWrite(pathStart)
+	e.start()
 	e.setClock(at(8, 2))
 	s := e.mustWrite(pathAdvance)
 	if s["activeCueId"] != float64(e.cue["新娘化妝"]) {
@@ -240,7 +258,7 @@ func TestUS_M_1_2_ActiveCueWithStartAndLength(t *testing.T) {
 // Another Master device sees the change on its next poll (NFR-2).
 func TestUS_M_1_4_AnotherMasterDeviceSeesTheChange(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	before := e.snap(e.master)["eventVersion"]
 	e.mustWrite(pathAdvance)  // device A
 	after := e.snap(e.master) // device B polls with the same link
@@ -251,26 +269,48 @@ func TestUS_M_1_4_AnotherMasterDeviceSeesTheChange(t *testing.T) {
 
 // ---------------------------------------------------------------- US-M-3
 
-func TestUS_M_3_1_StartOnlyOnTheEventDay(t *testing.T) {
+// ADR-0020: the first advance on the event day starts the event; there is
+// no separate start.
+func TestUS_M_3_6_FirstAdvanceStartsTheEventOnItsDay(t *testing.T) {
 	e := newEnv(t)
 	e.setClock(at(0, 0).Add(-time.Minute))
-	e.write(pathStart, e.master).wantError(t, http.StatusUnprocessableEntity, "not_event_day")
-	e.setClock(at(9, 0))
-	s := e.mustWrite(pathStart)
-	if s["eventStatus"] != "Live" {
-		t.Errorf("eventStatus = %v", s["eventStatus"])
+	e.write(pathAdvance, e.master).wantError(t, http.StatusUnprocessableEntity, "not_event_day") // US-M-3.7
+	if s := e.snap(e.master); s["eventStatus"] != "Draft" {
+		t.Fatalf("refused advance changed the event: %v", s["eventStatus"])
 	}
-	e.write(pathStart, e.master).wantError(t, http.StatusUnprocessableEntity, "not_draft")
-	// The stylist sees the event live.
+	e.setClock(at(8, 1))
+	s := e.mustWrite(pathAdvance)
+	if s["eventStatus"] != "Live" || byTitle(t, s, "新娘化妝")["status"] != "InProgress" {
+		t.Errorf("after first advance: %v, %v", s["eventStatus"], byTitle(t, s, "新娘化妝")["status"])
+	}
 	if st := e.snap(e.stylist)["eventStatus"]; st != "Live" {
 		t.Errorf("stylist eventStatus = %v", st)
+	}
+	// US-M-3.8: undoing it keeps the event live.
+	s = e.mustWrite(pathUndo)
+	if s["eventStatus"] != "Live" || byTitle(t, s, "新娘化妝")["status"] != "Pending" {
+		t.Errorf("after undo: %v, %v", s["eventStatus"], byTitle(t, s, "新娘化妝")["status"])
+	}
+}
+
+// US-M-3.9: the old start endpoint is gone.
+func TestUS_M_3_9_StartEndpointIsGone(t *testing.T) {
+	e := newEnv(t)
+	r := e.do(http.MethodPost, "/api/event/start", e.master, versionBody(e.version()))
+	if r.Code != http.StatusNotFound && r.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST /api/event/start: %d", r.Code)
+	}
+	if e.snap(e.master)["eventStatus"] != "Draft" {
+		t.Error("the old endpoint started the event")
 	}
 }
 
 func TestUS_M_3_2_AdvanceMovesExactlyOneCue(t *testing.T) {
 	e := newEnv(t)
-	e.write(pathAdvance, e.master).wantError(t, http.StatusUnprocessableEntity, "not_live")
-	e.mustWrite(pathStart)
+	e.setClock(at(0, 0).Add(-time.Minute))
+	e.write(pathAdvance, e.master).wantError(t, http.StatusUnprocessableEntity, "not_event_day")
+	e.setClock(at(9, 0))
+	e.start()
 	e.setClock(at(8, 0))
 	e.mustWrite(pathAdvance)
 	e.setClock(at(10, 5))
@@ -302,7 +342,7 @@ func TestUS_M_3_2_AdvanceMovesExactlyOneCue(t *testing.T) {
 
 func TestUS_M_3_4_StaleDeviceIsRefusedWithTheLatestSnapshot(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	seen := e.version()                                                                 // both devices show this version
 	e.do(http.MethodPost, pathAdvance, e.master, versionBody(seen)).wantResult(t, "ok") // device A
 	r := e.do(http.MethodPost, pathAdvance, e.master, versionBody(seen))                // device B, stale
@@ -322,7 +362,7 @@ func TestUS_M_3_4_StaleDeviceIsRefusedWithTheLatestSnapshot(t *testing.T) {
 
 func TestUS_M_3_5_EveryAdvanceIsLogged(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	e.setClock(at(8, 1))
 	e.mustWrite(pathAdvance)
 	e.setClock(at(10, 30))
@@ -362,7 +402,7 @@ func TestUS_M_3_5_EveryAdvanceIsLogged(t *testing.T) {
 
 func TestUS_M_4_1_UndoRestoresStatesAndTimes(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	e.setClock(at(8, 0))
 	e.mustWrite(pathAdvance)
 	e.setClock(at(10, 31))
@@ -382,7 +422,7 @@ func TestUS_M_4_1_UndoRestoresStatesAndTimes(t *testing.T) {
 
 func TestUS_M_4_2_UndoDescribesTheOperation(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	s := e.mustWrite(pathAdvance)
 	u := s["undo"].(map[string]any)
 	wantKeys(t, "undo", u, "available", "description")
@@ -402,7 +442,8 @@ func TestUS_M_4_3_OnlyTheLatestOperationOnce(t *testing.T) {
 		t.Errorf("draft undo = %v", u)
 	}
 	e.write(pathUndo, e.master).wantError(t, http.StatusUnprocessableEntity, "not_live")
-	s = e.mustWrite(pathStart)
+	e.start()
+	s = e.snap(e.master)
 	if s["undo"].(map[string]any)["available"] != false {
 		t.Error("undo offered with nothing to undo")
 	}
@@ -421,7 +462,7 @@ func TestUS_M_4_3_OnlyTheLatestOperationOnce(t *testing.T) {
 
 func TestUS_M_4_4_UndoChecksTheVersionAndIsLogged(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	e.mustWrite(pathAdvance)
 	stale := e.version() - 1
 	r := e.do(http.MethodPost, pathUndo, e.master, versionBody(stale))
@@ -439,7 +480,7 @@ func TestUS_M_4_4_UndoChecksTheVersionAndIsLogged(t *testing.T) {
 
 func TestUS_M_4_5_StylistTargetFollowsUndo(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	e.mustWrite(pathAdvance) // 新娘化妝 in progress
 	e.mustWrite(pathAdvance) // 新娘化妝 done
 	if st := byTitle(t, e.snap(e.stylist), "新娘化妝")["status"]; st != "Completed" {
@@ -472,7 +513,7 @@ func TestUS_ST_1_1_SnapshotCarriesTheCountdownData(t *testing.T) {
 
 func TestUS_ST_1_2_AdvanceMovesTheStylistsTarget(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	firstPending := func() string {
 		for _, c := range cues(t, e.snap(e.stylist)) {
 			if c["status"] == "Pending" {
@@ -492,7 +533,7 @@ func TestUS_ST_1_2_AdvanceMovesTheStylistsTarget(t *testing.T) {
 
 func TestUS_ST_1_4_AssignedCueInProgressIsShown(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	e.mustWrite(pathAdvance)
 	e.mustWrite(pathAdvance)
 	e.mustWrite(pathAdvance) // 一進預備 in progress
@@ -530,7 +571,7 @@ var allRoleTypes = []domain.RoleType{
 // nothing. Each cell runs on its own database.
 func TestCapabilityTableEveryCell(t *testing.T) {
 	for _, typ := range allRoleTypes {
-		for _, ep := range []string{pathSnapshot, pathStart, pathAdvance, pathUndo} {
+		for _, ep := range []string{pathSnapshot, pathAdvance, pathUndo, pathShift} {
 			t.Run(string(typ)+ep, func(t *testing.T) {
 				e := newEnv(t)
 				tok := map[domain.RoleType]string{domain.Master: e.master, domain.Stylist: e.stylist}[typ]
@@ -539,17 +580,20 @@ func TestCapabilityTableEveryCell(t *testing.T) {
 				}
 				// Put the event where the Master's call succeeds.
 				switch ep {
-				case pathAdvance:
-					e.mustWrite(pathStart)
+				case pathAdvance, pathShift:
+					e.start()
 				case pathUndo:
-					e.mustWrite(pathStart)
+					e.start()
 					e.mustWrite(pathAdvance)
 				}
 				v := e.version()
 				var r resp
-				if ep == pathSnapshot {
+				switch ep {
+				case pathSnapshot:
 					r = e.get(tok)
-				} else {
+				case pathShift:
+					r = e.do(http.MethodPost, ep, tok, shiftBody(v, e.cue["迎賓"], 5))
+				default:
 					r = e.do(http.MethodPost, ep, tok, versionBody(v))
 				}
 				switch {
@@ -558,10 +602,10 @@ func TestCapabilityTableEveryCell(t *testing.T) {
 					if _, ok := r.snapshot(t)["roles"]; !ok {
 						t.Error("not a Master snapshot")
 					}
-				case typ == domain.Stylist && ep == pathSnapshot:
+				case (typ == domain.Stylist || typ == domain.Host) && ep == pathSnapshot:
 					r.wantResult(t, "ok")
 					if _, ok := r.snapshot(t)["roles"]; ok {
-						t.Error("Stylist got a Master snapshot")
+						t.Errorf("%s got a Master snapshot", typ)
 					}
 				default:
 					r.wantError(t, http.StatusForbidden, "forbidden")
@@ -582,12 +626,14 @@ func TestCapabilityTableEveryCell(t *testing.T) {
 // The key sets of every snapshot shape are fixed (tech-stack.md 2.2「型別」).
 func TestSnapshotKeySets(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	r := e.write(pathAdvance, e.master)
 	wantKeys(t, "ok response", r.body, "result", "snapshot")
 	m := r.snapshot(t)
-	wantKeys(t, "Master snapshot", m, "eventVersion", "serverTime", "eventStatus", "role", "event", "cues", "activeCueId", "undo", "roles")
-	wantKeys(t, "role", m["role"].(map[string]any), "type", "name")
+	wantKeys(t, "Master snapshot", m, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "event", "cues",
+		"activeCueId", "undo", "roles", "conflicts", "overrunMin")
+	wantKeys(t, "role", m["role"].(map[string]any), "type", "name", "view")
+	wantKeys(t, "eventDay", m["eventDay"].(map[string]any), "date", "timezone")
 	wantKeys(t, "event", m["event"].(map[string]any), "name", "date", "timezone")
 	wantKeys(t, "undo", m["undo"].(map[string]any), "available", "description")
 	for _, c := range cues(t, m) {
@@ -608,8 +654,8 @@ func TestSnapshotKeySets(t *testing.T) {
 	s := e.get(e.stylist)
 	wantKeys(t, "ok response", s.body, "result", "snapshot")
 	ss := s.snapshot(t)
-	wantKeys(t, "Stylist snapshot", ss, "eventVersion", "serverTime", "eventStatus", "role", "cues")
-	wantKeys(t, "role", ss["role"].(map[string]any), "type", "name")
+	wantKeys(t, "Stylist snapshot", ss, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "cues", "notice")
+	wantKeys(t, "role", ss["role"].(map[string]any), "type", "name", "view")
 	for _, c := range cues(t, ss) {
 		wantKeys(t, "Stylist cue", c, "id", "seq", "title", "effectiveStart", "durationMin", "isFixed", "offsetMin",
 			"status", "notePublic", "roleNote")
@@ -657,7 +703,7 @@ func TestErrorTableEveryRow(t *testing.T) {
 	}
 	e := newEnv(t)
 	for _, row := range rows {
-		for _, ep := range []string{pathStart, pathAdvance, pathUndo} {
+		for _, ep := range []string{pathAdvance, pathUndo, pathShift} {
 			e.fs.writeErr = row.err
 			r := e.write(ep, e.master)
 			if row.result != "" {
@@ -682,7 +728,7 @@ func TestErrorTableEveryRow(t *testing.T) {
 		{store.ErrNotFound, 500, ""},
 	} {
 		e.fs.lookupErr, e.fs.snapshotErr = row.err, row.err
-		for _, ep := range []string{pathSnapshot, pathStart, pathAdvance, pathUndo} {
+		for _, ep := range []string{pathSnapshot, pathAdvance, pathUndo, pathShift} {
 			var r resp
 			if ep == pathSnapshot {
 				r = e.get(e.master)
@@ -702,7 +748,7 @@ func TestErrorTableEveryRow(t *testing.T) {
 func TestErrorTableThroughTheStore(t *testing.T) {
 	e := newEnv(t)
 	// undo_stale: a cue changed outside the logged operation.
-	e.mustWrite(pathStart)
+	e.start()
 	e.mustWrite(pathAdvance)
 	e.exec(`UPDATE cues SET actual_start = actual_start + 1 WHERE id = ?`, e.cue["新娘化妝"])
 	e.write(pathUndo, e.master).wantError(t, http.StatusUnprocessableEntity, "undo_stale")
@@ -713,7 +759,7 @@ func TestErrorTableThroughTheStore(t *testing.T) {
 	// The token revoked between lookup and write: the write re-checks it.
 	e2 := newEnv(t)
 	e2.fs.beforeWrite = func() { e2.replaceMasterLink() }
-	e2.write(pathStart, e2.master).wantResult(t, "invalid")
+	e2.write(pathAdvance, e2.master).wantResult(t, "invalid")
 	if e2.snap(e2.replaceMasterLink())["eventStatus"] != "Draft" {
 		t.Error("write of a revoked link was applied")
 	}
@@ -722,7 +768,7 @@ func TestErrorTableThroughTheStore(t *testing.T) {
 	e3 := newEnv(t)
 	ev, _, _ := e3.st.Event(bg, e3.eventID)
 	e3.fs.writeNow = func(time.Time) time.Time { return ev.EndsAt() }
-	e3.write(pathStart, e3.master).wantResult(t, "ended")
+	e3.write(pathAdvance, e3.master).wantResult(t, "ended")
 	e3.fs.writeNow = nil
 	if e3.snap(e3.master)["eventStatus"] != "Draft" {
 		t.Error("write after the end was applied")
@@ -737,17 +783,17 @@ func TestErrorTableThroughTheStore(t *testing.T) {
 func TestRereadAfterWrite(t *testing.T) {
 	e := newEnv(t)
 	e.fs.afterWrite = func() { e.replaceMasterLink() }
-	e.write(pathStart, e.master).wantResult(t, "invalid")
+	e.write(pathAdvance, e.master).wantResult(t, "invalid")
 
 	e2 := newEnv(t)
 	ev, _, _ := e2.st.Event(bg, e2.eventID)
 	e2.fs.afterWrite = func() { e2.setClock(ev.EndsAt()) }
-	e2.write(pathStart, e2.master).wantResult(t, "ended")
+	e2.write(pathAdvance, e2.master).wantResult(t, "ended")
 
 	e3 := newEnv(t)
 	v := e3.version()
 	e3.fs.afterWrite = func() { e3.fs.snapshotErr = errors.New("disk I/O error") }
-	e3.write(pathStart, e3.master).wantError(t, http.StatusInternalServerError, "internal")
+	e3.write(pathAdvance, e3.master).wantError(t, http.StatusInternalServerError, "internal")
 	if e3.version() != v+1 {
 		t.Error("the write did not take effect")
 	}
@@ -758,13 +804,13 @@ func TestRereadAfterConflict(t *testing.T) {
 	stale := e.version() - 1
 	e.fs.beforeWrite = func() { e.replaceMasterLink() }
 	e.fs.writeErr = store.ErrVersionConflict
-	e.do(http.MethodPost, pathStart, e.master, versionBody(stale)).wantResult(t, "invalid")
+	e.do(http.MethodPost, pathAdvance, e.master, versionBody(stale)).wantResult(t, "invalid")
 
 	e2 := newEnv(t)
 	e2.fs.snapshotErr = nil
 	e2.fs.writeErr = store.ErrVersionConflict
 	e2.fs.beforeWrite = func() { e2.fs.snapshotErr = errors.New("disk I/O error") }
-	e2.write(pathStart, e2.master).wantError(t, http.StatusInternalServerError, "internal")
+	e2.write(pathAdvance, e2.master).wantError(t, http.StatusInternalServerError, "internal")
 }
 
 // Order: header (400) → token (invalid) → capability (403) → body (400)
@@ -778,7 +824,8 @@ func TestProcessingOrder(t *testing.T) {
 	e.do(http.MethodPost, pathAdvance, e.stylist, strings.Repeat("x", api.MaxBodyBytes+1)).wantError(t, http.StatusForbidden, "forbidden")
 	e.do(http.MethodPost, pathAdvance, e.master, bad).wantError(t, http.StatusBadRequest, "bad_request")
 	e.do(http.MethodPost, pathAdvance, e.master, versionBody(e.version()+5)).wantError(t, http.StatusConflict, "version_conflict")
-	e.write(pathAdvance, e.master).wantError(t, http.StatusUnprocessableEntity, "not_live")
+	e.setClock(at(0, 0).Add(-time.Minute))
+	e.write(pathAdvance, e.master).wantError(t, http.StatusUnprocessableEntity, "not_event_day")
 }
 
 // Context errors on lookups and writes are 500, never "invalid" (tech-stack.md 2.1「逾時與錯誤」).
@@ -800,7 +847,7 @@ func TestUS_X_1_6_ContextErrorsAreNeverInvalid(t *testing.T) {
 		}
 		// Valid lookup, then the write's context ends.
 		e.fs.writeCtx = func(context.Context) context.Context { c, _ := mk(); return c }
-		e.write(pathStart, e.master).wantError(t, http.StatusInternalServerError, "internal")
+		e.write(pathAdvance, e.master).wantError(t, http.StatusInternalServerError, "internal")
 		e.fs.writeCtx = nil
 	}
 	if e.snap(e.master)["eventStatus"] != "Draft" {
@@ -812,7 +859,7 @@ func TestUS_X_1_6_ContextErrorsAreNeverInvalid(t *testing.T) {
 func TestReadsHaveThreeSecondTimeout(t *testing.T) {
 	e := newEnv(t)
 	e.get(e.master)
-	e.write(pathStart, e.master)
+	e.write(pathAdvance, e.master)
 	if len(e.fs.deadlines) != 3 {
 		t.Fatalf("%d reads recorded, want 3 (snapshot; lookup and re-read)", len(e.fs.deadlines))
 	}
@@ -848,9 +895,9 @@ func TestAuthorizationHeaderIsStrict(t *testing.T) {
 			r.AddCookie(&http.Cookie{Name: "t", Value: tok})
 		},
 	} {
-		for _, p := range []string{pathSnapshot, pathStart} {
+		for _, p := range []string{pathSnapshot, pathAdvance} {
 			method := http.MethodGet
-			if p == pathStart {
+			if p == pathAdvance {
 				method = http.MethodPost
 			}
 			r := e.request(method, p, "", versionBody(e.version()))
@@ -881,7 +928,7 @@ func TestWriteBodyIsStrict(t *testing.T) {
 		`{"version":` + v + `,"eventId":1}`, `{"version":` + v + `,"roleId":1}`,
 		`{"version":` + v + `,"pad":"` + strings.Repeat("x", api.MaxBodyBytes) + `"}`,
 	} {
-		r := e.do(http.MethodPost, pathStart, e.master, body)
+		r := e.do(http.MethodPost, pathAdvance, e.master, body)
 		if r.Code != http.StatusBadRequest || r.body["error"] != "bad_request" {
 			short := body
 			if len(short) > 60 {
@@ -894,7 +941,7 @@ func TestWriteBodyIsStrict(t *testing.T) {
 		t.Fatal("a refused body changed the event")
 	}
 	// White space around a valid object is fine.
-	e.do(http.MethodPost, pathStart, e.master, " \n{ \"version\" : "+v+" }\n ").wantResult(t, "ok")
+	e.do(http.MethodPost, pathAdvance, e.master, " \n{ \"version\" : "+v+" }\n ").wantResult(t, "ok")
 }
 
 // ------------------------------------- no-store; /api/report is gone
@@ -910,11 +957,11 @@ func TestEveryAPIFailureIsNoStoreWithoutResult(t *testing.T) {
 		{http.MethodGet, "/api/snapshot/extra", e.master, "", 404},
 		{http.MethodPost, pathSnapshot, e.master, "", 405},
 		{http.MethodGet, pathAdvance, e.master, "", 404}, // GET / catches every GET path
-		{http.MethodDelete, pathStart, e.master, "", 405},
-		{http.MethodPost, pathStart, e.master, strings.Repeat(" ", api.MaxBodyBytes+1) + versionBody(1), 400},
+		{http.MethodDelete, pathAdvance, e.master, "", 405},
+		{http.MethodPost, pathAdvance, e.master, strings.Repeat(" ", api.MaxBodyBytes+1) + versionBody(1), 400},
 		{http.MethodGet, pathSnapshot, "", "", 400},
-		{http.MethodPost, pathStart, e.stylist, versionBody(1), 403},
-		{http.MethodPost, pathStart, e.master, versionBody(99), 409},
+		{http.MethodPost, pathAdvance, e.stylist, versionBody(1), 403},
+		{http.MethodPost, pathAdvance, e.master, versionBody(99), 409},
 	} {
 		if r := e.do(c.method, c.path, c.token, c.body); r.Code != c.status {
 			t.Errorf("%s %s: %d, want %d", c.method, c.path, r.Code, c.status)
@@ -947,7 +994,7 @@ func TestReportEndpointIsGone(t *testing.T) {
 func TestLogsCarryNoCredentials(t *testing.T) {
 	e := newEnv(t)
 	e.get(e.master)
-	e.write(pathStart, e.master)
+	e.write(pathAdvance, e.master)
 	e.do(http.MethodPost, pathAdvance, e.master, `{"version":"secret-body"}`)
 	e.fs.snapshotErr = errors.New("disk I/O error")
 	e.get(e.master)
@@ -972,7 +1019,7 @@ func TestLogsCarryNoCredentials(t *testing.T) {
 // Unexpected state is an error, not a guess (section 2.2).
 func TestTwoCuesInProgressIs500(t *testing.T) {
 	e := newEnv(t)
-	e.mustWrite(pathStart)
+	e.start()
 	e.mustWrite(pathAdvance)
 	// The schema forbids two cues in progress; drop the index to fake a
 	// corrupted database.
