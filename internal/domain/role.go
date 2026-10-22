@@ -24,3 +24,10 @@ func (t RoleType) Valid() bool {
 	}
 	return false
 }
+
+// HasOwnCues reports whether a role of type t reads the cues assigned to
+// it, checks in by itself and can be assigned cues: the types opened in P0
+// besides Master and Host (access-control.md section 4).
+func (t RoleType) HasOwnCues() bool {
+	return t == Stylist || t == Media || t == StageAV
+}

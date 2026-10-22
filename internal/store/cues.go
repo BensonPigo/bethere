@@ -120,20 +120,38 @@ func loadCues(ctx context.Context, q querier, eventID int64) ([]domain.Cue, erro
 // changes nothing is not written.
 func (s *Store) ApplyCueOp(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time,
 	build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error) {
-	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, false, build)
+	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, opLiveOnly, build)
 }
+
+// Skip skips a pending cue (US-M-6). Unlike the other cue operations it
+// is allowed in draft too: on the event day the event stays a draft until
+// the first advance, and a cue cancelled that morning must leave everyone's
+// countdown at once (US-M-6.3).
+func (s *Store) Skip(ctx context.Context, eventID, expectVersion, cueID int64, actor Actor, now time.Time) (int64, domain.Op, error) {
+	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, opDraftToo,
+		func(cues []domain.Cue) (domain.Op, error) { return domain.Skip(cues, cueID) })
+}
+
+// opPhase is when a cue operation may run.
+type opPhase int
+
+const (
+	opLiveOnly   opPhase = iota // shift
+	opStartsLive                // advance: starts a draft on its day (ADR-0020)
+	opDraftToo                  // skip
+)
 
 // Advance is the Master's advance. On the event day a draft event is
 // started by it in the same transaction, so there is no separate step to
 // forget (ADR-0020); undoing this advance reverts the cues only and the
 // event stays live.
 func (s *Store) Advance(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time) (int64, domain.Op, error) {
-	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, true,
+	return s.applyCueOp(ctx, eventID, expectVersion, actor, now, opStartsLive,
 		func(cues []domain.Cue) (domain.Op, error) { return domain.Advance(cues, now) })
 }
 
 func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time,
-	startDraft bool, build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error) {
+	phase opPhase, build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error) {
 	version := expectVersion
 	var op domain.Op
 	err := s.write(ctx, func(tx *sql.Tx) error {
@@ -142,14 +160,16 @@ func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 			return err
 		}
 		started := false
-		if startDraft && e.Status == domain.Draft {
+		if phase == opStartsLive && e.Status == domain.Draft {
 			if e, err = startEvent(ctx, tx, e, actor, now); err != nil {
 				return err
 			}
 			started = true
 		}
-		if err := e.RequireLive(now); err != nil {
-			return err
+		if phase != opDraftToo {
+			if err := e.RequireLive(now); err != nil {
+				return err
+			}
 		}
 		cues, err := loadCues(ctx, tx, eventID)
 		if err != nil {
@@ -179,19 +199,16 @@ func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 }
 
 // UndoLastCueOp reverses the latest cue operation, once (data-model.md
-// data-model.md 4.1). Other actions in between, such as reissuing a link, do not
-// count as steps.
+// 4.1). Other actions in between, such as reissuing a link, do not count
+// as steps. It runs in draft too, where the only cue operation is a skip
+// (US-M-6.4); the guard still refuses an ended event.
 func (s *Store) UndoLastCueOp(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time) (int64, domain.Op, error) {
 	var (
 		version int64
 		undo    domain.Op
 	)
 	err := s.write(ctx, func(tx *sql.Tx) error {
-		e, err := guardVersion(ctx, tx, eventID, expectVersion, actor, now)
-		if err != nil {
-			return err
-		}
-		if err := e.RequireLive(now); err != nil {
+		if _, err := guardVersion(ctx, tx, eventID, expectVersion, actor, now); err != nil {
 			return err
 		}
 		var (
@@ -200,7 +217,7 @@ func (s *Store) UndoLastCueOp(ctx context.Context, eventID, expectVersion int64,
 			payload string
 			undone  sql.NullInt64
 		)
-		err = tx.QueryRowContext(ctx, `SELECT id, type, payload, undone_at FROM action_logs
+		err := tx.QueryRowContext(ctx, `SELECT id, type, payload, undone_at FROM action_logs
 			WHERE event_id = ? AND type LIKE 'cue.%' ORDER BY id DESC LIMIT 1`, eventID).
 			Scan(&logID, &typ, &payload, &undone)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && undone.Valid) {

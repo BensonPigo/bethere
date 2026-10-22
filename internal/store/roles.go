@@ -138,6 +138,7 @@ func (s *Store) RevokeToken(ctx context.Context, roleID int64, actor Actor, now 
 // TokenOwner is the role an active token belongs to, and the Actor that
 // role writes as.
 type TokenOwner struct {
+	TokenID  int64 // access_tokens.id, the key of lastSeenAt (api.md section 7 item 5); never the hash
 	RoleID   int64
 	EventID  int64
 	RoleType domain.RoleType
@@ -171,10 +172,10 @@ func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Ti
 		o    TokenOwner
 		view sql.NullString
 	)
-	err := tx.QueryRowContext(ctx, `SELECT r.id, r.event_id, r.type, r.name, r.view
+	err := tx.QueryRowContext(ctx, `SELECT t.id, r.id, r.event_id, r.type, r.name, r.view
 		FROM access_tokens t JOIN roles r ON r.id = t.role_id
 		WHERE t.token_hash = ? AND t.revoked_at IS NULL`, tokenHash).
-		Scan(&o.RoleID, &o.EventID, &o.RoleType, &o.RoleName, &view)
+		Scan(&o.TokenID, &o.RoleID, &o.EventID, &o.RoleType, &o.RoleName, &view)
 	if errors.Is(err, sql.ErrNoRows) {
 		// database/sql reports a context cancelled before the row was read
 		// as the context's error, not ErrNoRows; checking ctx as well keeps
@@ -195,7 +196,7 @@ func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Ti
 	if e.Ended(now) {
 		return TokenOwner{}, domain.Event{}, 0, ErrEventEnded
 	}
-	o.Actor = Actor{kind: actorRole, roleID: o.RoleID, eventID: o.EventID, cred: credential(tokenHash)}
+	o.Actor = Actor{kind: actorRole, roleID: o.RoleID, tokenID: o.TokenID, eventID: o.EventID, cred: credential(tokenHash)}
 	return o, e, v, nil
 }
 
@@ -236,4 +237,53 @@ func resolveView(t domain.RoleType, stored sql.NullString) domain.View {
 		return v
 	}
 	return t.DefaultView()
+}
+
+// ReissueLink gives a non-Master role of eventID a new link, revoking its
+// current one if any, for the Master in the console (US-M-7.1). Unlike
+// IssueToken it takes the caller's event and checks that the role is in
+// it before anything about the role (api.md section 3, ownership first),
+// and it leaves the event version alone: a link is not a cue (ADR-0023).
+// The role's own link being revoked already is not an error: it describes
+// the target, never the caller.
+func (s *Store) ReissueLink(ctx context.Context, eventID, roleID int64, tokenHash []byte, actor Actor, now time.Time) error {
+	return s.changeLink(ctx, eventID, roleID, actor, now, "token.reissue", func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
+			roleID, tokenHash, toNS(now))
+		return err
+	})
+}
+
+// RevokeLink revokes a non-Master role's link (US-M-7.2). A role without
+// an active link is revoked already, so it succeeds (api.md section 3).
+func (s *Store) RevokeLink(ctx context.Context, eventID, roleID int64, actor Actor, now time.Time) error {
+	return s.changeLink(ctx, eventID, roleID, actor, now, "token.revoke", func(*sql.Tx) error { return nil })
+}
+
+// changeLink revokes the role's active link and then runs then. The log
+// records which link of the Master acted (byTokenId, never a hash), so
+// after the Master's link is replaced with the recovery code the changes
+// made with a leaked old link can be told apart (access-control.md 3.4).
+func (s *Store) changeLink(ctx context.Context, eventID, roleID int64, actor Actor, now time.Time, logType string,
+	then func(*sql.Tx) error) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
+		if _, _, err := guard(ctx, tx, eventID, actor, now); err != nil {
+			return err
+		}
+		typ, err := roleIn(ctx, tx, eventID, roleID)
+		if err != nil {
+			return err
+		}
+		if typ == domain.Master {
+			return ErrMasterRole
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
+			toNS(now), roleID); err != nil {
+			return err
+		}
+		if err := then(tx); err != nil {
+			return err
+		}
+		return logAction(ctx, tx, eventID, actor, logType, map[string]any{"roleId": roleID, "byTokenId": actor.tokenID}, now)
+	})
 }

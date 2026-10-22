@@ -32,6 +32,13 @@ type Store interface {
 	ApplyCueOp(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time,
 		build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error)
 	UndoLastCueOp(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time) (int64, domain.Op, error)
+	SetCheckIn(ctx context.Context, eventID, roleID int64, checkedIn bool, actor store.Actor, now time.Time) error
+	Skip(ctx context.Context, eventID, expectVersion, cueID int64, actor store.Actor, now time.Time) (int64, domain.Op, error)
+	InsertCue(ctx context.Context, eventID, expectVersion int64, nc store.NewCue, actor store.Actor, now time.Time) (int64, error)
+	SetCueRoles(ctx context.Context, eventID, expectVersion, cueID int64, roles []store.Assignment, actor store.Actor, now time.Time) error
+	EditCue(ctx context.Context, eventID, expectVersion, cueID int64, title string, notePublic *string, actor store.Actor, now time.Time) error
+	ReissueLink(ctx context.Context, eventID, roleID int64, tokenHash []byte, actor store.Actor, now time.Time) error
+	RevokeLink(ctx context.Context, eventID, roleID int64, actor store.Actor, now time.Time) error
 }
 
 const (
@@ -56,15 +63,18 @@ type API struct {
 	now    func() time.Time
 	logger *slog.Logger
 
-	mu       sync.Mutex
-	lastSeen map[string]time.Time // key: token hash as a string; never logged or exposed in M1
+	mu sync.Mutex
+	// lastSeen is keyed by access_tokens.id, never the hash: the Master's
+	// snapshot asks only for each role's active link, so a revoked link's
+	// last use never shows as its replacement's (api.md section 7 item 5).
+	lastSeen map[int64]time.Time
 }
 
 func New(cfg Config) *API {
 	if cfg.Store == nil || cfg.Now == nil || cfg.Logger == nil {
 		panic("api: Store, Now and Logger are required")
 	}
-	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, lastSeen: map[string]time.Time{}}
+	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, lastSeen: map[int64]time.Time{}}
 }
 
 // Register adds the endpoints to mux (api.md section 3).
@@ -74,22 +84,30 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/cues/undo", a.write(capUndo, versionOnly, a.undo))
 	mux.HandleFunc("POST /api/cues/shift", a.write(capShift, shiftFields(true), a.shift))
 	mux.HandleFunc("POST /api/cues/shift/preview", a.previewShift)
+	mux.HandleFunc("POST /api/checkin", a.write(capCheckIn, ownCheckInFields, a.checkIn))
+	mux.HandleFunc("POST /api/roles/checkin", a.write(capProxyCheckIn, proxyCheckInFields, a.proxyCheckIn))
+	mux.HandleFunc("POST /api/cues/skip", a.write(capEditRundown, skipFields, a.skip))
+	mux.HandleFunc("POST /api/cues/insert", a.write(capEditRundown, insertFields, a.insert))
+	mux.HandleFunc("POST /api/cues/roles", a.write(capEditRundown, assignFields, a.assign))
+	mux.HandleFunc("POST /api/cues/edit", a.write(capEditRundown, editFields, a.edit))
+	mux.HandleFunc("POST /api/roles/reissue", a.write(capLinks, linkFields, a.reissue))
+	mux.HandleFunc("POST /api/roles/revoke", a.write(capLinks, linkFields, a.revoke))
 }
 
-// LastSeen returns when a token hash last passed authentication, for the role and link screen
-// in M2; it is not part of any M1 response.
-func (a *API) LastSeen(tokenHash []byte) (time.Time, bool) {
+// LastSeen returns when the link with this access_tokens.id last passed
+// authentication; 0 (no link) is never seen.
+func (a *API) LastSeen(tokenID int64) (time.Time, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	t, ok := a.lastSeen[string(tokenHash)]
-	return t, ok
+	t, ok := a.lastSeen[tokenID]
+	return t, ok && tokenID != 0
 }
 
 // seen records a successful authentication (tech-stack.md 2.1「lastSeenAt」): called only after the
 // store confirmed the token and its event.
-func (a *API) seen(tokenHash []byte, at time.Time) {
+func (a *API) seen(o store.TokenOwner, at time.Time) {
 	a.mu.Lock()
-	a.lastSeen[string(tokenHash)] = at
+	a.lastSeen[o.TokenID] = at
 	a.mu.Unlock()
 }
 
@@ -101,16 +119,22 @@ const (
 	capAdvance
 	capUndo
 	capShift // the shift and its preview
+	capCheckIn
+	capProxyCheckIn
+	capEditRundown // skip, insert, assign, edit
+	capLinks       // reissue, revoke
 )
 
 // allowed is the table of api.md section 4. It lists what is allowed;
-// every other combination, including any role type not opened yet
-// (Media and StageAV until M2b, P1 types, anything unknown), is denied.
+// every other combination, including any role type not opened yet (P1
+// types, anything unknown), is denied.
 func allowed(c capability, t domain.RoleType) bool {
 	switch c {
 	case capReadSnapshot:
-		return t == domain.Master || t == domain.Stylist || t == domain.Host
-	case capAdvance, capUndo, capShift:
+		return t == domain.Master || t.HasOwnCues() || t == domain.Host
+	case capCheckIn:
+		return t.HasOwnCues()
+	case capAdvance, capUndo, capShift, capProxyCheckIn, capEditRundown, capLinks:
 		return t == domain.Master
 	}
 	return false
@@ -133,12 +157,12 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 		a.lookupFailed(w, r, err)
 		return
 	}
-	a.seen(hash, now)
+	a.seen(d.Owner, now)
 	if !allowed(capReadSnapshot, d.Owner.RoleType) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	snap, err := buildSnapshot(d, now)
+	snap, err := a.buildSnapshot(d, now)
 	if err != nil {
 		a.internal(w, r, err)
 		return
@@ -147,7 +171,9 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeFn performs one write as owner with the client's version and body.
-type writeFn func(ctx context.Context, owner store.TokenOwner, b body, now time.Time) error
+// A reissue returns the new link's token, sent once with the snapshot;
+// every other write returns "".
+type writeFn func(ctx context.Context, owner store.TokenOwner, b body, now time.Time) (token string, err error)
 
 func (a *API) write(c capability, fields fieldSet, fn writeFn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +190,7 @@ func (a *API) write(c capability, fields fieldSet, fn writeFn) http.HandlerFunc 
 			a.lookupFailed(w, r, err)
 			return
 		}
-		a.seen(hash, now)
+		a.seen(owner, now)
 		if !allowed(c, owner.RoleType) {
 			writeError(w, http.StatusForbidden, "forbidden")
 			return
@@ -174,26 +200,76 @@ func (a *API) write(c capability, fields fieldSet, fn writeFn) http.HandlerFunc 
 			writeError(w, http.StatusBadRequest, "bad_request")
 			return
 		}
-		err = fn(r.Context(), owner, b, a.now())
+		token, err := fn(r.Context(), owner, b, a.now())
 		switch {
 		case err == nil:
-			a.respondSnapshot(w, r, hash, http.StatusOK, "")
+			a.respondSnapshot(w, r, hash, http.StatusOK, "", token)
 		case errors.Is(err, store.ErrVersionConflict):
-			a.respondSnapshot(w, r, hash, http.StatusConflict, "version_conflict")
+			a.respondSnapshot(w, r, hash, http.StatusConflict, "version_conflict", "")
 		default:
 			a.writeFailed(w, r, err)
 		}
 	}
 }
 
-func (a *API) advance(ctx context.Context, o store.TokenOwner, b body, now time.Time) error {
+func (a *API) advance(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
 	_, _, err := a.store.Advance(ctx, o.EventID, b.version, o.Actor, now)
-	return err
+	return "", err
 }
 
-func (a *API) undo(ctx context.Context, o store.TokenOwner, b body, now time.Time) error {
+func (a *API) undo(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
 	_, _, err := a.store.UndoLastCueOp(ctx, o.EventID, b.version, o.Actor, now)
-	return err
+	return "", err
+}
+
+// checkIn is a role's own check-in: the role comes from the token alone
+// (access-control.md section 5, rule 3).
+func (a *API) checkIn(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	return "", a.store.SetCheckIn(ctx, o.EventID, o.RoleID, b.checkedIn, o.Actor, now)
+}
+
+// proxyCheckIn is the Master checking a role in or out (US-M-1.8).
+func (a *API) proxyCheckIn(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	return "", a.store.SetCheckIn(ctx, o.EventID, b.roleID, b.checkedIn, o.Actor, now)
+}
+
+func (a *API) skip(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	_, _, err := a.store.Skip(ctx, o.EventID, b.version, b.cueID, o.Actor, now)
+	return "", err
+}
+
+func (a *API) insert(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	_, err := a.store.InsertCue(ctx, o.EventID, b.version, store.NewCue{
+		AfterCueID: b.afterCueID, Start: b.start, DurationMin: b.durationMin,
+		Title: b.title, NotePublic: b.notePublic, Roles: b.roles,
+	}, o.Actor, now)
+	return "", err
+}
+
+func (a *API) assign(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	return "", a.store.SetCueRoles(ctx, o.EventID, b.version, b.cueID, b.roles, o.Actor, now)
+}
+
+func (a *API) edit(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	return "", a.store.EditCue(ctx, o.EventID, b.version, b.cueID, b.title, b.notePublic, o.Actor, now)
+}
+
+// reissue gives a role a new link; its token is in this response only
+// (US-M-7.1). If reading the snapshot afterwards fails, the token is lost
+// and the Master reissues again; the old link is gone either way.
+func (a *API) reissue(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	token, err := auth.NewToken()
+	if err != nil {
+		return "", err
+	}
+	if err := a.store.ReissueLink(ctx, o.EventID, b.roleID, auth.HashToken(token), o.Actor, now); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func (a *API) revoke(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+	return "", a.store.RevokeLink(ctx, o.EventID, b.roleID, o.Actor, now)
 }
 
 // respondSnapshot reads the caller's snapshot again after a write or a
@@ -201,7 +277,7 @@ func (a *API) undo(ctx context.Context, o store.TokenOwner, b body, now time.Tim
 // GET. Only an "ok" read is sent with the write's status; "invalid" or
 // "ended" is sent as that result instead, and a failed read as 500, so a
 // response never carries both an error and a result.
-func (a *API) respondSnapshot(w http.ResponseWriter, r *http.Request, hash []byte, status int, code string) {
+func (a *API) respondSnapshot(w http.ResponseWriter, r *http.Request, hash []byte, status int, code, token string) {
 	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
 	defer cancel()
 	now := a.now()
@@ -216,9 +292,13 @@ func (a *API) respondSnapshot(w http.ResponseWriter, r *http.Request, hash []byt
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
-	snap, err := buildSnapshot(d, now)
+	snap, err := a.buildSnapshot(d, now)
 	if err != nil {
 		a.internal(w, r, err)
+		return
+	}
+	if code == "" && token != "" {
+		writeJSON(w, status, reissueResponse{Result: "ok", Snapshot: snap, Token: token})
 		return
 	}
 	if code == "" {
@@ -254,6 +334,12 @@ var domainErrors = []struct {
 	{domain.ErrUndoStale, "undo_stale"},
 	{domain.ErrShiftTooEarly, "shift_too_early"},
 	{domain.ErrInvalidDelta, "invalid_delta"},
+	{store.ErrNotCheckInRole, "not_checkin_role"},
+	{domain.ErrNotPending, "not_pending"},
+	{store.ErrInvalidPosition, "invalid_position"},
+	{store.ErrInvalidCue, "invalid_cue"},
+	{store.ErrInvalidAssignment, "invalid_assignment"},
+	{store.ErrMasterRole, "master_role"},
 }
 
 // writeFailed maps a failed write (api.md section 6). The writes of M1
@@ -278,7 +364,7 @@ func (a *API) writeFailed(w http.ResponseWriter, r *http.Request, err error) {
 	// A cue id from the request that is not in the caller's event, another
 	// event's included: the same 404 as one that does not exist, without a
 	// result (api.md section 6). store.ErrNotFound stays a 500.
-	if errors.Is(err, domain.ErrCueNotFound) {
+	if errors.Is(err, domain.ErrCueNotFound) || errors.Is(err, store.ErrRoleNotFound) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}

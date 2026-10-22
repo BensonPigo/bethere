@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/BensonPigo/bethere/internal/domain"
@@ -54,6 +55,12 @@ type masterSnapshot struct {
 	Roles        []roleListItem     `json:"roles"`
 	Conflicts    []conflictView     `json:"conflicts"`
 	OverrunMin   int                `json:"overrunMin"` // data-model.md 4.3
+	OutOfOrder   []orderView        `json:"outOfOrder"` // US-M-8.6
+}
+
+type orderView struct {
+	CueID     int64 `json:"cueId"`
+	PrevCueID int64 `json:"prevCueId"`
 }
 
 type eventView struct {
@@ -89,15 +96,18 @@ type undoView struct {
 	Description *string `json:"description"`
 }
 
-// roleListItem never carries a token, its hash or usage (5.2, 5.5).
+// roleListItem never carries a token or its hash (5.2, 5.5).
 type roleListItem struct {
-	ID   int64           `json:"id"`
-	Name string          `json:"name"`
-	Type domain.RoleType `json:"type"`
+	ID         int64           `json:"id"`
+	Name       string          `json:"name"`
+	Type       domain.RoleType `json:"type"`
+	CheckedIn  bool            `json:"checkedIn"`
+	LastSeenAt *string         `json:"lastSeenAt"` // to the minute, so it changes the ETag at most once a minute
+	HasLink    bool            `json:"hasLink"`
 }
 
-// roleSnapshot is api.md 5.1 + 5.3: only the caller's own cues, and no
-// "current" field (api.md 5.3).
+// roleSnapshot is api.md 5.1 + 5.3: only the caller's own cues, and of
+// the cue in progress only its title (US-X-6.4).
 type roleSnapshot struct {
 	EventVersion int64              `json:"eventVersion"`
 	ServerTime   string             `json:"serverTime"`
@@ -106,16 +116,25 @@ type roleSnapshot struct {
 	EventDay     eventDayView       `json:"eventDay"`
 	Cues         []roleCue          `json:"cues"`
 	Notice       *noticeView        `json:"notice"`
+	MyCheckIn    bool               `json:"myCheckIn"`
+	CurrentTitle *string            `json:"currentTitle"`
 }
 
-// noticeView is the latest shift, or undo of one, that moved at least one
-// of the caller's own cues; it lists only those cues (screen-design.md
-// 4.4). The client shows it once, telling notices apart by At.
+// noticeView is the newer of two notices (api.md 5.3, US-X-7.4), about
+// cues still assigned to the caller only: the latest shift, or undo of
+// one, that moved its cues, listing only those ("shift"); or the latest
+// time one of its cues was newly assigned to it ("assign", ADR-0021). The
+// client shows it once, telling notices apart by At.
 type noticeView struct {
-	Kind     string    `json:"kind"` // "shift"
-	At       string    `json:"at"`
-	DeltaMin int       `json:"deltaMin"`
-	Changes  []cueMove `json:"changes"`
+	Kind string `json:"kind"` // "shift" or "assign"
+	At   string `json:"at"`
+	// shift
+	DeltaMin int       `json:"deltaMin,omitempty"`
+	Changes  []cueMove `json:"changes,omitempty"`
+	// assign
+	CueID          int64  `json:"cueId,omitempty"`
+	Title          string `json:"title,omitempty"`
+	EffectiveStart string `json:"effectiveStart,omitempty"`
 }
 
 // hostSnapshot is api.md 5.1 + 5.4: the hosts' dashboard holds no cue
@@ -166,16 +185,28 @@ func optTime(t time.Time) *string {
 // decided by the caller's own role type alone (api.md section 7). Callers have already
 // passed the capability check; a type without a snapshot is refused here
 // again rather than falling into any default.
-func buildSnapshot(d store.SnapshotData, now time.Time) (any, error) {
-	switch d.Owner.RoleType {
-	case domain.Master:
-		return buildMaster(d, now)
-	case domain.Stylist:
+func (a *API) buildSnapshot(d store.SnapshotData, now time.Time) (any, error) {
+	switch {
+	case d.Owner.RoleType == domain.Master:
+		return buildMaster(d, now, a.LastSeen)
+	case d.Owner.RoleType.HasOwnCues():
 		return buildRole(d, now), nil
-	case domain.Host:
+	case d.Owner.RoleType == domain.Host:
 		return buildHost(d, now), nil
 	}
 	return nil, errNoSnapshot
+}
+
+// currentTitle is the title of the cue in progress, whoever it is
+// assigned to, and nothing else of it (US-H-1.1, US-X-6.4).
+func currentTitle(d store.SnapshotData) *string {
+	for _, c := range d.Cues {
+		if c.Status == domain.InProgress {
+			title := c.Title
+			return &title
+		}
+	}
+	return nil
 }
 
 func ownRole(d store.SnapshotData) roleView {
@@ -208,16 +239,11 @@ func buildHost(d store.SnapshotData, now time.Time) hostSnapshot {
 		return s
 	}
 	s.DelayMin = domain.DelayMin(plainCues(d), now)
-	for _, c := range d.Cues {
-		if c.Status == domain.InProgress {
-			title := c.Title
-			s.CurrentTitle = &title
-		}
-	}
+	s.CurrentTitle = currentTitle(d)
 	return s
 }
 
-func buildMaster(d store.SnapshotData, now time.Time) (masterSnapshot, error) {
+func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int64) (time.Time, bool)) (masterSnapshot, error) {
 	s := masterSnapshot{
 		EventVersion: d.Version,
 		ServerTime:   FormatTime(now),
@@ -263,14 +289,23 @@ func buildMaster(d store.SnapshotData, now time.Time) (masterSnapshot, error) {
 		s.Cues = append(s.Cues, mc)
 	}
 	for _, r := range d.Roles {
-		s.Roles = append(s.Roles, roleListItem{ID: r.ID, Name: r.Name, Type: r.Type})
+		item := roleListItem{ID: r.ID, Name: r.Name, Type: r.Type, CheckedIn: r.CheckedIn, HasLink: r.ActiveTokenID != 0}
+		if t, ok := lastSeen(r.ActiveTokenID); ok {
+			item.LastSeenAt = optTime(t.Truncate(time.Minute))
+		}
+		s.Roles = append(s.Roles, item)
 	}
 	cues := plainCues(d)
 	s.Conflicts = conflictViews(domain.Conflicts(cues))
+	s.OutOfOrder = []orderView{}
+	for _, o := range domain.OutOfOrder(cues) {
+		s.OutOfOrder = append(s.OutOfOrder, orderView{CueID: o.CueID, PrevCueID: o.PrevCueID})
+	}
 	if d.Event.Status == domain.Live {
 		s.OverrunMin = domain.OverrunMin(cues, now)
 	}
-	if d.Event.Status == domain.Live && d.LastOp != nil {
+	// In draft the only cue operation is a skip, which can be undone too (US-M-6.4).
+	if d.LastOp != nil {
 		desc := describeUndo(*d.LastOp, titles)
 		s.Undo = undoView{Available: true, Description: &desc}
 	}
@@ -288,6 +323,12 @@ func buildRole(d store.SnapshotData, now time.Time) roleSnapshot {
 		Role:         ownRole(d),
 		EventDay:     eventDay(d.Event),
 		Cues:         []roleCue{},
+		CurrentTitle: currentTitle(d),
+	}
+	for _, r := range d.Roles {
+		if r.ID == d.Owner.RoleID {
+			s.MyCheckIn = r.CheckedIn
+		}
 	}
 	mine := map[int64]domain.Cue{}
 	for _, c := range d.Cues {
@@ -311,14 +352,46 @@ func buildRole(d store.SnapshotData, now time.Time) roleSnapshot {
 			break
 		}
 	}
-	s.Notice = noticeFor(d.Shifts, mine)
+	s.Notice = noticeFor(d.Shifts, d.Assigns, d.Owner.RoleID, mine)
 	return s
 }
 
-// noticeFor picks the latest shift that moved one of the caller's cues
+// noticeFor is the newer of the shift and the assignment notice.
+func noticeFor(shifts []store.ShiftRecord, assigns []store.AssignRecord, roleID int64, mine map[int64]domain.Cue) *noticeView {
+	shift, assign := shiftNotice(shifts, mine), assignNotice(assigns, roleID, mine)
+	switch {
+	case assign == nil && shift == nil:
+		return nil
+	case shift == nil, assign != nil && assign.at.After(shift.at):
+		return assign.view
+	}
+	return shift.view
+}
+
+type datedNotice struct {
+	at   time.Time
+	view *noticeView
+}
+
+// assignNotice is the latest record that newly showed the caller a cue it
+// still has: a cue taken off it again tells it nothing (api.md 5.3).
+func assignNotice(assigns []store.AssignRecord, roleID int64, mine map[int64]domain.Cue) *datedNotice {
+	for _, a := range assigns {
+		c, ok := mine[a.CueID]
+		if !ok || !slices.Contains(a.Added, roleID) {
+			continue
+		}
+		return &datedNotice{at: a.At, view: &noticeView{
+			Kind: "assign", At: FormatTime(a.At), CueID: c.ID, Title: c.Title, EffectiveStart: FormatTime(c.EffectiveStart()),
+		}}
+	}
+	return nil
+}
+
+// shiftNotice picks the latest shift that moved one of the caller's cues
 // and keeps only those cues. Times use each cue's current scheduled start;
 // the log holds offsets only.
-func noticeFor(shifts []store.ShiftRecord, mine map[int64]domain.Cue) *noticeView {
+func shiftNotice(shifts []store.ShiftRecord, mine map[int64]domain.Cue) *datedNotice {
 	for _, sh := range shifts {
 		var n noticeView
 		for _, ch := range sh.Changes {
@@ -335,7 +408,7 @@ func noticeFor(shifts []store.ShiftRecord, mine map[int64]domain.Cue) *noticeVie
 		}
 		if len(n.Changes) > 0 {
 			n.Kind, n.At = "shift", FormatTime(sh.At)
-			return &n
+			return &datedNotice{at: sh.At, view: &n}
 		}
 	}
 	return nil

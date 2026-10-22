@@ -16,12 +16,12 @@ func (b body) shiftRequest() domain.ShiftRequest {
 
 // shift applies a time shift (data-model.md 4.2) with the same rules as
 // its preview.
-func (a *API) shift(ctx context.Context, o store.TokenOwner, b body, now time.Time) error {
+func (a *API) shift(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
 	_, _, err := a.store.ApplyCueOp(ctx, o.EventID, b.version, o.Actor, now, func(cues []domain.Cue) (domain.Op, error) {
 		plan, err := domain.PlanShift(cues, b.shiftRequest(), now)
 		return plan.Op, err
 	})
-	return err
+	return "", err
 }
 
 // previewResponse is the shift preview (US-M-2.1); it writes nothing.
@@ -64,7 +64,7 @@ func (a *API) previewShift(w http.ResponseWriter, r *http.Request) {
 		a.lookupFailed(w, r, err)
 		return
 	}
-	a.seen(hash, now)
+	a.seen(d.Owner, now)
 	if !allowed(capShift, d.Owner.RoleType) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return

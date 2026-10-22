@@ -29,6 +29,7 @@ var (
 type Actor struct {
 	kind    actorKind
 	roleID  int64   // actorRole
+	tokenID int64   // actorRole: access_tokens.id of the link, logged by link changes (api.md section 3)
 	eventID int64   // event the credential was proved for
 	cred    *[]byte // SHA-256 of the token or recovery code; a pointer so no fmt verb prints it
 }
