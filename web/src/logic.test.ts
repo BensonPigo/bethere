@@ -5,7 +5,9 @@ import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dateInZone, formatHM } from "./format";
 import { isStaleLive, pruneStale, snapKey } from "./storage";
-import { countdownText, levelFor, nextPendingCue, stylistView } from "./stylistView";
+import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
+import { delayText, freshNotice, monthDay, noticeText, signed, suggestedShift } from "./notice";
+import type { ShiftNotice } from "./api";
 
 const MIN = 60000;
 const JSON_CT = "application/json; charset=utf-8";
@@ -19,7 +21,8 @@ function cue(over: Partial<RoleCue>): RoleCue {
 function snap(over: Partial<RoleSnapshot>): RoleSnapshot {
   return {
     eventVersion: 1, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
-    role: { type: "Stylist", name: "新秘" }, cues: [], ...over,
+    role: { type: "Stylist", name: "新秘", view: "HandsFree" },
+    eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, cues: [], notice: null, ...over,
   };
 }
 const okBody = { result: "ok", snapshot: snap({}) };
@@ -80,8 +83,21 @@ describe("US-ST-1.1 next assigned pending cue", () => {
 describe("stylist view", () => {
   const start = Date.parse("2027-06-06T03:00:00Z");
   const now = start - 10 * MIN;
-  it("US-ST-1.5 Draft", () => {
-    expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), now, 0).kind).toBe("draft");
+  it("US-ST-1.8 a draft counts down on the event day", () => {
+    expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), now, 0).kind).toBe("countdown");
+  });
+  it("US-ST-1.9 the event day is judged with the corrected clock in the event zone", () => {
+    // 2027-06-05 23:30 Taipei on a device whose clock is 1 h slow: already the 6th.
+    const lateOn5th = Date.parse("2027-06-05T15:30:00Z");
+    expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), lateOn5th, 0).kind).toBe("preDay");
+    expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), lateOn5th, 60 * MIN).kind).toBe("countdown");
+  });
+  it("US-X-2.1 before the event day: the list, ordered by seq", () => {
+    const v = stylistView(
+      snap({ eventStatus: "Draft", cues: [cue({ id: 2, seq: 2, title: "B" }), cue({ id: 1, seq: 1, title: "A" })] }),
+      Date.parse("2027-06-01T02:00:00Z"), 0);
+    expect(v.kind).toBe("preDay");
+    expect(v.kind === "preDay" && v.cues.map((c) => c.title)).toEqual(["A", "B"]);
   });
   it("no assigned cues", () => {
     expect(stylistView(snap({}), now, 0).kind).toBe("none");
@@ -198,5 +214,49 @@ describe("misc helpers", () => {
     expect(tokenFromHash("")).toBeNull();
     expect(isLineBrowser("Mozilla/5.0 Safari/604.1 Line/26.16.0")).toBe(true);
     expect(isLineBrowser("Mozilla/5.0 Safari/604.1")).toBe(false);
+  });
+});
+
+describe("M2a helpers", () => {
+  it("US-H-1.2 all is well below 5 minutes", () => {
+    expect(delayText(4)).toEqual({ ok: true, text: "一切順利" });
+    expect(delayText(5)).toEqual({ ok: false, text: "延誤 5 分" });
+    expect(delayText(-3).ok).toBe(true);
+  });
+  it("US-M-5.3 suggested shift rounds up to 5", () => {
+    expect([0, 1, 5, 7, 10, 11].map(suggestedShift)).toEqual([0, 5, 5, 10, 10, 15]);
+  });
+  it("signs and dates", () => {
+    expect([10, -5, 0].map(signed)).toEqual(["+10", "−5", "0"]);
+    expect(monthDay("2027-06-06")).toBe("6/6");
+  });
+  const n: ShiftNotice = {
+    kind: "shift", at: "2027-06-06T02:00:00.000Z", deltaMin: 10,
+    changes: [
+      { cueId: 2, fromStart: "2027-06-06T05:00:00.000Z", toStart: "2027-06-06T05:10:00.000Z" },
+      { cueId: 1, fromStart: "2027-06-06T03:15:00.000Z", toStart: "2027-06-06T03:25:00.000Z" },
+    ],
+  };
+  it("US-ST-2.2 notice text names the earliest moved cue", () => {
+    expect(noticeText(n, "Asia/Taipei")).toBe("時程已更新 +10 分（原 11:15 → 現 11:25）");
+    expect(noticeText({ ...n, deltaMin: -10 }, "Asia/Taipei")).toMatch(/^時程已更新 −10 分/);
+  });
+  it("US-ST-2.4 a notice is shown once per device", () => {
+    const m = new Map<string, string>();
+    const store = {
+      getItem: (k: string) => m.get(k) ?? null,
+      setItem: (k: string, v: string) => void m.set(k, v),
+    } as unknown as Storage;
+    expect(freshNotice(n, store, "snap:x")).toBe(n);
+    expect(freshNotice(n, store, "snap:x")).toBeNull();
+    expect(freshNotice({ ...n, at: "2027-06-06T02:05:00.000Z" }, store, "snap:x")).not.toBeNull();
+    expect(freshNotice(null, store, "snap:x")).toBeNull();
+  });
+  it("host snapshots have no cues and are still accepted", () => {
+    const host = { eventVersion: 1, serverTime: "x", eventStatus: "Live", role: { type: "Host", name: "新人", view: "Dashboard" },
+      eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null };
+    expect(classifyResponse(200, JSON_CT, { result: "ok", snapshot: host }).kind).toBe("ok");
+    expect(classifyResponse(200, JSON_CT, { result: "ok", snapshot: { ...host, role: { type: "Stylist", name: "x" } } }).kind)
+      .toBe("failure");
   });
 });

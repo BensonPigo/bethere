@@ -1,7 +1,8 @@
 // Polling, clock skew, local snapshot and write handling for one token.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { fetchSnapshot, postWrite, shouldWipeLocalData } from "./api";
-import type { Outcome, Snapshot, WritePath } from "./api";
+import { fetchSnapshot, postShiftPreview, postWrite, shouldWipeLocalData } from "./api";
+import type { Outcome, ShiftNotice, ShiftPreview, ShiftRequest, Snapshot, WriteRequest } from "./api";
+import { freshNotice } from "./notice";
 import { addSkewSample, currentSkew } from "./clock";
 import { deleteSnapshot, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 
@@ -18,7 +19,12 @@ const REJECTED: Record<string, string> = {
   nothing_to_advance: "沒有可以推進的環節",
   nothing_to_undo: "沒有可以復原的操作",
   undo_stale: "畫面已更新，請重新確認",
+  shift_too_early: "有環節會早於現在，無法提早",
+  invalid_delta: "平移分鐘數不正確",
 };
+
+// How long a change notice stays up (screen-design.md 4.4).
+export const NOTICE_MS = 6000;
 
 export function useSession(token: string | null) {
   const [phase, setPhase] = useState<Phase>("loading");
@@ -28,6 +34,7 @@ export function useSession(token: string | null) {
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [change, setChange] = useState<ShiftNotice | null>(null);
 
   const openedAt = useRef(Date.now());
   const key = useRef<string | null>(null);
@@ -36,6 +43,7 @@ export function useSession(token: string | null) {
   const inFlight = useRef(false);
   const noticeTimer = useRef<number | undefined>(undefined);
   const writing = useRef(false);
+  const changeTimer = useRef<number | undefined>(undefined);
 
   const flash = useCallback((msg: string) => {
     setNotice(msg);
@@ -57,7 +65,16 @@ export function useSession(token: string | null) {
     const received = Date.now();
     samples.current = addSkewSample(samples.current, Date.parse(s.serverTime), (startedAt + received) / 2);
     setSkew(currentSkew(samples.current));
-    if (key.current) saveSnapshot(localStorage, key.current, s);
+    if (key.current) {
+      saveSnapshot(localStorage, key.current, s);
+      // Each change notice is shown once per device, even across reloads (US-ST-2.4).
+      const n = "notice" in s ? freshNotice(s.notice, localStorage, key.current) : null;
+      if (n) {
+        setChange(n);
+        clearTimeout(changeTimer.current);
+        changeTimer.current = window.setTimeout(() => setChange(null), NOTICE_MS);
+      }
+    }
     setSnap(s);
     setPhase("ready");
     setLastOk(received);
@@ -109,29 +126,45 @@ export function useSession(token: string | null) {
   }, [token, poll]);
 
   const write = useCallback(
-    async (path: WritePath) => {
-      if (!token || !snap || writing.current) return;
+    async (w: WriteRequest): Promise<boolean> => {
+      if (!token || !snap || writing.current) return false;
       writing.current = true;
       setBusy(true);
       const startedAt = Date.now();
+      let done = false;
       try {
-        const o = await postWrite(token, path, snap.eventVersion);
-        if (o.kind === "ok") apply(o, startedAt);
+        const o = await postWrite(token, w, snap.eventVersion);
+        if (o.kind === "ok") done = apply(o, startedAt);
         else if (o.kind === "conflict") {
           apply(o, startedAt);
           flash("畫面已更新，請重新確認");
         } else if (o.kind === "rejected") flash(REJECTED[o.error] ?? "操作失敗，請稍後再試");
-        else if (o.kind === "failure") flash("操作失敗，請稍後再試");
+        else if (o.kind === "failure" || o.kind === "preview") flash("操作失敗，請稍後再試");
         else apply(o, startedAt);
       } finally {
         writing.current = false;
         // US-M-3.3: keep the buttons disabled for about a second after a press.
         window.setTimeout(() => setBusy(false), WRITE_LOCK_MS);
       }
+      return done;
     },
     [token, snap, apply, flash],
   );
 
+  // The shift preview (US-M-2.1): read-only, so it neither locks the buttons
+  // nor touches the local snapshot.
+  const preview = useCallback(
+    async (req: ShiftRequest): Promise<ShiftPreview | string> => {
+      if (!token) return "操作失敗，請稍後再試";
+      const o = await postShiftPreview(token, req);
+      if (o.kind === "preview") return o.preview;
+      if (o.kind === "rejected") return REJECTED[o.error] ?? "無法試算，請稍後再試";
+      if (shouldWipeLocalData(o)) apply(o, Date.now());
+      return "無法試算，請稍後再試";
+    },
+    [token, apply],
+  );
+
   const offline = now - (lastOk ?? openedAt.current) > OFFLINE_AFTER_MS;
-  return { phase, snap, skew, now, offline, lastOk, notice, busy, write };
+  return { phase, snap, skew, now, offline, lastOk, notice, busy, write, preview, change };
 }

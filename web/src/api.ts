@@ -3,14 +3,21 @@
 export type EventStatus = "Draft" | "Live";
 export type CueStatus = "Pending" | "InProgress" | "Completed" | "Skipped";
 
-export type RoleInfo = { type: string; name: string };
+// The screen a link opens, set per role (ADR-0025).
+export type View = "Console" | "HandsFree" | "Glance" | "Dashboard";
+
+export type RoleInfo = { type: string; name: string; view: View };
 
 type SnapshotBase = {
   eventVersion: number;
   serverTime: string;
   eventStatus: EventStatus;
   role: RoleInfo;
+  // Event day and zone, so a draft can still count down on the day offline (ADR-0020).
+  eventDay: { date: string; timezone: string };
 };
+
+export type Conflict = { cueId: string | number; fixedCueId: string | number; overrunMin: number };
 
 export type MasterCue = {
   id: string | number;
@@ -34,6 +41,8 @@ export type MasterSnapshot = SnapshotBase & {
   activeCueId: string | number | null;
   undo: { available: boolean; description: string | null };
   roles: { id: string | number; name: string; type: string }[];
+  conflicts: Conflict[];
+  overrunMin: number; // minutes past the next pending cue's start (data-model.md 4.3)
 };
 
 export type RoleCue = {
@@ -49,21 +58,47 @@ export type RoleCue = {
   roleNote: string | null;
 };
 
-export type RoleSnapshot = SnapshotBase & { cues: RoleCue[] };
+// A shift that moved at least one of the caller's own cues (screen-design.md 4.4).
+export type ShiftNotice = {
+  kind: "shift";
+  at: string;
+  deltaMin: number;
+  changes: { cueId: string | number; fromStart: string; toStart: string }[];
+};
 
-export type Snapshot = MasterSnapshot | RoleSnapshot;
+export type RoleSnapshot = SnapshotBase & { cues: RoleCue[]; notice: ShiftNotice | null };
+
+// The hosts' dashboard: no cues at all (api.md 5.4).
+export type HostSnapshot = SnapshotBase & { delayMin: number; currentTitle: string | null };
+
+export type Snapshot = MasterSnapshot | RoleSnapshot | HostSnapshot;
 
 export function isMasterSnapshot(s: Snapshot): s is MasterSnapshot {
   return s.role.type === "Master";
 }
 
-export type WritePath = "/api/event/start" | "/api/cues/advance" | "/api/cues/undo";
+export function isHostSnapshot(s: Snapshot): s is HostSnapshot {
+  return s.role.type === "Host";
+}
+
+export type ShiftRequest = { fromCueId: string | number; deltaMin: number; excluded: (string | number)[] };
+
+export type ShiftPreview = {
+  changes: { cueId: string | number; fromStart: string; toStart: string }[];
+  conflicts: Conflict[];
+  tooEarly: { cueId: string | number; newStart: string } | null;
+};
+
+export type WriteRequest =
+  | { path: "/api/cues/advance" | "/api/cues/undo" }
+  | { path: "/api/cues/shift"; shift: ShiftRequest };
 
 // What a response means to the client (api.md section 2).
 export type Outcome =
   | { kind: "invalid" }
   | { kind: "ended" }
   | { kind: "ok"; snapshot: Snapshot }
+  | { kind: "preview"; preview: ShiftPreview }
   | { kind: "conflict"; snapshot: Snapshot | null }
   | { kind: "rejected"; error: string } // 422 domain rule
   | { kind: "failure" }; // anything else: offline-like, never wipes data
@@ -76,7 +111,8 @@ function asSnapshot(v: unknown): Snapshot | null {
   if (!isObject(v)) return null;
   if (typeof v.eventVersion !== "number" || typeof v.serverTime !== "string") return null;
   if (!isObject(v.role) || typeof v.role.type !== "string") return null;
-  if (!Array.isArray(v.cues)) return null;
+  // Every snapshot but the hosts' carries its cues.
+  if (v.role.type !== "Host" && !Array.isArray(v.cues)) return null;
   return v as unknown as Snapshot;
 }
 
@@ -93,6 +129,9 @@ export function classifyResponse(status: number, contentType: string | null, bod
   if (status === 200) {
     if (json.result === "invalid") return { kind: "invalid" };
     if (json.result === "ended") return { kind: "ended" };
+    if (json.result === "ok" && isObject(json.preview)) {
+      return { kind: "preview", preview: json.preview as unknown as ShiftPreview };
+    }
     if (json.result === "ok") {
       const snapshot = asSnapshot(json.snapshot);
       return snapshot ? { kind: "ok", snapshot } : { kind: "failure" };
@@ -148,5 +187,8 @@ async function request(
 
 export const fetchSnapshot = (token: string) => request("GET", "/api/snapshot", token);
 
-export const postWrite = (token: string, path: WritePath, version: number) =>
-  request("POST", path, token, { version });
+export const postWrite = (token: string, w: WriteRequest, version: number) =>
+  request("POST", w.path, token, w.path === "/api/cues/shift" ? { version, ...w.shift } : { version });
+
+export const postShiftPreview = (token: string, shift: ShiftRequest) =>
+  request("POST", "/api/cues/shift/preview", token, shift);

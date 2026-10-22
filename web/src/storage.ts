@@ -43,7 +43,8 @@ export function loadSnapshot(store: Storage, key: string): Snapshot | null {
     const raw = store.getItem(key);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    return s && typeof s.eventVersion === "number" && s.role && Array.isArray(s.cues) ? (s as Snapshot) : null;
+    if (!s || typeof s.eventVersion !== "number" || !s.role) return null;
+    return s.role.type === "Host" || Array.isArray(s.cues) ? (s as Snapshot) : null;
   } catch {
     return null;
   }
