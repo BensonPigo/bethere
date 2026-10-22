@@ -42,3 +42,4 @@
 | [0022](0022-overrun-prompt-and-delay-display.md) | 超時提示總召平移，新人儀表板的延誤含超時 | 已接受 |
 | [0023](0023-snapshot-etag-by-content.md) | 快照條件請求以內容指紋判斷，就位打卡不改版本號 | 已接受 |
 | [0024](0024-external-monitoring-and-alerts.md) | 外部監控伺服器與備份，告警在活動前改送備援操作者 | 已接受 |
+| [0025](0025-screens-by-usage-situation.md) | 畫面依使用情況分類，與角色類型分開 | 已接受 |
