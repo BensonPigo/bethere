@@ -56,6 +56,7 @@
 | 文件 | 內容 |
 | --- | --- |
 | [development-process.md](process/development-process.md) | 輕量版開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI |
+| [e2e-test-routes.md](process/e2e-test-routes.md) | 端對端測試路線：模擬使用者操作的自動化測試，部署後由 PO 執行 |
 
 ## adr/ 架構決策紀錄
 

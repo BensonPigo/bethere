@@ -4,3 +4,5 @@
 !/web/dist/.gitkeep
 .DS_Store
 .claude/worktrees/
+/web/e2e-report/
+/web/e2e-results/

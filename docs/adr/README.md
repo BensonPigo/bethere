@@ -46,3 +46,4 @@
 | [0026](0026-delay-measured-on-next-pending-cue.md) | 新人儀表板的延誤以下一個待辦 Cue 為準 | 已接受 |
 | [0027](0027-small-field-tests-and-one-full-rehearsal.md) | 里程碑改用小型實測，完整彩排只做一次 | 已接受 |
 | [0028](0028-show-original-time-of-shifted-cues.md) | 被平移的環節旁顯示原時間，不顯示偏移量 | 已接受 |
+| [0029](0029-e2e-routes-on-a-vm-test-service.md) | 端對端測試路線在 VM 的測試服務上，由 PO 手動執行 | 已接受 |
