@@ -36,17 +36,17 @@
 | T3 | 資料庫 | SQLite，WAL 模式；驅動 `modernc.org/sqlite`（純 Go，免 cgo） | 單場資料量極小；`data-model.md` 4.2 的「單一交易」對應一筆寫入交易 |
 | T3a | 連線 | 開兩個 `*sql.DB`。**寫入專用**：`MaxOpenConns = 1`、`_txlock=immediate`，DSN 帶 `journal_mode(WAL)`、`busy_timeout(5000)`、`secure_delete(ON)`；啟動時**先開寫入連線並完成遷移**，再開**唯讀連線池**（DSN 帶 `busy_timeout(5000)`）。PRAGMA 一律寫在 DSN，每條連線都會套用 | WAL 下讀不擋寫；讀寫分開後，輪詢不會排在慢寫入（清理、等待子命令的鎖）後面 |
 | T3b | 逾時與錯誤 | 輪詢的資料庫查詢帶 3 秒 context 逾時；資料庫錯誤（含逾時、`SQLITE_BUSY`）一律回伺服器錯誤，絕不回「無效」 | `access-control.md` 3.3：只有確實查無有效 Token 才回「無效」 |
-| T3c | 不自動建庫 | `bethere serve` 找不到資料庫檔時**拒絕啟動**。只有第一次部署時設定 `BETHERE_INIT=1` 才建立新資料庫；`BETHERE_INIT=1` 而資料庫檔已存在時同樣**拒絕啟動**，所以忘記移除會在下一次開機就暴露。**0 位元組或沒有結構描述（`user_version` 為 0）的檔案同樣拒絕啟動**，先以唯讀方式檢查、不改動檔案，錯誤訊息明示「還原可能失敗，不要設 `BETHERE_INIT`」；啟動時實際寫入一次，寫不進去也拒絕啟動；路徑以跳脫過的 `file:` URI 開啟並帶 `mode=rw`／`ro`，SQLite 本身不會建新檔；`BETHERE_INIT=1` 以獨佔方式建檔，設定失敗就刪除（✎ 2026-10-21，抗辯修正） | 避免還原失敗時悄悄起一個空庫，讓所有裝置收到「無效」而清掉離線快取 |
+| T3c | 不自動建庫 | `bethere serve` 找不到資料庫檔時**拒絕啟動**。只有第一次部署時設定 `BETHERE_INIT=1` 才建立新資料庫；`BETHERE_INIT=1` 而資料庫檔已存在時同樣**拒絕啟動**，所以忘記移除會在下一次開機就暴露。**0 位元組或沒有結構描述（`user_version` 為 0）的檔案同樣拒絕啟動**，先以唯讀方式檢查、不改動檔案，錯誤訊息明示「還原可能失敗，不要設 `BETHERE_INIT`」；啟動時實際寫入一次，寫不進去也拒絕啟動；路徑以跳脫過的 `file:` URI 開啟並帶 `mode=rw`／`ro`，SQLite 本身不會建新檔；`BETHERE_INIT=1` 以獨佔方式建檔，設定失敗就刪除 | 避免還原失敗時悄悄起一個空庫，讓所有裝置收到「無效」而清掉離線快取 |
 | T3d | 維護模式 | VM 的 metadata `bethere-maintenance=1` 時（服務**每次啟動**前向 metadata server 讀取；鍵不存在視為 0；讀取失敗就拒絕啟動，不預設為開放），**只限制 `/api/`**：Master Token 的請求正常處理，其他 `/api/` 請求回伺服器錯誤（客戶端視為離線、保留快照；復原碼只放行「換發 Master」，Master 連結遺失時仍可換發，換發後即可用 Master 匯出；其他復原碼用途不放行）。`/healthz` 與靜態檔照常回應。Master 的快照帶維護旗標，在 V6 共通狀態層對 Master 顯示醒目橫幅「維護中，其他角色無法連線」 | 還原後先讓總召核對，再對全場開放（`operations/runbook.md` 第 2 節）；健康檢查不能失敗，總召在沒快取過外殼的裝置上也要能開頁面 |
 | T4 | SQL 與遷移 | `database/sql` + 手寫參數化 SQL；遷移為內嵌編號 SQL 檔，以 `PRAGMA user_version` 記錄；**遷移只做向後相容的新增**（加表、加可為空欄位、加索引；理由與唯一例外見 ADR-0019）；已發行的遷移檔不再修改，結構變更一律新增檔案；程式遇到比自己新的 `user_version` 照常啟動 | 表少，不需 ORM；可退回上一個發行版 |
 | T5 | 平移預覽 | 伺服器提供「試算」端點（同一套演算法、不寫入），預覽面板每次勾選變更都呼叫它 | 平移邏輯只有 Go 一份；總召離線時本來就不能操作（S5） |
 | T6 | Token 與復原碼 | `crypto/rand` 產生；Token 16 位元組以 base64url 編碼；復原碼 16 位元組以 Crockford Base32 分組；兩者以 SHA-256 雜湊儲存並以雜湊查詢 | 熵已 128 位元，不需要慢雜湊 |
-| T7 | `lastSeenAt` | 只存在記憶體（`map[tokenHash]time.Time` + mutex），不寫資料庫；**只在 Token 驗證成功、且未被維護模式擋下之後**才更新；V4 直接讀取，重啟後歸零（`data-model.md`、`access-control.md` 同步修訂） | 只用於 V4 顯示「最近有人在用」；少一個寫入來源；隨機 Token 無法讓 map 無限成長 |
+| T7 | `lastSeenAt` | 只存在記憶體（`map[tokenHash]time.Time` + mutex），不寫資料庫；**只在 Token 驗證成功、且未被維護模式擋下之後**才更新；V4 直接讀取，重啟後歸零 | 只用於 V4 顯示「最近有人在用」；少一個寫入來源；隨機 Token 無法讓 map 無限成長 |
 | T8 | QR Code | 伺服器在產生 Token 的同一個回應中附上 **PNG data URI**；函式庫鎖定版本（候選 `skip2/go-qrcode`，QR 規格穩定） | 明文 Token 只在產生當下存在；前端不需額外套件 |
 | T9 | CSV | 匯入（B2）與事後紀錄匯出（C3）都在伺服器以 `encoding/csv` 處理；匯入先回傳驗證預覽；匯出加 UTF-8 BOM | 驗證規則只寫一份；Excel 開中文不亂碼 |
-| T10 | 資料刪除（C5 修訂） | 每日排程刪除 `endsAt` 已超過 **80 天**的活動，`secure_delete` 讓內容被覆寫，checkpoint 交給 Litestream 管理，應用程式不自行執行（Litestream 持有讀取交易，外部的 `wal_checkpoint(TRUNCATE)` 可能一直回 busy）；演練時確認刪除後的資料已不在資料庫檔與 WAL 檔中。伺服器端各副本：Litestream 快照間隔 24h、保留 72h（實作時選定版本號，寫入發行版與本文件，保留設定依該版本文件）；**不排程磁碟快照**、不建立含資料的自訂映像；故障後留下的舊磁碟依 `operations/runbook.md` 第 4 節刪除。備份 bucket **關閉 soft delete（保留期 0）、不開物件版本控制**，否則已刪除的物件還會多留 7 天；**不設**生命週期規則，以免資料庫閒置時刪光唯一的備份；改由 `operations/runbook.md` 第 4 節在第 85 天驗收，未達成就手動刪除。合計**伺服器端**所有副本在 `endsAt` 後 **90 天內**消失（80 + 1 + 4 ≤ 90）。前提是主機常駐到刪除完成，否則依 `operations/runbook.md` 第 4 節手動銷毀 | C5 原為「保留 90 天後刪除」，但備份會再多留數天；改為「伺服器端所有副本 90 天內消失」才符合 F5 的刪除承諾。裝置上的 localStorage 依 `sync-and-offline.md` 第 6 節在再次開啟時清除，紙本不在系統控制範圍。代價是 C3 事後匯出的期限從 90 天縮為 80 天（`clarification.md`、`data-model.md`、`sync-and-offline.md` 同步修訂） |
+| T10 | 資料刪除 | 每日排程刪除 `endsAt` 已超過 **80 天**的活動，`secure_delete` 讓內容被覆寫，checkpoint 交給 Litestream 管理，應用程式不自行執行（Litestream 持有讀取交易，外部的 `wal_checkpoint(TRUNCATE)` 可能一直回 busy）；演練時確認刪除後的資料已不在資料庫檔與 WAL 檔中。伺服器端各副本：Litestream 快照間隔 24h、保留 72h（實作時選定版本號，寫入發行版與本文件，保留設定依該版本文件）；**不排程磁碟快照**、不建立含資料的自訂映像；故障後留下的舊磁碟依 `operations/runbook.md` 第 4 節刪除。備份 bucket **關閉 soft delete（保留期 0）、不開物件版本控制**，否則已刪除的物件還會多留 7 天；**不設**生命週期規則，以免資料庫閒置時刪光唯一的備份；改由 `operations/runbook.md` 第 4 節在第 85 天驗收，未達成就手動刪除。合計**伺服器端**所有副本在 `endsAt` 後 **90 天內**消失（80 + 1 + 4 ≤ 90）。前提是主機常駐到刪除完成，否則依 `operations/runbook.md` 第 4 節手動銷毀 | 只刪資料庫不夠，備份會再多留數天；以「伺服器端所有副本 90 天內消失」為準才符合 F5 的刪除承諾（ADR-0011）。裝置上的 localStorage 依 `sync-and-offline.md` 第 6 節在再次開啟時清除，紙本不在系統控制範圍。代價是 C3 事後匯出必須在 80 天內完成 |
 | T11 | 伺服器端指令 | 同一執行檔的子命令：`serve`、`create-event`、`add-role`、`import-rundown`、`version`；`reset-recovery-code`（復原碼外流時重設）排在 M3；以 `gcloud compute ssh --tunnel-through-iap` 登入 VM 後執行 | 對應「建立活動由開發者以伺服器端指令執行」；輸出只到終端機 |
-| T12 | 時間 | 伺服器一律 UTC；時區資料以 `time/tzdata` 內嵌；活動時區只接受內嵌資料逐字收錄的名稱清單（`domain.SupportedTimeZone`，目前只有 `Asia/Taipei`，✎ 2026-10-21）；時鐘以介面注入，測試可固定「現在」 | `endsAt` 與「開始活動僅限當天」都依活動時區計算 |
+| T12 | 時間 | 伺服器一律 UTC；時區資料以 `time/tzdata` 內嵌；活動時區只接受內嵌資料逐字收錄的名稱清單（`domain.SupportedTimeZone`，目前只有 `Asia/Taipei`）；時鐘以介面注入，測試可固定「現在」 | `endsAt` 與「開始活動僅限當天」都依活動時區計算 |
 | T13 | 日誌 | `log/slog` 輸出到 stdout；不記錄請求標頭與本文 | Token 在標頭、復原碼在本文 |
 | T14 | 安全標頭 | Go 中介層統一加 CSP：`default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'`（無 inline script）、`Referrer-Policy: no-referrer`、`X-Robots-Tag: noindex`；API 加 `Cache-Control: no-store` | `access-control.md` 3.2、3.3；防點擊劫持 |
 
@@ -59,7 +59,7 @@
 | T17 | 型別 | 手寫 `web/src/api.ts`；後端以測試比對快照 JSON 的鍵集合，防止前後端欄位漂移 | 快照僅十幾個欄位，不值得引入產生器 |
 | T18 | 離線外殼 | `vite-plugin-pwa`（Workbox `generateSW`）預先快取打包產物（含三個入口）；`/api/` 一律不攔截；`skipWaiting` + `clientsClaim`；註冊腳本以外部檔案載入（不用 inline）；不產生 manifest | 對應 `sync-and-offline.md` 第 6 節；活動前 7 天凍結部署，當天不會出現前後端版本不一致 |
 | T19 | Web App manifest | P0 不提供；依 R1 實機結果再決定 | 避免 `start_url` 蓋掉帶 Token 的網址 |
-| T20 | 本機快照 | `localStorage`，鍵為 `snap:` + SHA-256（`"bethere-local:"` + Token）（`crypto.subtle`，HTTPS 下必定可用），不等於伺服器的 Token 雜湊（✎ 2026-10-21，`api.md` A16）；不在本機儲存明文 Token | 共用裝置上列舉 localStorage 不會取得 Token；伺服器的 Token 雜湊不應出現在伺服器以外 |
+| T20 | 本機快照 | `localStorage`，鍵為 `snap:` + SHA-256（`"bethere-local:"` + Token）（`crypto.subtle`，HTTPS 下必定可用），不等於伺服器的 Token 雜湊；不在本機儲存明文 Token | 共用裝置上列舉 localStorage 不會取得 Token；伺服器的 Token 雜湊不應出現在伺服器以外 |
 | T21 | 備援 Rundown | 列印專用網頁 `/print`（`@media print`），由瀏覽器列印或另存 PDF；資料來自目前快照（離線時用本機快照）。Master 的快照帶**完整 CueRole**（各角色與 `roleNote`），Master 版才能從快照產生 | 不需 PDF 函式庫；Safari／Chrome 離線也能匯出 |
 | T22 | LINE 內建瀏覽器 | 視為**受限環境**：預設 Service Worker 不可用（iOS 版 LINE 為 WKWebView）、列印可能無效。連線時一切照常可用，不阻擋、不跳轉（`product/vision.md` V2）；偵測到 LINE 時只顯示非強制的一行小字，說明斷網時可能打不開、可改用 Safari／Chrome；V5 列印時提示改用系統瀏覽器 | 離線外殼與列印都依賴系統瀏覽器 |
 
@@ -112,7 +112,7 @@ web/                Vite + Preact 前端
 
 ### 5.1 實機驗證結果
 
-以 `ops/gcp/` 部署到正式專案的裝置驗證頁測試（`web/src/DeviceCheck.tsx`），各環境的回報記在伺服器日誌。
+2026-10-21 以 `ops/gcp/` 部署到正式專案的裝置驗證頁測試；該原型頁已於 M1 移除（見 git 紀錄）。
 
 | 日期 | 裝置與環境 | R1 Token | R2 離線開啟 | R3 常亮 | R4 往返（中位數／p95） | R5 列印 |
 | --- | --- | --- | --- | --- | --- | --- |

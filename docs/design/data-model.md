@@ -33,20 +33,19 @@ erDiagram
 | --- | --- | --- |
 | id | ID | |
 | name | text | 例：「2027/06/06 婚宴」 |
-| eventDate | date | 年份限 2000～2199，Cue 時間同樣限在這個範圍，確保以奈秒儲存與日期運算不會溢位（✎ 2026-10-21） |
-| timezone | text | 預設 `Asia/Taipei`；只接受程式內的時區清單（目前只有 `Asia/Taipei`），確保在任何主機都讀得回來（✎ 2026-10-21） |
+| eventDate | date | 年份限 2000～2199，Cue 時間同樣限在這個範圍，確保以奈秒儲存與日期運算不會溢位 |
+| timezone | text | 預設 `Asia/Taipei`；只接受程式內的時區清單（目前只有 `Asia/Taipei`），確保在任何主機都讀得回來 |
 | status | enum | 儲存 `Draft` / `Live`（B6：Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |
 | liveStartedAt | timestamp? | 按「開始活動」的時間 |
-| activeCueId | ID? | 目前進行中的 Cue。**不儲存**，由狀態為 `InProgress` 的 Cue 推得，避免兩份真相（✎ 2026-10-21） |
+| activeCueId | ID? | 目前進行中的 Cue。**不儲存**，由狀態為 `InProgress` 的 Cue 推得，避免兩份真相 |
 | recoveryCodeHash | text | 復原碼的雜湊（見 `access-control.md` 第 2 節） |
 
 `timezone` 建立後不可修改；`eventDate` 只能以復原碼、在 Draft 階段修改（見 `access-control.md` 第 2 節）。「開始活動」只能在 `eventDate` 當天（依 `timezone`）執行。
 
 **衍生值（不存）**
 - `endsAt` = `eventDate` 隔天 04:00（依 `timezone` 換算為 UTC）。
-- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 80 天刪除，伺服器端所有副本 90 天內消失（C5，✎ 2026-10-20）。結束判斷不需要排程器；刪除由伺服器內的每日排程執行（`tech-stack.md` T10）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
+- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 80 天刪除，伺服器端所有副本 90 天內消失（C5）。結束判斷不需要排程器；刪除由伺服器內的每日排程執行（`tech-stack.md` T10）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
 
-> 初版規格（`EventState`）的 `GlobalOffsetMinutes` **不再存為欄位**，改為由 Cue 偏移推導（見 4.3），避免兩份真相。
 
 ### Cue（流程節點）
 | 欄位 | 型別 | 說明 |
@@ -87,11 +86,11 @@ erDiagram
 | tokenHash | text | 只存雜湊，明文僅在產生時顯示一次 |
 | createdAt | timestamp | |
 | revokedAt | timestamp? | F1：撤銷 |
-| lastSeenAt | timestamp? | 最近一次使用，供總召查看連結是否在使用。**不存資料庫**，只存在伺服器記憶體，重啟後歸零（`tech-stack.md` T7，✎ 2026-10-20） |
+| lastSeenAt | timestamp? | 最近一次使用，供總召查看連結是否在使用。**不存資料庫**，只存在伺服器記憶體，重啟後歸零（`tech-stack.md` T7） |
 
 規則：每個 Role 同一時間最多一個有效 Token；重發 = 撤銷舊的並建立新的。Token 沒有自己的到期時間，跟著 `Event.endsAt`。
 
-### CueRole（角色與 Cue 的關聯，即初版規格的 RoleCueMapping）
+### CueRole（角色與 Cue 的關聯）
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
 | cueId, roleId | ID | 複合唯一 |
@@ -111,8 +110,8 @@ erDiagram
 
 一個 Role 目前是否就位 = 存在未取消的 CheckIn。
 
-### 平移紀錄（✎ 2026-10-21，原 ShiftLog / ShiftLogEntry）
-不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供 C3 事後檢討。復原就是把這些 Cue 還原成操作前的狀態；原設計的 `appliedDeltaMin` 等於前後 `offsetMin` 之差。理由見 `docs/adr/0015-cue-ops-in-action-log.md`。
+### 平移紀錄
+不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供 C3 事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `docs/adr/0015-cue-ops-in-action-log.md`。
 
 ### ActionLog（操作紀錄，C3）
 `id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（M7）。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（C3）。
@@ -165,7 +164,7 @@ stateDiagram-v2
 - 同一時間只有一個 `InProgress` 的 Cue（`Event.activeCueId`）。若現場要重疊進行，列為後續需求。
 - 推進為 InProgress 時填 `actualStart`；Completed 時填 `actualEnd`。
 - 主控台的「推進」在同一筆交易內把目前 Cue 改為 Completed、下一個 Pending 改為 InProgress；復原時兩者一起回退（US-M-3.2、US-M-4.1）。
-- 「復原上一步」只能回退最近一次操作，並寫入 ActionLog。略過也可以復原，Cue 回到 `Pending`（✎ 2026-10-21）。
+- 「復原上一步」只能回退最近一次操作，並寫入 ActionLog。略過也可以復原，Cue 回到 `Pending`。
 
 ### 4.2 時間平移演算法（A1～A3）
 輸入：`fromCueId`、`deltaMin`、`excludedCueIds`（總召取消勾選的）。
@@ -210,7 +209,7 @@ sequenceDiagram
 ```
 
 ### 4.3 「全域偏移」的顯示值
-各畫面顯示的「+N 分」= **目前 InProgress（或下一個 Pending）Cue 的 `offsetMin`**。新人儀表板（P1）的「時程偏移狀態」也用這個值。
+各畫面顯示的「+N 分」= **目前 InProgress（或下一個 Pending）Cue 的 `offsetMin`**。新人儀表板的「延誤 N 分」也用這個值。
 
 ### 4.4 角色視圖的資料範圍
 | 角色 | 可讀 | 可寫（動作） |
