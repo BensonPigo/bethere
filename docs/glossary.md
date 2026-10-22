@@ -38,7 +38,7 @@
 | `P0`、`P1`、`P2` | 功能優先層級，只用於範圍 | `requirements/scope.md` |
 | `Sev0`、`Sev1`、`Sev2` | 問題嚴重度 | `process/development-process.md` |
 | `V1`～`V5` | 產品原則 | `product/vision.md` |
-| `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`X` 所有角色 | `requirements/stories/` |
+| `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`H` 新人、`X` 所有角色 | `requirements/stories/` |
 | `US-<角色>-<n>.C<m>` | 故事的情境條件 | `requirements/stories/` |
 | `NFR-<n>` | 非功能需求與品質目標 | `requirements/scope.md` 第 4 節 |
 | `ADR-<NNNN>` | 決定（唯一的決定編號） | `adr/` |
