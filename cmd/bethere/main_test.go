@@ -234,9 +234,11 @@ func TestAddRoleRefusals(t *testing.T) {
 		args  []string
 		code  int
 	}{
-		// api.md section 4: only Stylist in M1.
+		// api.md section 4: Stylist and Host in M2a.
 		"Media":        {master, []string{"-type", "Media"}, 2},
-		"Host":         {master, []string{"-type", "Host"}, 2},
+		"Host Glance":  {master, []string{"-type", "Host", "-view", "Glance"}, 2},
+		"Console":      {master, []string{"-view", "Console"}, 2},
+		"bad view":     {master, []string{"-view", "handsfree"}, 2},
 		"Master":       {master, []string{"-type", "Master"}, 2},
 		"VenueLead":    {master, []string{"-type", "VenueLead"}, 2},
 		"lower case":   {master, []string{"-type", "stylist"}, 2},
@@ -442,6 +444,35 @@ func TestTokenFromLink(t *testing.T) {
 	for _, in := range []string{"", base + "/#x=" + tok, base + "/#t=" + tok + "&y=1", base + "/?t=" + tok, tok[:21], base} {
 		if _, err := tokenFromLink(in); err == nil {
 			t.Errorf("%q accepted", in)
+		}
+	}
+}
+
+// US-X-4.1: add-role takes the screen, and Host is open from M2a.
+func TestUS_X_4_1_AddRoleSetsTheScreen(t *testing.T) {
+	db := newDB(t)
+	master, _, _ := newEvent(t, db)
+	for _, c := range []struct {
+		args []string
+		typ  string
+		view string
+	}{
+		{[]string{"-name", "新人", "-type", "Host"}, "Host", "Dashboard"},
+		{[]string{"-name", "新秘", "-type", "Stylist"}, "Stylist", "HandsFree"},
+		{[]string{"-name", "助理", "-type", "Stylist", "-view", "Glance"}, "Stylist", "Glance"},
+	} {
+		args := append([]string{"add-role", "-db", db, "-base-url", base}, c.args...)
+		r := runWith(master+"\n", nil, args...)
+		if r.code != 0 {
+			t.Fatalf("%v: %d %s", c.args, r.code, r.stderr)
+		}
+		m := linkRE.FindStringSubmatch(r.stdout)
+		if m == nil {
+			t.Fatalf("%v: no link in %q", c.args, r.stdout)
+		}
+		role := getSnapshot(t, handler(t, db), m[1])["snapshot"].(map[string]any)["role"].(map[string]any)
+		if role["type"] != c.typ || role["view"] != c.view {
+			t.Errorf("%v: role = %v, want %s %s", c.args, role, c.typ, c.view)
 		}
 	}
 }
