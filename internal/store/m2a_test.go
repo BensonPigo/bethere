@@ -128,3 +128,29 @@ func TestUS_M_3_8_UndoingTheFirstAdvanceKeepsTheEventLive(t *testing.T) {
 		t.Errorf("statuses = %v", got)
 	}
 }
+
+// api.md section 6: an id of another, already ended event must fail as
+// cross-event, never as "ended", which would wipe the caller's own data.
+func TestCrossEventIDOfAnEndedEventIsCrossEventNotEnded(t *testing.T) {
+	f := newFixture(t)
+	early := time.Date(2027, 5, 1, 9, 0, 0, 0, taipei)
+	other, err := f.s.CreateEvent(ctx, NewEvent{
+		Name: "舊", Date: domain.Date{Year: 2027, Month: time.May, Day: 1}, TimeZone: "Asia/Taipei",
+		MasterName: "總召", MasterTokenHash: hash("old-master"), RecoveryCodeHash: hash("old-recovery"),
+	}, early.AddDate(0, 0, -7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := f.s.LookupToken(ctx, hash("old-master"), early)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCue, err := f.s.AddCue(ctx, other, domain.Cue{Seq: 1, Title: "x", ScheduledStart: early, DurationMin: 10}, owner.Actor, early)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Now the other event has ended; the caller's own event has not.
+	if err := f.s.AssignRole(ctx, oldCue, f.stylist, "", f.masterBy, at(10, 0)); !errors.Is(err, ErrCrossEvent) {
+		t.Errorf("err = %v, want ErrCrossEvent", err)
+	}
+}
