@@ -45,7 +45,7 @@
 | `ADR-<NNNN>` | **唯一的決定編號** | `adr/` |
 | `RISK-<n>` | 風險與待驗證項目 | `docs/README.md` 狀態節 |
 
-其餘前綴（clarification 的 A～F、D1、D2，data-model 的 M，access-control 的 P，sync-and-offline 的 S，screen-design 的 V 與 U，tech-stack 的 T、T-x、R，api 的 A，architecture-overview 的 Q、K，m1-acceptance 的 Q，流程的 D-x）**全部退役**。每一條逐條歸位為以下其中一種，並在 `glossary.md` 的對照表記錄去向：
+其餘前綴（clarification 的 A～F、D1、D2，data-model 的 M，access-control 的 P，sync-and-offline 的 S，screen-design 的 V 與 U，tech-stack 的 T、T-x、R，api 的 A 與安全審查的 F，architecture-overview 的 Q、K，m1-acceptance 的 Q，流程的 D-x）**全部退役**。每一條逐條歸位為以下其中一種，並在 `glossary.md` 的對照表記錄去向：
 
 - **規則**：寫進對應設計文件的正文。
 - **ADR**：有取捨、值得留下理由的，新增 ADR。
@@ -112,7 +112,7 @@ CI 加一支檢查腳本：文件中引用的檔名必須存在；使用的代�
 ## 後果
 
 - 好處：查一件事只有一個地方；代號看了就知道去哪找；過期內容由 CI 擋下一部分。
-- 代價：154 個舊代號要逐條歸位；約 140 處程式碼註解要更新；ADR 的引用要改寫一次。
+- 代價：168 個舊代號要逐條歸位；約 140 處程式碼註解要更新；ADR 的引用要改寫一次。
 - 之後要注意：
   - 新的決定一律寫成 ADR，不再在設計文件中開決定表。
   - 撤銷 `process/development-process.md` 第 8 節「`architecture/` 與 ADR 凍結」中關於 `architecture/` 的部分：整合後只剩一頁總覽，隨設計更新。

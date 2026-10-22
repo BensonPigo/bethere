@@ -20,7 +20,7 @@
 | --- | --- | --- | --- |
 | [0001](0001-record-architecture-decisions.md) | 以 ADR 記錄架構決策 | 已接受 | — |
 | [0002](0002-token-links-in-url-fragment.md) | 免註冊：角色連結的 Token 放在網址片段並保留 | 已接受 | P2、P3、T6、T19、R1 |
-| [0003](0003-single-master-with-recovery-code.md) | 只有 Master 一種管理身分，另以復原碼救援 | 已接受 | P1、P5 |
+| [0003](0003-single-master-with-recovery-code.md) | 只有 Master 一種管理身分，另以復原碼救援 | 已接受（保管方式由 0018 修訂） | P1、P5 |
 | [0004](0004-polling-full-snapshots.md) | 同步採每 2 秒輪詢完整快照，不用推送 | 已接受 | S1、S2、S3 |
 | [0005](0005-optimistic-writes-no-offline-queue.md) | 寫入以版本號拒絕過期操作，離線時不排隊 | 已接受 | S5、S6、M7 |
 | [0006](0006-per-cue-offset-and-shift-log.md) | 偏移存在每個 Cue 上，平移留紀錄以精確復原 | 已接受（儲存方式由 0015 修訂） | M1、M5、M6、M8、A1～A3 |
@@ -35,3 +35,5 @@
 | [0015](0015-cue-ops-in-action-log.md) | Cue 操作以前後狀態記在 ActionLog，取代 ShiftLog | 已接受 | M7、M10、T4 |
 | [0016](0016-extensibility-principles.md) | 為商業化留後路：只處理難改的結構，功能不提前建造 | 已接受 | V5、C4、T4 |
 | [0017](0017-documentation-structure-and-id-scheme.md) | 文件結構與代號系統：單一正本、縮減代號、重組目錄 | 已接受 | — |
+| [0018](0018-recovery-code-held-by-backup-operator.md) | 復原碼由備援操作者保管，不交給總召 | 已接受 | V1 |
+| [0019](0019-additive-only-migrations.md) | 資料庫遷移只做向後相容的新增，正式資料前允許一次重建 | 已接受 | T4 |
