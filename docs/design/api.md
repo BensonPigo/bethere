@@ -59,6 +59,7 @@
 | `POST /api/cues/undo` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
 | `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料 |
 
+- **M2a 起**：`POST /api/event/start` 移除，活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。
 - Master 的寫入都要帶 `version`（`sync-and-offline.md` 第 3 節）；寫入成功的回應直接附上新快照（`sync-and-offline.md` 第 1 節），總召不必等下一次輪詢。
 - **`POST /api/report` 移除**：實機驗證原型已完成；它不需憑證、會寫入日誌並記錄 Token 前綴。M3 的 Android 驗證改以截圖與手動紀錄。
 
@@ -109,6 +110,7 @@
 | 欄位 | 說明 |
 | --- | --- |
 | `offsetMin` | 目前進行中（或下一個待辦）Cue 的 `offsetMin`（`data-model.md` 4.3） |
+| 延誤 | M2a 追加：`offsetMin` + 超時分鐘（`data-model.md` 4.3，ADR-0022）；欄位名稱實作時定案 |
 
 就位率於 M2 追加。
 
@@ -118,7 +120,11 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 
 ### 5.6 Draft 階段
 
-非 Master 角色在 Draft 階段也回完整的角色快照，讓裝置在活動前就存好離線快照（`operations/runbook.md` 第 3 節）；畫面依 `eventStatus` 顯示「活動尚未開始」。
+非 Master 角色在 Draft 階段也回完整的角色快照，讓裝置在活動前就存好離線快照（`operations/runbook.md` 第 3 節）；畫面依 `screen-design.md` 4.5 顯示：活動日當天照常倒數，活動日以前顯示 Cue 清單，「活動尚未開始」只是窄條（ADR-0020）。
+
+### 5.7 條件請求與伺服器時間（M2b）
+
+快照回應帶 ETag（不含 `serverTime` 的內容雜湊）與伺服器時間標頭；`If-None-Match` 相同時回 304，同樣 `no-store`。「無效」與「已結束」永遠不回 304。規則見 `sync-and-offline.md` 第 2 節，理由見 ADR-0023。
 
 ## 6. 錯誤對照
 
