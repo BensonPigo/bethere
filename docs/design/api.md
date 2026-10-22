@@ -1,7 +1,7 @@
 # API 規格 (API)
 
 > 狀態：PO 核准（2026-10-21）；已經安全審查（2026-10-21），無 P0／P1，發現均已處理；審查紀錄見 git 歷史。
-> M2b 追加（第 3～8 節標示「M2b」的部分）：**草稿（2026-10-22），待 PO 核准與實作前的安全審查**。
+> M2b 追加（第 3～8 節標示「M2b」的部分）：PO 核准（2026-10-22），待實作前的安全審查。
 > 範圍：`requirements/stories/m1.md`、`m2a.md`、`m2b.md`；之後的里程碑在本文件追加端點。
 > 依據：`access-control.md`（身分、驗證結果、權限表）、`sync-and-offline.md`（輪詢與快照）、`data-model.md`（狀態轉換）、`tech-stack.md` 2.1（逾時與錯誤、Token 與復原碼、lastSeenAt、日誌、安全標頭）。
 
@@ -76,7 +76,7 @@
 - **M2b 寫入的共通規則**：
   - 改到 Cue 的寫入（略過、新增、指派、編輯）帶 `version`、成功後 `eventVersion` + 1。就位打卡、撤銷、重發**不帶** `version`、**不改** `eventVersion`（ADR-0023）；本文有 `version` 欄位視為未知欄位（400）。
   - 只有略過是「復原上一步」的步驟（`cue.skip`）；其他寫入的操作紀錄型別為 `rundown.insert`、`rundown.assign`、`rundown.edit`、`checkin.set`、`token.reissue`、`token.revoke`，不以 `cue.` 開頭（ADR-0021）。操作紀錄不含 Token 或其雜湊。
-  - 活動階段：略過只在 Live（US-M-6.3）；新增、指派、編輯在 Draft 與 Live 都可以，因為活動日當天第一次推進前活動仍是 Draft（ADR-0020），總召可能需要在開始前臨時加環節；打卡、撤銷、重發在 Draft 與 Live 都可以。
+  - 活動階段：M2b 的寫入在 Draft 與 Live 都可以，因為活動日當天第一次推進前活動仍是 Draft（ADR-0020），總召可能需要在開始前臨時取消或加環節（US-M-6.3）。`POST /api/cues/undo` 因此也改為 Draft 可用（Draft 階段唯一的 Cue 操作是略過）；推進與平移的階段規則不變。
 - **略過**：目標須為 Pending（否則 `not_pending`）。
 - **新增**：`start` 為 UTC 時間，須落在活動日 00:00（活動時區）到 `endsAt` 之間；`durationMin` 0～1440；`title` 1～100 字（去除前後空白後）；`notePublic`、`roleNote` 最多 500 字；不合格回 `invalid_cue`。插入位置之後的 Cue 都必須是 Pending 或 Skipped，也就是不能插在進行中或已完成的 Cue 前面（否則 `invalid_position`）。`afterCueId` 必填，所以新 Cue 不會成為第一個。
 - **指派**：目標 Cue 須為 Pending（`not_pending`）；`roles` 最多 50 個、`roleId` 不可重複（400）；只能指派 Stylist、Media、StageAV（Master 本來就看全部、Host 不看 Cue；否則 `invalid_assignment`）。新增時的 `roles` 同樣適用。
