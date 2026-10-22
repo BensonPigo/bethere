@@ -12,7 +12,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -167,7 +171,36 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, okResponse{Result: "ok", Snapshot: snap})
+	body, err := json.Marshal(okResponse{Result: "ok", Snapshot: snap})
+	if err != nil {
+		a.internal(w, r, err)
+		return
+	}
+	// The ETag is compared only now, after the token, the capability and
+	// the caller's own snapshot: a 304 never skips a check and only ever
+	// means "the same as what you got last" (api.md 5.7, ADR-0023).
+	serverTime := FormatTime(now)
+	tag := etag(body, serverTime)
+	w.Header().Set("ETag", tag)
+	w.Header().Set("X-Server-Time", serverTime)
+	if inm := r.Header.Values("If-None-Match"); len(inm) == 1 && inm[0] == tag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(append(body, '\n'))
+}
+
+// etag is the strong ETag of an "ok" snapshot response: the base64url
+// SHA-256 of its JSON with serverTime set to "" (api.md 5.7). The shapes
+// are structs, so the key order is fixed and the same content always has
+// the same tag. Only a single exact match is a 304; "*", lists, repeated
+// headers and weak tags never equal it.
+func etag(body []byte, serverTime string) string {
+	unstamped := bytes.Replace(body, []byte(`"serverTime":"`+serverTime+`"`), []byte(`"serverTime":""`), 1)
+	sum := sha256.Sum256(unstamped)
+	return `"` + base64.RawURLEncoding.EncodeToString(sum[:]) + `"`
 }
 
 // writeFn performs one write as owner with the client's version and body.
