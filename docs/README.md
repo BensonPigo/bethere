@@ -23,7 +23,7 @@
 | [scope.md](requirements/scope.md) | 功能清單 × 優先層級（P0／P1／P2）× 里程碑；限制；非功能需求（NFR） |
 | [roles-and-scenarios.md](requirements/roles-and-scenarios.md) | 各角色的現場使用情境與原始使用者故事；P0 以外的故事作為待辦 |
 | [stories/m1.md](requirements/stories/m1.md) | M1 最小閉環的故事與驗收條件（已驗收） |
-| [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次彩排的故事與驗收條件（PO 定稿） |
+| [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次實測的故事與驗收條件（PO 定稿） |
 
 ## design/ 設計
 
@@ -72,7 +72,7 @@
 
 > 只寫現況；歷史見 git log。
 
-- **目前里程碑**：M2a（平移、新人儀表板、第一次真人彩排），目標 2026-12 中。M1 已於 2026-10-22 經 PO 驗收；需要真實裝置的情境條件移到 M2a 彩排。
+- **目前里程碑**：M2a（平移、新人儀表板），目標 2026-12 中。功能已實作並於 2026-10-22 經 PO Demo；剩下小型實測（`requirements/stories/m2a.md`）。完整彩排只在 M3 做一次（ADR-0027）。
 - **文件整合**：ADR-0017 的六個步驟已完成；文件規則由 `internal/docscheck` 的測試在 CI 檢查。
 - **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
 - **已知問題**：無。
