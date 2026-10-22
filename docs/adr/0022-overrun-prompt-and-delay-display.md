@@ -1,6 +1,6 @@
 # ADR-0022：超時提示總召平移，新人儀表板的延誤含超時
 
-- 狀態：已接受
+- 狀態：已接受（延誤算法由 ADR-0026 修訂）
 - 日期：2026-10-22
 - 對應：`design/data-model.md` 4.3；`design/screen-design.md` 3.3、3.4、1；`design/api.md` 5.4；`product/vision.md` V3、第 6 節
 

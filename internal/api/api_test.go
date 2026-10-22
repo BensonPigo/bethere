@@ -101,13 +101,22 @@ func TestFormatTimeIsUTCWithMilliseconds(t *testing.T) {
 }
 
 func TestCapabilityTableDeniesByDefault(t *testing.T) {
-	for _, c := range []capability{capReadSnapshot, capStartEvent, capAdvance, capUndo, capability(99)} {
-		for _, typ := range []domain.RoleType{"", "master", "MASTER", "Admin", domain.Media, domain.StageAV, domain.Host,
+	for _, c := range []capability{capReadSnapshot, capAdvance, capUndo, capShift, capability(99)} {
+		for _, typ := range []domain.RoleType{"", "master", "MASTER", "Admin", domain.Media, domain.StageAV,
 			domain.VenueLead, domain.Reception, domain.Cashier, domain.Runner} {
 			if allowed(c, typ) {
 				t.Errorf("allowed(%d, %q)", c, typ)
 			}
 		}
+	}
+	// Host reads its dashboard and nothing else (api.md section 4).
+	for _, c := range []capability{capAdvance, capUndo, capShift} {
+		if allowed(c, domain.Host) || allowed(c, domain.Stylist) {
+			t.Errorf("capability %d allowed for Host or Stylist", c)
+		}
+	}
+	if !allowed(capReadSnapshot, domain.Host) {
+		t.Error("Host cannot read its dashboard")
 	}
 	if allowed(capability(99), domain.Master) {
 		t.Error("an unknown capability is allowed for the Master")

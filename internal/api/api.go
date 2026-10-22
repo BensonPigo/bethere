@@ -1,6 +1,7 @@
-// Package api serves the token-authenticated JSON API of api.md (M1):
-// GET /api/snapshot and the Master's writes POST /api/event/start,
-// /api/cues/advance and /api/cues/undo.
+// Package api serves the token-authenticated JSON API of api.md:
+// GET /api/snapshot, the Master's writes POST /api/cues/advance (which
+// also starts the event on its day, ADR-0020), /api/cues/undo and
+// /api/cues/shift, and the read-only POST /api/cues/shift/preview.
 //
 // Every request runs in the order of api.md section 7: parse the
 // Authorization header, resolve the token, check the capability table
@@ -12,12 +13,9 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -30,7 +28,7 @@ import (
 type Store interface {
 	LookupToken(ctx context.Context, tokenHash []byte, now time.Time) (store.TokenOwner, error)
 	Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (store.SnapshotData, error)
-	StartEvent(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time) (int64, error)
+	Advance(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time) (int64, domain.Op, error)
 	ApplyCueOp(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time,
 		build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error)
 	UndoLastCueOp(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time) (int64, domain.Op, error)
@@ -69,12 +67,13 @@ func New(cfg Config) *API {
 	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, lastSeen: map[string]time.Time{}}
 }
 
-// Register adds the M1 endpoints to mux (api.md section 3).
+// Register adds the endpoints to mux (api.md section 3).
 func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/snapshot", a.getSnapshot)
-	mux.HandleFunc("POST /api/event/start", a.write(capStartEvent, a.startEvent))
-	mux.HandleFunc("POST /api/cues/advance", a.write(capAdvance, a.advance))
-	mux.HandleFunc("POST /api/cues/undo", a.write(capUndo, a.undo))
+	mux.HandleFunc("POST /api/cues/advance", a.write(capAdvance, versionOnly, a.advance))
+	mux.HandleFunc("POST /api/cues/undo", a.write(capUndo, versionOnly, a.undo))
+	mux.HandleFunc("POST /api/cues/shift", a.write(capShift, shiftFields(true), a.shift))
+	mux.HandleFunc("POST /api/cues/shift/preview", a.previewShift)
 }
 
 // LastSeen returns when a token hash last passed authentication, for the role and link screen
@@ -99,19 +98,19 @@ type capability int
 
 const (
 	capReadSnapshot capability = iota
-	capStartEvent
 	capAdvance
 	capUndo
+	capShift // the shift and its preview
 )
 
-// allowed is the table of api.md section 4 for M1. It lists what is
-// allowed; every other combination, including any role type not opened in
-// M1 (Media, StageAV, Host, P1 types, anything unknown), is denied.
+// allowed is the table of api.md section 4. It lists what is allowed;
+// every other combination, including any role type not opened yet
+// (Media and StageAV until M2b, P1 types, anything unknown), is denied.
 func allowed(c capability, t domain.RoleType) bool {
 	switch c {
 	case capReadSnapshot:
-		return t == domain.Master || t == domain.Stylist
-	case capStartEvent, capAdvance, capUndo:
+		return t == domain.Master || t == domain.Stylist || t == domain.Host
+	case capAdvance, capUndo, capShift:
 		return t == domain.Master
 	}
 	return false
@@ -147,10 +146,10 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, okResponse{Result: "ok", Snapshot: snap})
 }
 
-// writeFn performs one write as owner with the client's version.
-type writeFn func(ctx context.Context, owner store.TokenOwner, version int64, now time.Time) error
+// writeFn performs one write as owner with the client's version and body.
+type writeFn func(ctx context.Context, owner store.TokenOwner, b body, now time.Time) error
 
-func (a *API) write(c capability, fn writeFn) http.HandlerFunc {
+func (a *API) write(c capability, fields fieldSet, fn writeFn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hash, ok := bearerHash(r)
 		if !ok {
@@ -170,12 +169,12 @@ func (a *API) write(c capability, fn writeFn) http.HandlerFunc {
 			writeError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		version, ok := readVersion(w, r)
+		b, ok := readBody(w, r, fields)
 		if !ok {
 			writeError(w, http.StatusBadRequest, "bad_request")
 			return
 		}
-		err = fn(r.Context(), owner, version, a.now())
+		err = fn(r.Context(), owner, b, a.now())
 		switch {
 		case err == nil:
 			a.respondSnapshot(w, r, hash, http.StatusOK, "")
@@ -187,19 +186,13 @@ func (a *API) write(c capability, fn writeFn) http.HandlerFunc {
 	}
 }
 
-func (a *API) startEvent(ctx context.Context, o store.TokenOwner, version int64, now time.Time) error {
-	_, err := a.store.StartEvent(ctx, o.EventID, version, o.Actor, now)
+func (a *API) advance(ctx context.Context, o store.TokenOwner, b body, now time.Time) error {
+	_, _, err := a.store.Advance(ctx, o.EventID, b.version, o.Actor, now)
 	return err
 }
 
-func (a *API) advance(ctx context.Context, o store.TokenOwner, version int64, now time.Time) error {
-	_, _, err := a.store.ApplyCueOp(ctx, o.EventID, version, o.Actor, now,
-		func(cues []domain.Cue) (domain.Op, error) { return domain.Advance(cues, now) })
-	return err
-}
-
-func (a *API) undo(ctx context.Context, o store.TokenOwner, version int64, now time.Time) error {
-	_, _, err := a.store.UndoLastCueOp(ctx, o.EventID, version, o.Actor, now)
+func (a *API) undo(ctx context.Context, o store.TokenOwner, b body, now time.Time) error {
+	_, _, err := a.store.UndoLastCueOp(ctx, o.EventID, b.version, o.Actor, now)
 	return err
 }
 
@@ -259,6 +252,8 @@ var domainErrors = []struct {
 	{domain.ErrNothingToAdvance, "nothing_to_advance"},
 	{store.ErrNothingToUndo, "nothing_to_undo"},
 	{domain.ErrUndoStale, "undo_stale"},
+	{domain.ErrShiftTooEarly, "shift_too_early"},
+	{domain.ErrInvalidDelta, "invalid_delta"},
 }
 
 // writeFailed maps a failed write (api.md section 6). The writes of M1
@@ -279,6 +274,13 @@ func (a *API) writeFailed(w http.ResponseWriter, r *http.Request, err error) {
 			writeError(w, http.StatusUnprocessableEntity, d.code)
 			return
 		}
+	}
+	// A cue id from the request that is not in the caller's event, another
+	// event's included: the same 404 as one that does not exist, without a
+	// result (api.md section 6). store.ErrNotFound stays a 500.
+	if errors.Is(err, domain.ErrCueNotFound) {
+		writeError(w, http.StatusNotFound, "not_found")
+		return
 	}
 	a.internal(w, r, err)
 }
@@ -308,66 +310,4 @@ func bearerHash(r *http.Request) ([]byte, bool) {
 		return nil, false
 	}
 	return auth.HashToken(token), true
-}
-
-// readVersion reads the body of a write: one JSON object of at most
-// MaxBodyBytes with exactly the field "version", an integer of 1 or more
-// (api.md section 1).
-//
-// The body is read token by token rather than decoded into a struct,
-// because encoding/json matches field names case-insensitively and keeps
-// the last of repeated names: {"VERSION":1} or {"version":"x","version":1}
-// must be refused as unknown or malformed, not accepted.
-func readVersion(w http.ResponseWriter, r *http.Request) (int64, bool) {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
-	dec.UseNumber()
-	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
-		return 0, false
-	}
-	var (
-		version int64
-		found   bool
-	)
-	for dec.More() {
-		key, err := dec.Token()
-		if err != nil || key != "version" || found {
-			return 0, false
-		}
-		// A number token; null, strings, booleans, objects and arrays
-		// are all refused.
-		val, err := dec.Token()
-		n, isNumber := val.(json.Number)
-		if err != nil || !isNumber {
-			return 0, false
-		}
-		if version, found = parsePositive([]byte(n)); !found {
-			return 0, false
-		}
-	}
-	if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
-		return 0, false
-	}
-	// Nothing but white space may follow the object.
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return 0, false
-	}
-	return version, found
-}
-
-// parsePositive accepts only a JSON integer written as ASCII digits whose
-// value is 1 or more and fits in int64, so 1.0, 1e0 and -1 are refused.
-func parsePositive(raw []byte) (int64, bool) {
-	if len(raw) == 0 || len(raw) > 18 {
-		return 0, false
-	}
-	for _, c := range raw {
-		if c < '0' || c > '9' {
-			return 0, false
-		}
-	}
-	v, err := strconv.ParseInt(string(raw), 10, 64)
-	if err != nil || v < 1 {
-		return 0, false
-	}
-	return v, true
 }

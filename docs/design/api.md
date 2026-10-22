@@ -46,20 +46,23 @@
 | 400 | `bad_request` | 缺少或重複的 `Authorization` 標頭、Token 格式不符、本文不是單一 JSON 物件、有未知欄位、超過 16 KB |
 | 403 | `forbidden` | Token 有效，但角色類型沒有這個端點的權限（第 4 節） |
 | 409 | `version_conflict` | 寫入帶的 `version` 不是目前版本；回應另附 `snapshot`（最新快照），客戶端更新畫面並提示「畫面已更新，請重新確認」 |
-| 422 | `not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale` | 領域規則不允許（第 6 節） |
+| 404 | `not_found` | 本文中的 Cue id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節） |
+| 422 | `not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta` | 領域規則不允許（第 6 節） |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
 
-## 3. 端點（M1）
+## 3. 端點（M2a）
 
 | 方法與路徑 | 憑證 | 權限（第 4 節） | 本文 | 成功回應 |
 | --- | --- | --- | --- | --- |
 | `GET /api/snapshot` | Token | 讀取快照 | — | `ok` + 依角色的快照 |
-| `POST /api/event/start` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
 | `POST /api/cues/advance` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
 | `POST /api/cues/undo` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
+| `POST /api/cues/shift/preview` | Token | Master | `{"fromCueId":n,"deltaMin":n,"excluded":[n…]}` | `{"result":"ok","preview":{"changes":[{"cueId","fromStart","toStart"}],"conflicts":[…],"tooEarly":{"cueId","newStart"}或null}}`；不寫入；活動須為 Live |
+| `POST /api/cues/shift` | Token | Master | `{"version":n,"fromCueId":n,"deltaMin":n,"excluded":[n…]}` | `ok` + 新的 Master 快照 |
 | `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料 |
 
-- **M2a 起**：`POST /api/event/start` 移除，活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。
+- `POST /api/event/start` 已移除（M2a）：活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。
+- 平移的本文與 `version` 一樣嚴格：欄位名稱完全相符、不可重複、只接受整數（不接受 `-0`、前導零、小數、字串）；`deltaMin` 可為負，範圍由領域規則檢查（±1440，否則 `invalid_delta`）；`excluded` 可省略，最多 200 個正整數，不在本活動的 id 會被忽略。預覽不帶 `version`。
 - Master 的寫入都要帶 `version`（`sync-and-offline.md` 第 3 節）；寫入成功的回應直接附上新快照（`sync-and-offline.md` 第 1 節），總召不必等下一次輪詢。
 - **`POST /api/report` 移除**：實機驗證原型已完成；它不需憑證、會寫入日誌並記錄 Token 前綴。M3 的 Android 驗證改以截圖與手動紀錄。
 
@@ -69,12 +72,13 @@
 
 | 端點 | Master | Stylist | Media | StageAV | Host | 其他類型 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/snapshot` | Master 快照 | 角色快照 | M2 起：角色快照 | M2 起：角色快照 | M2 起：彙總快照 | 403 |
-| `POST /api/event/start` | ✔ | 403 | 403 | 403 | 403 | 403 |
+| `GET /api/snapshot` | Master 快照 | 角色快照 | M2b 起：角色快照 | M2b 起：角色快照 | 彙總快照 | 403 |
 | `POST /api/cues/advance` | ✔ | 403 | 403 | 403 | 403 | 403 |
 | `POST /api/cues/undo` | ✔ | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/shift/preview` | ✔ | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/shift` | ✔ | 403 | 403 | 403 | 403 | 403 |
 
-- **M1 只開放 Master 與 Stylist**：`bethere add-role` 在 M1 只接受 Stylist，Media、StageAV、Host 於 M2 開放（M1 的畫面只有這兩種，未定義的類型不能落入寬鬆的預設權限）。P1 角色類型（VenueLead、Reception、Cashier、Runner）在 P0 不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
+- **M2a 開放 Master、Stylist 與 Host**：`bethere add-role` 接受 Stylist 與 Host，Media、StageAV 於 M2b 開放（未定義的類型不能落入寬鬆的預設權限）。P1 角色類型（VenueLead、Reception、Cashier、Runner）在 P0 不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
 - 權限檢查在 API 層。store 只確認操作者的憑證仍有效且屬於同一活動，**不檢查角色類型**（`access-control.md` 第 5 節第 6 條），所以每個寫入端點都必須先通過本表。
 
 ## 5. 快照
@@ -98,20 +102,23 @@
 | `activeCueId` | 進行中的 Cue，沒有則為 `null` |
 | `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生，沒有可復原的操作時為 `null`。推進的描述以「開始的那個 Cue」命名；推進的是最後一個 Cue（沒有開始新的）時，以「完成的那個 Cue」命名（PO 於 2026-10-22 確認） |
 | `roles[]` | `{"id","name","type"}`（不含 Token 或使用紀錄；`lastSeenAt` 於 M2 追加） |
+| `conflicts[]` | 固定環節衝突：`{"cueId","fixedCueId","overrunMin"}`（`data-model.md` 4.2） |
+| `overrunMin` | 超時分鐘（`data-model.md` 4.3，ADR-0022）；活動未開始時為 0 |
 
 ### 5.3 角色快照（Stylist、Media、StageAV）
 
 | 欄位 | 說明 |
 | --- | --- |
 | `cues[]` | **只有指派給自己的 Cue**：`id, seq, title, effectiveStart, durationMin, isFixed, offsetMin, status, notePublic, roleNote`（只有自己的 `roleNote`） |
+| `notice` | 變更提示：最近一次移動到**自己的** Cue 的平移（或平移的復原），`{"kind":"shift","at","deltaMin","changes":[{"cueId","fromStart","toStart"}]}`，`changes` 只含自己的 Cue；沒有時為 `null`。客戶端以 `at` 判斷是否已顯示過（`screen-design.md` 4.4） |
 | （無 `current`） | 目前進行中的 Cue 只有在指派給自己時才會出現在 `cues[]`（狀態 `InProgress`）；未指派的進行中 Cue 不揭露任何內容。免手持畫面在未指派時本來就只顯示「準備中」；M2b 的攝影、音控視圖若需要「目前環節」，屆時由 PO 決定 |
 
 ### 5.4 彙總快照（Host）
 
 | 欄位 | 說明 |
 | --- | --- |
-| `offsetMin` | 目前進行中（或下一個待辦）Cue 的 `offsetMin`（`data-model.md` 4.3） |
-| 延誤 | M2a 追加：`offsetMin` + 超時分鐘（`data-model.md` 4.3，ADR-0022）；欄位名稱實作時定案 |
+| `delayMin` | 延誤分鐘：下一個待辦 Cue 的 `offsetMin` + 超時分鐘（`data-model.md` 4.3，ADR-0026）；活動未開始時為 0 |
+| `currentTitle` | 進行中 Cue 的標題（不論指派給誰），沒有時為 null；Host 唯一看得到的 Cue 資訊 |
 
 就位率於 M2 追加。
 
@@ -142,11 +149,14 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | `domain.ErrNothingToAdvance` | 422 `nothing_to_advance` |
 | `store.ErrNothingToUndo` | 422 `nothing_to_undo` |
 | `domain.ErrUndoStale` | 422 `undo_stale` |
-| `store.ErrNoActor`、`store.ErrCrossEvent`、`store.ErrNotFound` | 500 `internal`（M1 的請求不帶任何 id，出現即為程式錯誤） |
+| `domain.ErrShiftTooEarly` | 422 `shift_too_early`（預覽改以 `tooEarly` 回報） |
+| `domain.ErrInvalidDelta` | 422 `invalid_delta` |
+| `domain.ErrCueNotFound` | 404 `not_found`，不帶 `result` |
+| `store.ErrNoActor`、`store.ErrCrossEvent`、`store.ErrNotFound` | 500 `internal`（目前的端點不會把別的活動的 id 交給 store，出現即為程式錯誤） |
 | `domain.ErrMultipleInProgress`、`store.ErrUnknownOp`、資料庫錯誤、逾時 | 500 `internal` |
 | 其他 | 500 `internal` |
 
-**之後的里程碑**：一旦請求帶有 Cue 或角色的 id（M2 的略過、代打卡等），store 必須**先檢查操作者與目標是否同一活動（`ErrCrossEvent`），再檢查活動是否結束**；目前 `guardAs` 的順序相反（`internal/store/events.go:151-159`），會讓別的已結束活動的 id 回 `ended` 而清掉呼叫者的資料。修正與測試列為 M2 的前置工作；屬於別的活動的 id 一律回與「不存在」相同的 404，不帶 `result`。
+**帶 id 的請求**：store 先檢查操作者與目標是否同一活動（`ErrCrossEvent`），再檢查活動是否結束，所以別的已結束活動的 id 不會回 `ended` 而清掉呼叫者的資料（M2a 修正，以測試固定）。平移的 Cue id 只在呼叫者自己活動的 Cue 中尋找，屬於別的活動的 id 回與「不存在」相同的 404，不帶 `result`。
 
 ## 7. 伺服器端規則
 
