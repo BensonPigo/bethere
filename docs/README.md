@@ -24,6 +24,7 @@
 | [roles-and-scenarios.md](requirements/roles-and-scenarios.md) | 各角色的現場使用情境與原始使用者故事；P0 以外的故事作為待辦 |
 | [stories/m1.md](requirements/stories/m1.md) | M1 最小閉環的故事與驗收條件（已驗收） |
 | [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次實測的故事與驗收條件（已驗收） |
+| [stories/m2b.md](requirements/stories/m2b.md) | M2b 現場補齊的故事與驗收條件（草稿） |
 
 ## design/ 設計
 
