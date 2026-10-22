@@ -48,7 +48,9 @@ After=network-online.target
 [Service]
 User=bethere
 ExecStartPre=+/opt/bethere/prepare.sh bethere
-ExecStart=/opt/bethere/bethere serve -addr 127.0.0.1:8080
+# The database is never created here (tech-stack.md 2.1「不自動建庫」): the first
+# deployment creates it once with ops/gcp/init-db.sh.
+ExecStart=/opt/bethere/bethere serve -db /var/lib/bethere/bethere.db -addr 127.0.0.1:8080
 Restart=on-failure
 RestartSec=5
 StartLimitIntervalSec=0
