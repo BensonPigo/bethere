@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -152,5 +153,86 @@ func TestCrossEventIDOfAnEndedEventIsCrossEventNotEnded(t *testing.T) {
 	// Now the other event has ended; the caller's own event has not.
 	if err := f.s.AssignRole(ctx, oldCue, f.stylist, "", f.masterBy, at(10, 0)); !errors.Is(err, ErrCrossEvent) {
 		t.Errorf("err = %v, want ErrCrossEvent", err)
+	}
+}
+
+func TestUS_X_4_RoleViewIsStoredCheckedAndDefaulted(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.s.AddRoleWithView(ctx, f.eventID, "新人", domain.Host, domain.Glance, f.masterBy, at(0, 0)); !errors.Is(err, ErrRoleView) {
+		t.Errorf("Host with Glance: err = %v, want ErrRoleView", err)
+	}
+	if _, err := f.s.AddRoleWithView(ctx, f.eventID, "花藝", domain.RoleType("Florist"), "", f.masterBy, at(0, 0)); !errors.Is(err, ErrRoleType) {
+		t.Errorf("unknown type: err = %v, want ErrRoleType", err)
+	}
+	glance, err := f.s.AddRoleWithView(ctx, f.eventID, "新秘助理", domain.Stylist, domain.Glance, f.masterBy, at(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := f.s.AddRole(ctx, f.eventID, "新人", domain.Host, f.masterBy, at(0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for role, want := range map[int64]domain.View{glance: domain.Glance, host: domain.Dashboard, f.stylist: domain.HandsFree} {
+		tok := hash(fmt.Sprint("tok", role))
+		if err := f.s.IssueToken(ctx, role, tok, f.masterBy, at(1, 0)); err != nil {
+			t.Fatal(err)
+		}
+		o, err := f.s.LookupToken(ctx, tok, at(12, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if o.View != want {
+			t.Errorf("role %d view = %s, want %s", role, o.View, want)
+		}
+	}
+	if o, _ := f.s.LookupToken(ctx, hash("master"), at(12, 0)); o.View != domain.Console {
+		t.Errorf("master view = %s, want Console", o.View)
+	}
+}
+
+func TestSnapshotListsShiftsAndUndosNewestFirst(t *testing.T) {
+	f := newFixture(t)
+	if err := f.s.IssueToken(ctx, f.stylist, hash("st"), f.masterBy, at(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	v, _, err := f.s.Advance(ctx, f.eventID, f.version(t), f.masterBy, at(10, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shift := func(cues []domain.Cue) (domain.Op, error) {
+		plan, err := domain.PlanShift(cues, domain.ShiftRequest{FromCueID: f.cueIDs[1], DeltaMin: 10}, at(10, 5))
+		return plan.Op, err
+	}
+	if v, _, err = f.s.ApplyCueOp(ctx, f.eventID, v, f.masterBy, at(10, 5), shift); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, err = f.s.UndoLastCueOp(ctx, f.eventID, v, f.masterBy, at(10, 6)); err != nil {
+		t.Fatal(err)
+	}
+	// An unreadable row (a newer release's format) is skipped, not an error.
+	if _, err := f.s.w.ExecContext(ctx, `INSERT INTO action_logs (event_id, at, actor, type, payload)
+		VALUES (?, ?, 'x', 'cue.shift', '{"v":99}')`, f.eventID, toNS(at(10, 7))); err != nil {
+		t.Fatal(err)
+	}
+	d, err := f.s.Snapshot(ctx, hash("st"), at(10, 8))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Shifts) != 2 {
+		t.Fatalf("shifts = %d, want 2 (the undo, then the shift)", len(d.Shifts))
+	}
+	undo, sh := d.Shifts[0], d.Shifts[1]
+	if !undo.At.Equal(at(10, 6)) || !sh.At.Equal(at(10, 5)) {
+		t.Errorf("times = %v, %v", undo.At, sh.At)
+	}
+	for _, ch := range sh.Changes {
+		if ch.After.OffsetMin-ch.Before.OffsetMin != 10 {
+			t.Errorf("shift moved cue %d by %d", ch.After.ID, ch.After.OffsetMin-ch.Before.OffsetMin)
+		}
+	}
+	for _, ch := range undo.Changes {
+		if ch.After.OffsetMin-ch.Before.OffsetMin != -10 {
+			t.Errorf("undo moved cue %d by %d, want -10", ch.After.ID, ch.After.OffsetMin-ch.Before.OffsetMin)
+		}
 	}
 }

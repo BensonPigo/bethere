@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -24,7 +25,20 @@ type SnapshotData struct {
 	// this release can read it (ADR-0015); nil otherwise. It is what
 	// UndoLastCueOp would reverse.
 	LastOp *domain.Op
+	// Shifts are the latest shifts and undone shifts, newest first, for
+	// the change notices of each role (screen-design.md 4.4).
+	Shifts []ShiftRecord
 }
+
+// ShiftRecord is one logged shift, or the undo of one: when, and every cue
+// it moved with its offset before and after. Never the log's own id.
+type ShiftRecord struct {
+	At      time.Time
+	Changes []domain.Change
+}
+
+// recentShifts bounds how far back the change notice looks.
+const recentShifts = 50
 
 // SnapshotCue is a cue with its public note and its role assignments.
 type SnapshotCue struct {
@@ -78,6 +92,9 @@ func (s *Store) Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (
 		return SnapshotData{}, err
 	}
 	if d.LastOp, err = lastUndoableOp(ctx, tx, e.ID); err != nil {
+		return SnapshotData{}, err
+	}
+	if d.Shifts, err = loadShifts(ctx, tx, e.ID); err != nil {
 		return SnapshotData{}, err
 	}
 	return d, nil
@@ -190,4 +207,43 @@ func lastUndoableOp(ctx context.Context, q querier, eventID int64) (*domain.Op, 
 		return nil, err
 	}
 	return &op, nil
+}
+
+// loadShifts reads the latest shifts and undos of shifts. A row this
+// release cannot read is skipped, never an error: a release rolled back
+// past a newer log format must still serve every snapshot (ADR-0015).
+func loadShifts(ctx context.Context, q querier, eventID int64) ([]ShiftRecord, error) {
+	rows, err := q.QueryContext(ctx, `SELECT at, type, payload FROM action_logs
+		WHERE event_id = ? AND type IN (?, 'undo') ORDER BY id DESC LIMIT ?`,
+		eventID, opLogPrefix+string(domain.OpShift), recentShifts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ShiftRecord
+	for rows.Next() {
+		var (
+			at           int64
+			typ, payload string
+		)
+		if err := rows.Scan(&at, &typ, &payload); err != nil {
+			return nil, err
+		}
+		if typ == "undo" {
+			// An undo row is {"of": <log id>, "op": <the reversing op>}.
+			var u struct {
+				Op json.RawMessage `json:"op"`
+			}
+			if json.Unmarshal([]byte(payload), &u) != nil {
+				continue
+			}
+			payload = string(u.Op)
+		}
+		op, err := decodeOp(opLogPrefix+string(domain.OpShift), payload)
+		if err != nil || op.Shift == nil {
+			continue // unreadable, or the undo of an advance or skip
+		}
+		out = append(out, ShiftRecord{At: fromNS(at), Changes: op.Changes})
+	}
+	return out, rows.Err()
 }
