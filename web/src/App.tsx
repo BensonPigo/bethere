@@ -70,6 +70,7 @@ export function App() {
         offline={s.offline}
         busy={s.busy}
         write={s.write}
+        reissue={s.reissue}
         preview={s.preview}
       />
     );
@@ -81,9 +82,9 @@ export function App() {
     const view = rs.role.view ?? (rs.role.type === "Stylist" ? "HandsFree" : "Glance");
     screen =
       view === "Glance" ? (
-        <Glance snap={rs} now={s.now} skew={s.skew} change={s.change} />
+        <Glance snap={rs} now={s.now} skew={s.skew} change={s.change} offline={s.offline} busy={s.busy} write={s.write} />
       ) : view === "HandsFree" ? (
-        <HandsFree snap={rs} now={s.now} skew={s.skew} change={s.change} />
+        <HandsFree snap={rs} now={s.now} skew={s.skew} change={s.change} offline={s.offline} write={s.write} />
       ) : null;
   }
   if (!screen) return <Full>{banners}<div class="msg">此連結的畫面尚未開放</div></Full>;

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { classifyResponse, shouldWipeLocalData } from "./api";
+import { classifyNotModified, classifyResponse, shouldWipeLocalData, writeBody } from "./api";
 import type { RoleCue, RoleSnapshot } from "./api";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
-import { dateInZone, formatHM } from "./format";
-import { isStaleLive, pruneStale, snapKey } from "./storage";
+import { agoText, dateInZone, formatHM, zonedToISO } from "./format";
+import { isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
-import { delayText, freshNotice, monthDay, noticeText, originalTime, signed, suggestedShift } from "./notice";
-import type { ShiftNotice } from "./api";
+import { delayText, freshNotice, isEarlier, monthDay, noticedCues, noticeText, originalTime, signed, suggestedShift } from "./notice";
+import type { AssignNotice, ShiftNotice } from "./api";
 
 const MIN = 60000;
 const JSON_CT = "application/json; charset=utf-8";
@@ -266,5 +266,78 @@ describe("ADR-0028 original time beside a shifted cue", () => {
     expect(originalTime("2027-06-06T08:28:00.000Z", 10, "Asia/Taipei")).toBe("原 16:18");
     expect(originalTime("2027-06-06T08:18:00.000Z", -5, "Asia/Taipei")).toBe("原 16:23");
     expect(originalTime("2027-06-06T08:28:00.000Z", 0, "Asia/Taipei")).toBeNull();
+  });
+});
+
+function memoryStorage(): Storage {
+  const m = new Map<string, string>();
+  return {
+    get length() { return m.size; },
+    clear: () => m.clear(),
+    getItem: (k) => m.get(k) ?? null,
+    key: (i) => [...m.keys()][i] ?? null,
+    removeItem: (k) => void m.delete(k),
+    setItem: (k, v) => void m.set(k, v),
+  };
+}
+
+describe("M2b: conditional requests (api.md 5.7)", () => {
+  it("a 304 keeps the snapshot, never wipes, and needs the server time", () => {
+    const o = classifyNotModified("2027-06-06T02:00:01.500Z");
+    expect(o).toEqual({ kind: "notModified", serverTime: "2027-06-06T02:00:01.500Z" });
+    expect(shouldWipeLocalData(o)).toBe(false);
+    expect(classifyNotModified(null).kind).toBe("failure");
+    expect(classifyNotModified("x").kind).toBe("failure");
+  });
+});
+
+describe("M2b: write bodies (api.md section 3)", () => {
+  it("cue writes carry the version; check-ins and links do not", () => {
+    expect(writeBody({ path: "/api/cues/skip", cueId: 3 }, 7)).toEqual({ version: 7, cueId: 3 });
+    expect(writeBody({ path: "/api/checkin", checkedIn: true }, 7)).toEqual({ checkedIn: true });
+    expect(writeBody({ path: "/api/roles/checkin", roleId: 2, checkedIn: false }, 7)).toEqual({ roleId: 2, checkedIn: false });
+    expect(writeBody({ path: "/api/roles/reissue", roleId: 2 }, 7)).toEqual({ roleId: 2 });
+    expect(writeBody({ path: "/api/roles/revoke", roleId: 2 }, 7)).toEqual({ roleId: 2 });
+    expect(writeBody({ path: "/api/cues/roles", cueId: 3, roles: [{ roleId: 2, roleNote: null }] }, 7)).toEqual({
+      version: 7, cueId: 3, roles: [{ roleId: 2, roleNote: null }],
+    });
+  });
+  it("a reissued token is never stored with the snapshot (US-M-7.1)", () => {
+    const token = "abcdefghijklmnopqrstuv";
+    const o = classifyResponse(200, JSON_CT, { result: "ok", snapshot: snap({}), token });
+    expect(o.kind === "ok" && o.token).toBe(token);
+    if (o.kind !== "ok") return;
+    const store = memoryStorage();
+    saveSnapshot(store, "snap:x", o.snapshot);
+    expect(store.getItem("snap:x")).not.toContain(token);
+    expect(loadSnapshot(store, "snap:x")).not.toBeNull();
+  });
+});
+
+describe("M2b: notices and helpers", () => {
+  const assign: AssignNotice = { kind: "assign", at: "2027-06-06T00:00:00Z", cueId: 9, title: "長輩致詞", effectiveStart: "2027-06-06T04:00:00Z" };
+  it("an assignment reads 新增環節 with its time (US-X-7.1)", () => {
+    expect(noticeText(assign, "Asia/Taipei")).toBe("新增環節：長輩致詞（12:00）");
+    expect([...noticedCues(assign)]).toEqual(["9"]);
+    expect(isEarlier(assign)).toBe(false);
+    expect(noticedCues(null).size).toBe(0);
+  });
+  it("is shown once per device, like a shift (US-X-7.2)", () => {
+    const store = memoryStorage();
+    expect(freshNotice(assign, store, "snap:x")).toBe(assign);
+    expect(freshNotice(assign, store, "snap:x")).toBeNull();
+  });
+  it("turns HH:MM on the event day into UTC", () => {
+    expect(zonedToISO("2027-06-06", "12:00", "Asia/Taipei")).toBe("2027-06-06T04:00:00.000Z");
+    expect(zonedToISO("2027-06-06", "00:30", "Asia/Taipei")).toBe("2027-06-05T16:30:00.000Z");
+    expect(zonedToISO("2027-06-06", "24:00", "Asia/Taipei")).toBeNull();
+    expect(zonedToISO("2027-06-06", "", "Asia/Taipei")).toBeNull();
+  });
+  it("says how long ago a link was used (US-M-1.6)", () => {
+    const now = Date.parse("2027-06-06T01:05:00Z");
+    expect(agoText(null, now)).toBe("沒有使用紀錄");
+    expect(agoText("2027-06-06T01:05:00Z", now)).toBe("剛剛");
+    expect(agoText("2027-06-06T01:00:00Z", now)).toBe("5 分鐘前");
+    expect(agoText("2027-06-05T23:00:00Z", now)).toBe("2 小時前");
   });
 });
