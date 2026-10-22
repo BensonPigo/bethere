@@ -170,7 +170,7 @@ func TestMigrationsAndPragmas(t *testing.T) {
 		t.Error("read-only pool accepted a write")
 	}
 
-	// A database from a newer binary still opens (tech-stack.md T4).
+	// A database from a newer binary still opens (ADR-0019).
 	if _, err := s.w.Exec("PRAGMA user_version = 99"); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestCreateEventAndTokens(t *testing.T) {
 	}
 }
 
-// A database failure must never look like "token not found" (T3b).
+// A database failure must never look like "token not found" (tech-stack.md 2.1「逾時與錯誤」).
 func TestLookupTokenErrorIsNotNotFound(t *testing.T) {
 	s, _ := newStore(t)
 	s.r.Close()
@@ -324,7 +324,7 @@ func TestShiftAndUndoThroughStore(t *testing.T) {
 		t.Errorf("offsets after undo = %d, %d, want 0, 0", cues[1].OffsetMin, cues[2].OffsetMin)
 	}
 
-	// Only one step back (M7).
+	// Only one step back (data-model.md 4.1).
 	if _, _, err := f.s.UndoLastCueOp(ctx, f.eventID, v, f.masterBy, at(10, 8)); !errors.Is(err, ErrNothingToUndo) {
 		t.Errorf("second undo: err = %v, want ErrNothingToUndo", err)
 	}
@@ -374,7 +374,7 @@ func TestUndoSkipAndAdvance(t *testing.T) {
 	}
 }
 
-// Polling reads must not wait for a write transaction (T3a).
+// Polling reads must not wait for a write transaction (tech-stack.md 2.1「連線」).
 func TestReadsDoNotWaitForWriter(t *testing.T) {
 	f := newFixture(t)
 	tx, err := f.s.w.BeginTx(ctx, nil) // _txlock=immediate: holds the write lock now
@@ -455,7 +455,7 @@ func TestWriterIsASingleConnection(t *testing.T) {
 // Another process (a server-side subcommand) may write between this
 // store's read and write. Taking the write lock at BEGIN makes the store
 // wait and then see that write, so a stale client gets a version conflict
-// instead of a "database is busy" failure (T3a).
+// instead of a "database is busy" failure (tech-stack.md 2.1「連線」).
 func TestWriteWaitsForAnotherProcess(t *testing.T) {
 	f := newFixture(t)
 	f.start(t)
@@ -752,7 +752,7 @@ func TestWritesAreBoundToTheActorsEvent(t *testing.T) {
 }
 
 // Only a proven recovery code of the same event replaces the Master link
-// (P5); the actor for it comes only from LookupRecoveryCode.
+// (access-control.md section 2); the actor for it comes only from LookupRecoveryCode.
 func TestMasterLinkChangesOnlyWithItsRecoveryCode(t *testing.T) {
 	f := newFixture(t)
 	otherEvent(t, f.s)
@@ -1017,7 +1017,7 @@ func TestRescheduleEvent(t *testing.T) {
 	}
 }
 
-// An actor printed with %#v must not reveal its credential hash (T13).
+// An actor printed with %#v must not reveal its credential hash (tech-stack.md 2.1「日誌」).
 func TestActorDoesNotPrintItsCredential(t *testing.T) {
 	f := newFixture(t)
 	if got := fmt.Sprintf("%#v %+v %v", f.masterBy, f.masterBy, f.masterBy); strings.Contains(got, string(hash("master"))) || strings.Contains(got, "cred") {

@@ -7,7 +7,7 @@ import (
 
 type EventStatus string
 
-// Ended is derived from the date, never stored (data-model.md M9).
+// Ended is derived from the date, never stored (data-model.md, Event).
 const (
 	Draft EventStatus = "Draft"
 	Live  EventStatus = "Live"
@@ -22,7 +22,7 @@ type Date struct {
 
 // timeZones are the event time zones BeThere accepts. Only names that the
 // embedded tzdata holds verbatim are listed, so an event reads back on any
-// host (T12); a host's own zoneinfo may accept variants such as
+// host (tech-stack.md 2.1「時間」); a host's own zoneinfo may accept variants such as
 // "asia/taipei" that others cannot load. Add zones here when needed.
 var timeZones = []string{"Asia/Taipei"}
 
@@ -64,7 +64,7 @@ type Event struct {
 	LiveStartedAt time.Time
 }
 
-// retentionDays is how long an ended event is kept (tech-stack.md T10).
+// retentionDays is how long an ended event is kept (tech-stack.md 2.1「資料刪除」).
 const retentionDays = 80
 
 // EndsAt is 04:00 local time on the day after the event.

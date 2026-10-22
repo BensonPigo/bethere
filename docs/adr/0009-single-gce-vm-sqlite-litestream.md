@@ -2,7 +2,7 @@
 
 - 狀態：已接受
 - 日期：2026-10-20
-- 對應：`sync-and-offline.md` S7；`tech-stack.md` T-B、T3、第 3 節
+- 對應：`tech-stack.md` 2.1「資料庫」、第 3 節
 
 ## 背景
 

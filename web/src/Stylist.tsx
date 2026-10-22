@@ -1,4 +1,4 @@
-// V2a Stylist mode (screen-design.md section 5; US-ST-1).
+// Stylist mode (screen-design.md section 5; US-ST-1).
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { RoleSnapshot } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";

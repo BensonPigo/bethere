@@ -4,7 +4,7 @@ import { PrintPage } from "./PrintPage";
 import "./style.css";
 import "./app.css";
 
-// tech-stack.md T16: the path picks the entry; the fragment carries the token.
+// tech-stack.md 2.2「路由」: the path picks the entry; the fragment carries the token.
 function Root() {
   switch (location.pathname) {
     case "/print":

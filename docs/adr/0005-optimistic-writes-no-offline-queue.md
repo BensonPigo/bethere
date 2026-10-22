@@ -2,7 +2,7 @@
 
 - 狀態：已接受
 - 日期：2026-10-20
-- 對應：`sync-and-offline.md` S5、S6；`data-model.md` M7；需求 A7、E3
+- 對應：`sync-and-offline.md` 第 3、6 節；`data-model.md` 4.1；NFR-3
 
 ## 背景
 

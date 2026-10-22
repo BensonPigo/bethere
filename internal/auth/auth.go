@@ -1,10 +1,10 @@
 // Package auth makes and checks BeThere's credentials: role tokens and
 // event recovery codes (access-control.md sections 2 and 3, tech-stack.md
-// T6, api.md A2).
+// tech-stack.md 2.1「Token 與復原碼」, api.md section 1).
 //
 // The server and every subcommand hash credentials with the functions
 // here and nowhere else: a second, different rule would make every link
-// look invalid and wipe every device's offline copy (api.md F5).
+// look invalid and wipe every device's offline copy (api.md section 8).
 package auth
 
 import (
@@ -64,7 +64,7 @@ func CheckToken(s string) error {
 }
 
 // HashToken is the stored and looked-up form of a token: SHA-256 of the
-// token's 22 ASCII characters themselves, not of the decoded bytes (A2).
+// token's 22 ASCII characters themselves, not of the decoded bytes (api.md section 1).
 // The caller checks the format first.
 func HashToken(token string) []byte {
 	h := sha256.Sum256([]byte(token))

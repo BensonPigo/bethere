@@ -2,7 +2,7 @@
 
 - 狀態：已接受（復原碼的保管方式由 ADR-0018 修訂）
 - 日期：2026-10-20
-- 對應：`access-control.md` P1、P5
+- 對應：`access-control.md` 第 2 節
 
 ## 背景
 

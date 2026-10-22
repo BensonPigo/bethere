@@ -9,10 +9,10 @@
 //
 // Every subcommand needs -db; there is no default, so a command can never
 // open a database other than the one named. Only serve with BETHERE_INIT=1
-// creates a database (T3c, A10). Links and recovery codes are printed to
-// standard output only, never to a log (A11). add-role and import-rundown
+// creates a database (tech-stack.md 2.1「不自動建庫」; api.md section 7). Links and recovery codes are printed to
+// standard output only, never to a log (api.md section 7). add-role and import-rundown
 // act as the Master: they ask for the Master link on the terminal without
-// echo and never take it from arguments or the environment (A12).
+// echo and never take it from arguments or the environment (api.md section 7).
 package main
 
 import (
@@ -115,7 +115,7 @@ func required(name, value string) error {
 	return nil
 }
 
-// initFromEnv reads BETHERE_INIT (A10): "1" creates a new database, unset
+// initFromEnv reads BETHERE_INIT (api.md section 7): "1" creates a new database, unset
 // or empty opens an existing one, and any other value refuses to start,
 // so values such as "0" or "true" cannot be mistaken for either.
 func initFromEnv(lookupEnv func(string) (string, bool)) (bool, error) {
@@ -158,7 +158,7 @@ func serve(args []string, c cli) error {
 		Handler: server.New(server.Config{
 			Static:  web.Dist(),
 			Store:   st,
-			Now:     time.Now, // the system clock only (A13)
+			Now:     time.Now, // the system clock only (api.md section 1)
 			Version: version,
 			Logger:  logger,
 		}),
@@ -181,7 +181,7 @@ func serve(args []string, c cli) error {
 	return nil
 }
 
-// openExisting opens the database named by -db, never creating one (A11).
+// openExisting opens the database named by -db, never creating one (api.md section 7).
 func openExisting(ctx context.Context, path string) (*store.Store, error) {
 	return store.Open(ctx, path, false)
 }
@@ -264,7 +264,7 @@ func addRole(args []string, c cli) error {
 		}
 	}
 	// M1 opens only Stylist; Media, StageAV and Host follow in M2, and P1
-	// types cannot be created in P0 (A4).
+	// types cannot be created in P0 (api.md section 4).
 	if domain.RoleType(*typ) != domain.Stylist {
 		return fmt.Errorf("%w: -type %q: M1 accepts only Stylist", errUsage, *typ)
 	}
@@ -339,7 +339,7 @@ func importRundown(args []string, c cli) error {
 }
 
 // askMaster asks for the Master link on the terminal without echo, reads
-// it from standard input only, and proves it with the store (A12). The
+// it from standard input only, and proves it with the store (api.md section 7). The
 // store does not check role types, so being the Master is checked here.
 func askMaster(ctx context.Context, st *store.Store, c cli) (store.TokenOwner, error) {
 	fmt.Fprint(c.stderr, "Master link (input hidden): ")

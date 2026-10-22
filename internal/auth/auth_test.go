@@ -9,7 +9,7 @@ import (
 
 // The hash rule is pinned by fixed vectors computed outside Go
 // (printf '%s' <token> | sha256sum). A change here changes every stored
-// hash and would make every existing link "invalid" (api.md F5).
+// hash and would make every existing link "invalid" (api.md section 8).
 func TestTokenHashVectors(t *testing.T) {
 	for _, v := range []struct{ token, hash string }{
 		{"AAAAAAAAAAAAAAAAAAAAAA", "8a5bdb4cc15164126c6ef2668de9dd240d299ce6397a42c95a9411b93d080ed8"},

@@ -46,7 +46,7 @@ func sameState(a, b Cue) bool {
 }
 
 // withStateOf returns c carrying src's operation-owned fields; fields an
-// Op never touches, such as a title edited live (P8), are kept.
+// Op never touches, such as a title edited live (access-control.md section 4), are kept.
 func withStateOf(c, src Cue) Cue {
 	c.Status, c.OffsetMin, c.ActualStart, c.ActualEnd = src.Status, src.OffsetMin, src.ActualStart, src.ActualEnd
 	return c

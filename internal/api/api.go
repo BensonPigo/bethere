@@ -39,12 +39,12 @@ type Store interface {
 const (
 	// MaxBodyBytes is the request body limit (api.md section 1).
 	MaxBodyBytes = 16 << 10
-	// ReadTimeout bounds the database reads of a lookup or snapshot (T3b).
+	// ReadTimeout bounds the database reads of a lookup or snapshot (tech-stack.md 2.1「逾時與錯誤」).
 	ReadTimeout = 3 * time.Second
 )
 
 // Config wires the API. Now is the clock; serve passes time.Now and
-// nothing else (A13).
+// nothing else (api.md section 1).
 type Config struct {
 	Store  Store
 	Now    func() time.Time
@@ -52,7 +52,7 @@ type Config struct {
 }
 
 // API holds the handlers and the in-memory lastSeenAt of every token
-// (T7).
+// (tech-stack.md 2.1「lastSeenAt」).
 type API struct {
 	store  Store
 	now    func() time.Time
@@ -77,7 +77,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/cues/undo", a.write(capUndo, a.undo))
 }
 
-// LastSeen returns when a token hash last passed authentication, for V4
+// LastSeen returns when a token hash last passed authentication, for the role and link screen
 // in M2; it is not part of any M1 response.
 func (a *API) LastSeen(tokenHash []byte) (time.Time, bool) {
 	a.mu.Lock()
@@ -86,7 +86,7 @@ func (a *API) LastSeen(tokenHash []byte) (time.Time, bool) {
 	return t, ok
 }
 
-// seen records a successful authentication (T7): called only after the
+// seen records a successful authentication (tech-stack.md 2.1「lastSeenAt」): called only after the
 // store confirmed the token and its event.
 func (a *API) seen(tokenHash []byte, at time.Time) {
 	a.mu.Lock()
@@ -123,7 +123,7 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	// The lookup and the snapshot are one read (A9); the capability check
+	// The lookup and the snapshot are one read (api.md section 7); the capability check
 	// needs the role type, so it follows the read and comes before
 	// anything is shaped or sent.
 	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
@@ -284,7 +284,7 @@ func (a *API) writeFailed(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // internal logs the error with the route only, never headers, bodies,
-// tokens or hashes (T13), and answers a fixed code.
+// tokens or hashes (tech-stack.md 2.1「日誌」), and answers a fixed code.
 func (a *API) internal(w http.ResponseWriter, r *http.Request, err error) {
 	a.logger.Error("api_error", "method", r.Method, "path", r.URL.Path, "err", err.Error())
 	writeError(w, http.StatusInternalServerError, "internal")
@@ -312,7 +312,7 @@ func bearerHash(r *http.Request) ([]byte, bool) {
 
 // readVersion reads the body of a write: one JSON object of at most
 // MaxBodyBytes with exactly the field "version", an integer of 1 or more
-// (api.md section 1, F11).
+// (api.md section 1).
 //
 // The body is read token by token rather than decoded into a struct,
 // because encoding/json matches field names case-insensitively and keeps

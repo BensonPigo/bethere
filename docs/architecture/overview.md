@@ -26,7 +26,7 @@
 | 現場網路 | 地下室、會場 Wi-Fi、iOS 背景暫停 | 輪詢（ADR-0004）、離線快取（ADR-0010） |
 | 隱私 | 個資法；結束後要刪除 | 自動結束與 90 天刪除（ADR-0011） |
 
-## 2. 系統情境（C4 第 1 層）
+## 2. 系統情境（C4 模型第 1 層）
 
 ```mermaid
 flowchart TB
@@ -51,9 +51,9 @@ flowchart TB
     bethere -- "ACME 簽發憑證" --> le
 ```
 
-**範圍外**：賓客、推播、通訊錄撥號（P2）；婚顧公司的多租戶（C4）。
+**範圍外**：賓客、推播、通訊錄撥號（P2）；婚顧公司的多租戶（ADR-0016）。
 
-## 3. 容器（C4 第 2 層）
+## 3. 容器（C4 模型第 2 層）
 
 ```mermaid
 flowchart LR
@@ -87,7 +87,7 @@ flowchart LR
 
 | 容器 | 技術 | 職責 | 決定 |
 | --- | --- | --- | --- |
-| 前端 SPA | Preact、Vite | 依路徑與快照角色顯示 V1～V6；倒數與時鐘校正；本機快照 | ADR-0008、ADR-0010 |
+| 前端 SPA | Preact、Vite | 依路徑與快照角色顯示各畫面（`screen-design.md`）；倒數與時鐘校正；本機快照 | ADR-0008、ADR-0010 |
 | Service Worker | Workbox `generateSW` | 預先快取外殼；`/api/` 一律不攔截 | ADR-0010 |
 | Caddy | Caddy 2 | TLS、HTTP 轉 HTTPS、反向代理 | ADR-0009 |
 | bethere | Go 標準庫 | API、Token 驗證、權限、領域邏輯、每日刪除排程、子命令 | ADR-0007、ADR-0008 |
@@ -136,10 +136,10 @@ flowchart TB
 | --- | --- | --- |
 | 身分 | 每個角色一條帶 Token 的連結；復原碼救援 Master | ADR-0002、ADR-0003 |
 | 授權 | 伺服器端 capability 表；快照在查詢層過濾 | `access-control.md` 4、5 |
-| 時間 | 伺服器 UTC；`time/tzdata` 內嵌；客戶端以 `serverTime` 校正倒數 | `tech-stack.md` T12；`sync-and-offline.md` 4 |
+| 時間 | 伺服器 UTC；`time/tzdata` 內嵌；客戶端以 `serverTime` 校正倒數 | `tech-stack.md` 2.1「時間」；`sync-and-offline.md` 第 4 節 |
 | 一致性 | 寫入帶 `eventVersion`，過期拒絕；單一寫入連線 | ADR-0005 |
 | 錯誤語意 | 只有確實查無 Token 才回「無效」；其他錯誤都是伺服器錯誤 | ADR-0012 |
-| 安全標頭 | CSP 不允許 inline script 與第三方來源；`no-referrer`；`noindex`；API `no-store` | `tech-stack.md` T14 |
-| 日誌 | `slog` JSON 到 stdout；不記錄請求標頭與本文（Token 與復原碼） | `tech-stack.md` T13 |
+| 安全標頭 | CSP 不允許 inline script 與第三方來源；`no-referrer`；`noindex`；API `no-store` | `tech-stack.md` 2.1「安全標頭」 |
+| 日誌 | `slog` JSON 到 stdout；不記錄請求標頭與本文（Token 與復原碼） | `tech-stack.md` 2.1「日誌」 |
 | 稽核 | 所有改變狀態的操作寫入 ActionLog | `data-model.md` ActionLog |
 | 測試 | 領域表格驅動、API 以 `httptest` + 暫存 SQLite、前端 Vitest、負載 `oha`、實機清單 | `tech-stack.md` 第 4 節 |

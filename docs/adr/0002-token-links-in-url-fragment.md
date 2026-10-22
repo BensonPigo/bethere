@@ -2,7 +2,7 @@
 
 - 狀態：已接受（iOS 已實機驗證，Android 待驗證）
 - 日期：2026-10-20（實機驗證 2026-10-21）
-- 對應：`access-control.md` P2、P3；`tech-stack.md` T6、T19、R1
+- 對應：`access-control.md` 3.2、3.3；`tech-stack.md` 2.1「Token 與復原碼」、2.2「Web App manifest」、第 5 節
 
 ## 背景
 
@@ -32,7 +32,7 @@
 
 - 好處：使用者只需要「點連結」；LINE、系統瀏覽器、書籤、主畫面都能直接開。換手機時重點原本的 LINE 訊息即可。
 - 代價：接受 Token 外流風險，對策是事後撤銷重發，不是事前遮蔽。因為網址含 Token，前端不得載入任何第三方腳本，並設定嚴格 CSP。
-- 之後要注意：網址片段已被 `#t=` 佔用，前端只能用路徑區分頁面（`tech-stack.md` T16）；不提供 Web App manifest，以免 `start_url` 蓋掉帶 Token 的網址（T19）。Android 上的 R1 結果若不成立，本決定要重新審查。
+- 之後要注意：網址片段已被 `#t=` 佔用，前端只能用路徑區分頁面（`tech-stack.md` 2.2「路由」）；不提供 Web App manifest，以免 `start_url` 蓋掉帶 Token 的網址（2.2「Web App manifest」）。Android 上的 Token 保留驗證（RISK-1）若不成立，本決定要重新審查。
 
 ## 參考
 

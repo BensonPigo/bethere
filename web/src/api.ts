@@ -1,4 +1,4 @@
-// Hand-written types and HTTP client for docs/design/api.md (T17).
+// Hand-written types and HTTP client for docs/design/api.md (tech-stack.md 2.2「型別」).
 
 export type EventStatus = "Draft" | "Live";
 export type CueStatus = "Pending" | "InProgress" | "Completed" | "Skipped";
@@ -106,7 +106,7 @@ export function classifyResponse(status: number, contentType: string | null, bod
   return { kind: "failure" };
 }
 
-// A15: local data is wiped only for HTTP 200 + JSON + parseable + result invalid/ended.
+// api.md section 7: local data is wiped only for HTTP 200 + JSON + parseable + result invalid/ended.
 // Everything else (401/403/409/500, non-JSON, network failure) keeps it.
 export function shouldWipeLocalData(outcome: Outcome): boolean {
   return outcome.kind === "invalid" || outcome.kind === "ended";

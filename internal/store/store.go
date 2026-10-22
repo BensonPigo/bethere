@@ -1,11 +1,11 @@
-// Package store keeps BeThere's state in SQLite (tech-stack.md T3–T4).
+// Package store keeps BeThere's state in SQLite (tech-stack.md 2.1; ADR-0019).
 //
 // Writes go through a single connection that takes the write lock at
 // BEGIN; reads use a separate read-only pool, so polling never queues
-// behind a slow write (T3a). Lookups distinguish "no such token" from any
+// behind a slow write (tech-stack.md 2.1「連線」). Lookups distinguish "no such token" from any
 // other failure, because only a confirmed miss may be reported to a
-// client as an invalid link (T3b). The store never creates or serves an
-// empty database except on an explicit first deployment (T3c).
+// client as an invalid link (tech-stack.md 2.1「逾時與錯誤」). The store never creates or serves an
+// empty database except on an explicit first deployment (tech-stack.md 2.1「不自動建庫」).
 //
 // The store checks who acts (a still-valid credential of the same event);
 // what each role type may do (access-control.md section 4) is checked by
@@ -49,7 +49,7 @@ type Store struct {
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-// Open opens the database at path (T3c):
+// Open opens the database at path (tech-stack.md 2.1「不自動建庫」):
 //   - without init the file must exist and carry a migrated schema; a
 //     missing, empty or schema-less file is refused, so a failed restore
 //     never comes up as an empty database;
@@ -184,7 +184,7 @@ func dsn(abs, mode string, params ...string) string {
 
 // migrate applies numbered migrations above current (the database's
 // user_version). A database newer than this binary is left alone so a
-// rollback can still start (T4). Released migrations are frozen; schema
+// rollback can still start (ADR-0019). Released migrations are frozen; schema
 // changes always go in a new file.
 func migrate(ctx context.Context, db *sql.DB, fsys fs.FS, current int) error {
 	names, err := fs.Glob(fsys, "migrations/*.sql")

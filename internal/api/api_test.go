@@ -16,7 +16,7 @@ import (
 	"github.com/BensonPigo/bethere/internal/store"
 )
 
-// lastSeenAt is updated in memory only after the token was proved (T7):
+// lastSeenAt is updated in memory only after the token was proved (tech-stack.md 2.1「lastSeenAt」):
 // not for a malformed header, an unknown token or an ended event.
 func TestLastSeenOnlyAfterSuccessfulAuthentication(t *testing.T) {
 	ctx := context.Background()

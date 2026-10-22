@@ -52,7 +52,7 @@ func (s *Store) AddRole(ctx context.Context, eventID int64, name string, typ dom
 
 // IssueToken gives a role a new link, revoking its current one in the same
 // transaction (access-control.md 3.1). The Master's link is replaced only
-// by someone holding that event's recovery code (P5); other permission
+// by someone holding that event's recovery code (access-control.md section 2); other permission
 // checks belong to the caller.
 func (s *Store) IssueToken(ctx context.Context, roleID int64, tokenHash []byte, actor Actor, now time.Time) error {
 	return s.write(ctx, func(tx *sql.Tx) error {
@@ -61,7 +61,7 @@ func (s *Store) IssueToken(ctx context.Context, roleID int64, tokenHash []byte, 
 			return err
 		}
 		// The Master's link only with the recovery code; any other link
-		// only by a role (access-control.md section 2, P5).
+		// only by a role (access-control.md section 2).
 		kind := actorRole
 		if typ == domain.Master {
 			if actor.kind != actorRecoveryCode {
@@ -150,7 +150,7 @@ func (s *Store) LookupToken(ctx context.Context, tokenHash []byte, now time.Time
 // ErrInvalidToken only when the query succeeded and found no active token,
 // then ErrEventEnded, otherwise the owner with its event and version. Any
 // other failure, a cancelled or expired context included, is returned as
-// is and never as ErrInvalidToken (T3b).
+// is and never as ErrInvalidToken (tech-stack.md 2.1「逾時與錯誤」).
 func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time) (TokenOwner, domain.Event, int64, error) {
 	var o TokenOwner
 	err := tx.QueryRowContext(ctx, `SELECT r.id, r.event_id, r.type, r.name

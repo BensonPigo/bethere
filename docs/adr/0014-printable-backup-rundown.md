@@ -2,7 +2,7 @@
 
 - 狀態：已接受
 - 日期：2026-10-20
-- 對應：`tech-stack.md` T-C、T21、R5；`sync-and-offline.md` 第 9 節
+- 對應：`tech-stack.md` 2.2「備援 Rundown」、第 5 節；`sync-and-offline.md` 第 9 節
 
 ## 背景
 
@@ -31,4 +31,4 @@
 
 ## 參考
 
-- `screen-design.md` V5
+- `screen-design.md` 第 8 節

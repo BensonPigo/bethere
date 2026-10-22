@@ -11,7 +11,7 @@ import (
 
 // The JSON shapes of api.md section 5. Every key is always present; a
 // value that does not exist is null. The key sets are fixed by tests
-// (T17); adding a field here is a contract change.
+// (tech-stack.md 2.2「型別」); adding a field here is a contract change.
 
 type roleView struct {
 	Type domain.RoleType `json:"type"`
@@ -72,7 +72,7 @@ type roleListItem struct {
 }
 
 // roleSnapshot is api.md 5.1 + 5.3: only the caller's own cues, and no
-// "current" field (A5).
+// "current" field (api.md 5.3).
 type roleSnapshot struct {
 	EventVersion int64              `json:"eventVersion"`
 	ServerTime   string             `json:"serverTime"`
@@ -114,7 +114,7 @@ func optTime(t time.Time) *string {
 }
 
 // buildSnapshot is the only place a snapshot is shaped; which shape is
-// decided by the caller's own role type alone (A14). Callers have already
+// decided by the caller's own role type alone (api.md section 7). Callers have already
 // passed the capability check; a type without a snapshot is refused here
 // again rather than falling into any default.
 func buildSnapshot(d store.SnapshotData, now time.Time) (any, error) {
@@ -183,7 +183,7 @@ func buildMaster(d store.SnapshotData, now time.Time) (masterSnapshot, error) {
 
 // buildRole keeps only the cues assigned to the caller's role, each with
 // that role's own note; an unassigned cue, in progress or not, is not
-// shown at all (US-X-1.2, A5).
+// shown at all (US-X-1.2, api.md 5.3).
 func buildRole(d store.SnapshotData, now time.Time) roleSnapshot {
 	s := roleSnapshot{
 		EventVersion: d.Version,

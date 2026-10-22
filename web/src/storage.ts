@@ -1,10 +1,10 @@
-// Local snapshot (sync-and-offline.md section 6, tech-stack.md T20, api.md A16).
+// Local snapshot (sync-and-offline.md section 6, tech-stack.md 2.2「本機快照」).
 import type { Snapshot } from "./api";
 
 const PREFIX = "snap:";
 const MAX_LIVE_AGE_MS = 2 * 24 * 3600 * 1000;
 
-// A16: key = "snap:" + hex SHA-256("bethere-local:" + token). Never the plain token.
+// Key = "snap:" + hex SHA-256("bethere-local:" + token). Never the plain token.
 export async function snapKey(token: string): Promise<string> {
   const data = new TextEncoder().encode("bethere-local:" + token);
   const digest = await crypto.subtle.digest("SHA-256", data);

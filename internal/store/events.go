@@ -42,7 +42,7 @@ const (
 	actorServer
 )
 
-// GoString keeps %#v from printing the credential hash (T13).
+// GoString keeps %#v from printing the credential hash (tech-stack.md 2.1「日誌」).
 func (a Actor) GoString() string { return "store.Actor(" + a.String() + ")" }
 
 // String is how the actor appears in the action log.
@@ -205,7 +205,7 @@ func (s *Store) RecordRecoveryExport(ctx context.Context, actor Actor, now time.
 }
 
 // guardVersion is guard plus the client's version check
-// (sync-and-offline.md S6), for Master writes to the event and its cues.
+// (sync-and-offline.md section 3), for Master writes to the event and its cues.
 func guardVersion(ctx context.Context, tx *sql.Tx, eventID, expectVersion int64, actor Actor, now time.Time) (domain.Event, error) {
 	e, v, err := guard(ctx, tx, eventID, actor, now)
 	if err != nil {
@@ -279,7 +279,7 @@ func (s *Store) RescheduleEvent(ctx context.Context, actor Actor, to domain.Date
 }
 
 // PurgeEnded deletes every event whose retention ran out (tech-stack.md
-// T10) and returns how many. CreateEvent only stores dates and zones that
+// tech-stack.md 2.1「資料刪除」) and returns how many. CreateEvent only stores dates and zones that
 // read back, so an unreadable event means the database was edited by hand;
 // it is skipped and reported in the error while the others are deleted.
 func (s *Store) PurgeEnded(ctx context.Context, now time.Time) (int, error) {

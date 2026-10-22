@@ -1,4 +1,4 @@
-// V1 Master console, M1 scope (screen-design.md section 3; US-M-1, US-M-3, US-M-4).
+// Master console, M1 scope (screen-design.md section 3; US-M-1, US-M-3, US-M-4).
 import { useEffect, useRef } from "preact/hooks";
 import type { CueStatus, MasterCue, MasterSnapshot, WritePath } from "./api";
 import { dateInZone, formatHM } from "./format";

@@ -8,10 +8,10 @@
 ## 1. 設計原則
 
 1. **有效時間 = 表定時間 + 該 Cue 的累計偏移**，由伺服器計算後下發，客戶端不自行推算平移。
-2. **時間平移是一次「有紀錄的操作」**，記錄影響到哪些 Cue，所以可以精確復原（A7）。
-3. **伺服器時間為準**（E7），所有時間戳記以 UTC 儲存，顯示時轉為活動時區。
-4. **權限跟著 Token 走**，Token 與 Role 分開存放，才能單獨撤銷與重發（F1）。
-5. **過濾在伺服器端**（F3）：每個角色視圖只回傳該角色可見的欄位與 Cue。
+2. **時間平移是一次「有紀錄的操作」**，記錄影響到哪些 Cue，所以可以精確復原（ADR-0006、ADR-0015）。
+3. **伺服器時間為準**（`sync-and-offline.md` 第 4 節），所有時間戳記以 UTC 儲存，顯示時轉為活動時區。
+4. **權限跟著 Token 走**，Token 與 Role 分開存放，才能單獨撤銷與重發（`access-control.md` 3.4）。
+5. **過濾在伺服器端**（ADR-0007）：每個角色視圖只回傳該角色可見的欄位與 Cue。
 
 ## 2. 實體關係
 
@@ -35,7 +35,7 @@ erDiagram
 | name | text | 例：「2027/06/06 婚宴」 |
 | eventDate | date | 年份限 2000～2199，Cue 時間同樣限在這個範圍，確保以奈秒儲存與日期運算不會溢位 |
 | timezone | text | 預設 `Asia/Taipei`；只接受程式內的時區清單（目前只有 `Asia/Taipei`），確保在任何主機都讀得回來 |
-| status | enum | 儲存 `Draft` / `Live`（B6：Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |
+| status | enum | 儲存 `Draft` / `Live`（Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |
 | liveStartedAt | timestamp? | 按「開始活動」的時間 |
 | activeCueId | ID? | 目前進行中的 Cue。**不儲存**，由狀態為 `InProgress` 的 Cue 推得，避免兩份真相 |
 | recoveryCodeHash | text | 復原碼的雜湊（見 `access-control.md` 第 2 節） |
@@ -44,7 +44,7 @@ erDiagram
 
 **衍生值（不存）**
 - `endsAt` = `eventDate` 隔天 04:00（依 `timezone` 換算為 UTC）。
-- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 80 天刪除，伺服器端所有副本 90 天內消失（C5）。結束判斷不需要排程器；刪除由伺服器內的每日排程執行（`tech-stack.md` T10）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
+- 現在 ≥ `endsAt` 時，活動視為 `Ended`：所有 Token 回應「已結束」，資料於 `endsAt` 後 80 天刪除，伺服器端所有副本 90 天內消失（ADR-0011）。結束判斷不需要排程器；刪除由伺服器內的每日排程執行（`tech-stack.md` 2.1「資料刪除」）。Live 之後日期不能再改，所以結束與刪除時間在活動開始後就固定。
 
 
 ### Cue（流程節點）
@@ -56,10 +56,10 @@ erDiagram
 | title | text | 例：「一進預備」 |
 | scheduledStart | timestamp | 表定開始時間，**建立後只有編輯 Rundown 才會改，平移不動它** |
 | durationMin | int | 預計長度，用來偵測 Fixed 衝突 |
-| isFixed | bool | A2：平移時跳過 |
+| isFixed | bool | 平移時跳過（4.2） |
 | offsetMin | int | 累計偏移（可為負），預設 0 |
 | status | enum | `Pending` / `InProgress` / `Completed` / `Skipped` |
-| actualStart | timestamp? | 實際開始（C3） |
+| actualStart | timestamp? | 實際開始，供事後檢討 |
 | actualEnd | timestamp? | 實際結束 |
 | notePublic | text? | 所有被指派角色都可見的說明 |
 
@@ -85,8 +85,8 @@ erDiagram
 | roleId | ID | |
 | tokenHash | text | 只存雜湊，明文僅在產生時顯示一次 |
 | createdAt | timestamp | |
-| revokedAt | timestamp? | F1：撤銷 |
-| lastSeenAt | timestamp? | 最近一次使用，供總召查看連結是否在使用。**不存資料庫**，只存在伺服器記憶體，重啟後歸零（`tech-stack.md` T7） |
+| revokedAt | timestamp? | 撤銷時間（`access-control.md` 3.4） |
+| lastSeenAt | timestamp? | 最近一次使用，供總召查看連結是否在使用。**不存資料庫**，只存在伺服器記憶體，重啟後歸零（`tech-stack.md` 2.1「lastSeenAt」） |
 
 規則：每個 Role 同一時間最多一個有效 Token；重發 = 撤銷舊的並建立新的。Token 沒有自己的到期時間，跟著 `Event.endsAt`。
 
@@ -99,7 +99,7 @@ erDiagram
 
 **可見性規則**：角色只看得到有 CueRole 的 Cue。`Master` 與 `Host` 為例外（Master 全看；Host 只看儀表板彙總，不看 Cue 細節）。
 
-### CheckIn（就位打卡，A4）
+### CheckIn（就位打卡）
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
 | id | ID | |
@@ -111,10 +111,10 @@ erDiagram
 一個 Role 目前是否就位 = 存在未取消的 CheckIn。
 
 ### 平移紀錄
-不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供 C3 事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `docs/adr/0015-cue-ops-in-action-log.md`。
+不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `docs/adr/0015-cue-ops-in-action-log.md`。
 
-### ActionLog（操作紀錄，C3）
-`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（M7）。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（C3）。
+### ActionLog（操作紀錄）
+`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（4.1）。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（P1，`requirements/scope.md`）。
 
 ## 4. 核心行為規則
 
@@ -139,7 +139,7 @@ stateDiagram-v2
     end note
     note right of Live
         只有 Master 可異動
-        編輯限縮為標題、備註、新增、略過（P8）
+        編輯限縮為標題、備註、新增、略過
     end note
 ```
 
@@ -166,14 +166,14 @@ stateDiagram-v2
 - 主控台的「推進」在同一筆交易內把目前 Cue 改為 Completed、下一個 Pending 改為 InProgress；復原時兩者一起回退（US-M-3.2、US-M-4.1）。
 - 「復原上一步」只能回退最近一次操作，並寫入 ActionLog。略過也可以復原，Cue 回到 `Pending`。
 
-### 4.2 時間平移演算法（A1～A3）
+### 4.2 時間平移演算法
 輸入：`fromCueId`、`deltaMin`、`excludedCueIds`（總召取消勾選的）。
 
 1. 取得 `seq >= from.seq` 的 Cue。
 2. 只保留：`status = Pending`、`isFixed = false`、不在 `excludedCueIds`；`deltaMin < 0` 時，另外排除平移前 `effectiveStart` 就已早於「現在」的 Cue（已逾時）。
-3. **負值檢查**（A3，只在 `deltaMin < 0` 時進行）：若任一保留的 Cue 平移後的 `effectiveStart` 早於「現在」，整次操作拒絕並說明是哪個 Cue。正值平移不做這項檢查，因為延誤時平移後仍早於現在是正常情況。
+3. **負值檢查**（只在 `deltaMin < 0` 時進行）：若任一保留的 Cue 平移後的 `effectiveStart` 早於「現在」，整次操作拒絕並說明是哪個 Cue。正值平移不做這項檢查，因為延誤時平移後仍早於現在是正常情況。
 4. 對每個保留的 Cue：`offsetMin += deltaMin`，並在 ActionLog 記下該 Cue 平移前後的狀態。
-5. **Fixed 衝突檢查**：平移後，若某 Cue 的 `effectiveEnd` 晚於其後最近一個 Fixed Cue 的 `scheduledStart`，**不阻擋**，但標記衝突並在主控台顯示（A2）。
+5. **Fixed 衝突檢查**：平移後，若某 Cue 的 `effectiveEnd` 晚於其後最近一個 Fixed Cue 的 `scheduledStart`，**不阻擋**，但標記衝突並在主控台顯示。
 6. 整個過程是單一交易，完成後 `eventVersion + 1`，各端在下一次輪詢取得新狀態。
 
 `InProgress` 的 Cue 不被平移（它已經開始了）；若總召想延長目前環節，用平移其下一個 Cue 起算。
@@ -184,28 +184,28 @@ stateDiagram-v2
 sequenceDiagram
     autonumber
     actor M as 總召
-    participant V1 as 主控台 V1
+    participant C as 總召主控台
     participant S as bethere
     participant D as SQLite
-    participant V2 as 新秘 V2a
+    participant ST as 新秘模式
 
-    M->>V1: 點「+10」
-    V1->>S: POST 平移試算（起點、+10、排除清單）
+    M->>C: 點「+10」
+    C->>S: POST 平移試算（起點、+10、排除清單）
     S->>D: 讀 Cue（唯讀）
     S->>S: 同一套平移演算法，不寫入
-    S-->>V1: 受影響 Cue、固定 Cue 衝突、負值檢查結果
-    V1->>M: 預覽面板（可取消勾選）
-    M->>V1: 取消勾選一個 Cue
-    V1->>S: 再次試算
-    S-->>V1: 新預覽
-    M->>V1: 確認
-    V1->>S: POST 平移（version、起點、+10、排除清單）
+    S-->>C: 受影響 Cue、固定 Cue 衝突、負值檢查結果
+    C->>M: 預覽面板（可取消勾選）
+    M->>C: 取消勾選一個 Cue
+    C->>S: 再次試算
+    S-->>C: 新預覽
+    M->>C: 確認
+    C->>S: POST 平移（version、起點、+10、排除清單）
     S->>D: 單一交易：更新 offsetMin、ActionLog 記下前後狀態、version + 1
-    S-->>V1: 新快照（含衝突標記）
-    Note over V2: 最多 2 秒後的下一次輪詢
-    V2->>S: GET 快照
-    S-->>V2: 新的 effectiveStart、shiftNotice
-    V2->>V2: 倒數重算、背景色重評估、橫幅「時程已更新 +10 分」
+    S-->>C: 新快照（含衝突標記）
+    Note over ST: 最多 2 秒後的下一次輪詢
+    ST->>S: GET 快照
+    S-->>ST: 新的 effectiveStart、shiftNotice
+    ST->>ST: 倒數重算、背景色重評估、橫幅「時程已更新 +10 分」
 ```
 
 ### 4.3 「全域偏移」的顯示值
@@ -214,7 +214,7 @@ sequenceDiagram
 ### 4.4 角色視圖的資料範圍
 | 角色 | 可讀 | 可寫（動作） |
 | --- | --- | --- |
-| Master | 全部 | 推進、略過、平移、復原、代打卡、重發非 Master 的 Token、編輯 Rundown（Live 時限縮，見 `access-control.md` P8） |
+| Master | 全部 | 推進、略過、平移、復原、代打卡、重發非 Master 的 Token、編輯 Rundown（Live 時限縮，見 `access-control.md` 第 4 節） |
 | Stylist / Media / StageAV | 自己有 CueRole 的 Cue + 該 Cue 的 `roleNote` | 自己的就位打卡 |
 | 其餘 P1 角色 | 同上 | 各自動作（P1 再定義） |
 
@@ -337,4 +337,4 @@ classDiagram
 | Ack | 領班「已收到」雙向確認 | `cueId, roleId, ackedAt` |
 | Task | 機動組任務池與認領 | `title, status, claimedByRoleId` |
 | AssetRef | 音控檔名對照 | 可先放在 `CueRole.roleNote`，需要時再拆 |
-| SupportRequest | 求助訊息（只路由給 Master 與 Runner） | F3 的過濾對象 |
+| SupportRequest | 求助訊息（只路由給 Master 與 Runner） | 伺服器端過濾的對象（ADR-0007） |

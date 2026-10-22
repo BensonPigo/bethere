@@ -10,7 +10,7 @@ import (
 )
 
 // SnapshotData is everything a caller's snapshot is built from, read in
-// the same transaction that resolved the caller's token (api.md A9, A14,
+// the same transaction that resolved the caller's token (api.md section 7,
 // section 7 items 2–4). The store does not decide what each role type may
 // see (access-control.md section 5, rule 6): it returns the whole event
 // and the caller filters by Owner.RoleType.

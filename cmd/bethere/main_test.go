@@ -109,7 +109,7 @@ func getSnapshot(t *testing.T, h http.Handler, token string) map[string]any {
 	return body
 }
 
-// api.md F5: a link made by the create-event code path, sent through the
+// api.md section 8: a link made by the create-event code path, sent through the
 // HTTP handler, is "ok". A hashing rule that differs between the command
 // and the server would make it "invalid" and wipe every device.
 func TestF5_CreateEventLinkWorksThroughTheHandler(t *testing.T) {
@@ -234,7 +234,7 @@ func TestAddRoleRefusals(t *testing.T) {
 		args  []string
 		code  int
 	}{
-		// A4: only Stylist in M1.
+		// api.md section 4: only Stylist in M1.
 		"Media":        {master, []string{"-type", "Media"}, 2},
 		"Host":         {master, []string{"-type", "Host"}, 2},
 		"Master":       {master, []string{"-type", "Master"}, 2},
@@ -374,8 +374,8 @@ func TestEverySubcommandRequiresDB(t *testing.T) {
 	}
 }
 
-// Subcommands never create a database (A11), and neither does serve
-// without BETHERE_INIT=1 (T3c).
+// Subcommands never create a database (api.md section 7), and neither does serve
+// without BETHERE_INIT=1 (tech-stack.md 2.1「不自動建庫」).
 func TestCommandsNeverCreateADatabase(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "none.db")
 	for _, args := range [][]string{
@@ -392,7 +392,7 @@ func TestCommandsNeverCreateADatabase(t *testing.T) {
 	}
 }
 
-// A10: BETHERE_INIT is "1" or unset/empty; anything else refuses to start.
+// api.md section 7: BETHERE_INIT is "1" or unset/empty; anything else refuses to start.
 func TestBETHERE_INITAcceptsOnlyOne(t *testing.T) {
 	env := func(v string, set bool) func(string) (string, bool) {
 		return func(k string) (string, bool) {
@@ -425,7 +425,7 @@ func TestBETHERE_INITAcceptsOnlyOne(t *testing.T) {
 			t.Errorf("BETHERE_INIT=%q created a database", v)
 		}
 	}
-	// "1" with an existing database refuses too (T3c).
+	// "1" with an existing database refuses too (tech-stack.md 2.1「不自動建庫」).
 	db := newDB(t)
 	if r := runWith("", map[string]string{"BETHERE_INIT": "1"}, "serve", "-db", db, "-addr", "127.0.0.1:0"); r.code != 1 {
 		t.Errorf("BETHERE_INIT=1 with an existing database: exit %d", r.code)

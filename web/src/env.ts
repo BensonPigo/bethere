@@ -1,6 +1,6 @@
 // Facts about the browsing environment.
 
-// tech-stack.md T22: the LINE in-app browser carries " Line/" in its user agent.
+// tech-stack.md 2.2「LINE 內建瀏覽器」: the LINE in-app browser carries " Line/" in its user agent.
 export function isLineBrowser(ua: string): boolean {
   return ua.includes(" Line/");
 }

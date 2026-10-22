@@ -156,7 +156,7 @@ func (s *Store) ApplyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 }
 
 // UndoLastCueOp reverses the latest cue operation, once (data-model.md
-// M7, M10). Other actions in between, such as reissuing a link, do not
+// data-model.md 4.1). Other actions in between, such as reissuing a link, do not
 // count as steps.
 func (s *Store) UndoLastCueOp(ctx context.Context, eventID, expectVersion int64, actor Actor, now time.Time) (int64, domain.Op, error) {
 	var (
