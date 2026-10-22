@@ -6,7 +6,7 @@
 
 - **ADR 回答「為什麼」**：背景、取捨與後果。決定一旦接受就不改寫內容；要推翻時新增一份 ADR，並把舊的狀態改為「被 ADR-NNNN 取代」。
 - **設計文件回答「是什麼」**：`docs/design/` 的欄位、規則與數字才是實作依據。ADR 只摘要，細節以設計文件為準。
-- 設計文件內各自的決定編號（M、S、P、U、T）照舊保留；下表列出每份 ADR 對應的編號。
+- 設計文件內各自的決定編號（M、S、P、U、T）依 ADR-0017 逐步退役，意思與去向見 `glossary.md` 第 3 節；整合完成前，下表的「對應編號」仍是舊代號。
 
 ## 格式
 
@@ -34,3 +34,4 @@
 | [0014](0014-printable-backup-rundown.md) | 備援 Rundown 用列印專用網頁 | 已接受 | T-C、T21 |
 | [0015](0015-cue-ops-in-action-log.md) | Cue 操作以前後狀態記在 ActionLog，取代 ShiftLog | 已接受 | M7、M10、T4 |
 | [0016](0016-extensibility-principles.md) | 為商業化留後路：只處理難改的結構，功能不提前建造 | 已接受 | V5、C4、T4 |
+| [0017](0017-documentation-structure-and-id-scheme.md) | 文件結構與代號系統：單一正本、縮減代號、重組目錄 | 已接受 | — |

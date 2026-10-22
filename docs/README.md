@@ -2,6 +2,12 @@
 
 建議閱讀順序：先 `requirements/product-vision.md`，再需求、設計。後面的文件依賴前面的。想先看全貌，從 `architecture/architecture-overview.md` 開始；想知道某個決定為什麼這樣選，看 `adr/`。
 
+## 術語與代號
+
+| 文件 | 內容 |
+| --- | --- |
+| [glossary.md](glossary.md) | 術語、代號規則、舊代號對照表（文件整合中，見 ADR-0017） |
+
 ## process/ 開發流程
 
 | 文件 | 內容 |
