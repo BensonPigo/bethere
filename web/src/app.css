@@ -4,10 +4,10 @@ html, body, #app { height: 100%; }
 .app.full { align-items: center; justify-content: center; text-align: center; padding: 24px; }
 .msg { font-size: 28px; font-weight: 600; line-height: 1.4; }
 
-.line-banner, .offline-banner, .notice {
+.offline-banner, .notice {
   flex: none; padding: 10px 16px; text-align: center; font-weight: 600;
 }
-.line-banner { background: #5f4b00; color: #ffe9a8; }
+.line-note { font-size: 12px; opacity: 0.6; text-align: center; padding: 2px 8px; }
 .offline-banner { background: #8c1d18; color: #fff; }
 .notice { background: #174ea6; color: #fff; }
 

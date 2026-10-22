@@ -33,3 +33,4 @@
 | [0013](0013-day-of-operations-by-backup-operator.md) | 當天維運交給備援操作者，不做跨區域備援 | 已接受 | T-E |
 | [0014](0014-printable-backup-rundown.md) | 備援 Rundown 用列印專用網頁 | 已接受 | T-C、T21 |
 | [0015](0015-cue-ops-in-action-log.md) | Cue 操作以前後狀態記在 ActionLog，取代 ShiftLog | 已接受 | M7、M10、T4 |
+| [0016](0016-extensibility-principles.md) | 為商業化留後路：只處理難改的結構，功能不提前建造 | 已接受 | V5、C4、T4 |
