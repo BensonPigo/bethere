@@ -2,7 +2,8 @@
 // section 4; ADR-0025). Check-in comes in M2b.
 import type { RoleCue, RoleSnapshot, ShiftNotice } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";
-import { noticeText, signed } from "./notice";
+import { noticeText } from "./notice";
+import { OriginalTime } from "./OriginalTime";
 import { countdownText, inProgressCue, stylistView } from "./roleView";
 
 type Props = { snap: RoleSnapshot; now: number; skew: number; change: ShiftNotice | null };
@@ -37,7 +38,7 @@ export function Glance({ snap, now, skew, change }: Props) {
             <div class="label">下一個與你有關的</div>
             <div class="when">
               {formatHM(view.target.effectiveStart, tz)}
-              <Offset min={view.target.offsetMin} />
+              <OriginalTime start={view.target.effectiveStart} offsetMin={view.target.offsetMin} tz={tz} />
             </div>
             <div class="title">{view.target.title}</div>
             <div class="count">倒數 {countdownText(view.remaining).big}{countdownText(view.remaining).unit}</div>
@@ -49,7 +50,7 @@ export function Glance({ snap, now, skew, change }: Props) {
               {later.map((c) => (
                 <div class={moved.has(String(c.id)) ? "flash" : ""} key={c.id}>
                   {formatHM(c.effectiveStart, tz)} {c.title}
-                  <Offset min={c.offsetMin} />
+                  <OriginalTime start={c.effectiveStart} offsetMin={c.offsetMin} tz={tz} />
                 </div>
               ))}
             </div>
@@ -67,10 +68,6 @@ export function Glance({ snap, now, skew, change }: Props) {
       {main}
     </div>
   );
-}
-
-function Offset({ min }: { min: number }) {
-  return min ? <small class="offset">（{signed(min)}）</small> : null;
 }
 
 // Before the event day: the role's own cues and times, no countdown (US-X-2.1).

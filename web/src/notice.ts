@@ -46,3 +46,14 @@ export function monthDay(date: string): string {
   const [, m, d] = date.split("-").map(Number);
   return m && d ? `${m}/${d}` : date;
 }
+
+// The rundown's time of a shifted cue, shown beside its new time as
+// "原 16:18" so the big time is never read as "plus N more" (ADR-0028).
+// The original is the effective start minus the offset; null when the cue
+// was never shifted.
+export function originalTime(effectiveStart: string, offsetMin: number, timeZone: string): string | null {
+  if (!offsetMin) return null;
+  const ms = Date.parse(effectiveStart);
+  if (!Number.isFinite(ms)) return null;
+  return `原 ${formatHM(ms - offsetMin * 60000, timeZone)}`;
+}

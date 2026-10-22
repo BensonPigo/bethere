@@ -6,6 +6,7 @@ import { DEFAULT_TZ, formatHM } from "./format";
 import { noticeText } from "./notice";
 import { countdownText, stylistView } from "./roleView";
 import { PreDayList } from "./Glance";
+import { OriginalTime } from "./OriginalTime";
 
 type Props = { snap: RoleSnapshot; now: number; skew: number; change: ShiftNotice | null };
 
@@ -34,9 +35,6 @@ export function HandsFree({ snap, now, skew, change }: Props) {
     case "countdown": {
       level = view.level;
       const t = countdownText(view.remaining);
-      const off = view.target.offsetMin
-        ? `（${view.target.offsetMin > 0 ? "+" : ""}${view.target.offsetMin}）`
-        : "";
       body = (
         <>
           <div class="top">{view.topLine}</div>
@@ -46,7 +44,7 @@ export function HandsFree({ snap, now, skew, change }: Props) {
           </div>
           <div class="target">
             距「{view.target.title}」{formatHM(view.target.effectiveStart, tz)}
-            {off}
+            <OriginalTime start={view.target.effectiveStart} offsetMin={view.target.offsetMin} tz={tz} />
           </div>
           <div class="status-text">{statusText(view.level)}</div>
         </>

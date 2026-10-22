@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { CueStatus, MasterCue, MasterSnapshot, ShiftPreview, ShiftRequest, WriteRequest } from "./api";
 import { dateInZone, formatHM } from "./format";
 import { OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
+import { OriginalTime } from "./OriginalTime";
 
 const ICON: Record<CueStatus, string> = { Completed: "✔", InProgress: "▶", Pending: "○", Skipped: "⊘" };
 const STATUS_TEXT: Record<CueStatus, string> = {
@@ -241,13 +242,12 @@ function elapsedText(active: MasterCue, correctedNow: number): string {
 }
 
 function CueRow({ cue, tz, conflict }: { cue: MasterCue; tz: string; conflict: boolean }) {
-  const off = cue.offsetMin ? `（${signed(cue.offsetMin)}）` : "";
   return (
     <div class={`cue ${cue.status.toLowerCase()}`} data-cue={String(cue.id)}>
       <span class="icon" aria-hidden="true">{ICON[cue.status]}</span>
       <span class="time">
         {formatHM(cue.effectiveStart, tz)}
-        {off}
+        <OriginalTime start={cue.effectiveStart} offsetMin={cue.offsetMin} tz={tz} />
       </span>
       <span class="title">{cue.title}</span>
       <span class="mark">
