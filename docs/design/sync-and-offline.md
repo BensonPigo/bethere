@@ -76,7 +76,7 @@ sequenceDiagram
 | `eventStatus`、`activeCueId` | 活動狀態與目前進行中的 Cue |
 | `cues[]` | 該角色**可見**的 Cue：`id, seq, title, effectiveStart, durationMin, status, offsetMin, isFixed, roleNote` |
 | `myCheckIn` | 自己是否已就位 |
-| 變更提示 | 原 `shiftNotice`，擴充為通用的變更提示：最近一次平移的摘要（`deltaMin`、時間戳），以及新指派給該角色的 Cue（id、時間戳），供「時程已更新」「新增環節」的短暫提示使用（`screen-design.md` 4.4，ADR-0021）。欄位名稱於 M2a 實作時定案 |
+| 變更提示 | 原 `shiftNotice`，擴充為通用的變更提示：最近一次平移的摘要（`deltaMin`、時間戳），以及新指派給該角色的 Cue（id、時間戳），供「時程已更新」「新增環節」的短暫提示使用（`screen-design.md` 4.4，ADR-0021）。欄位見 `api.md` 5.3 的 `notice` |
 | 超時與延誤 | 由時間推得的超時分鐘與新人儀表板的延誤（`data-model.md` 4.3，ADR-0022） |
 | 總召專屬 | 全部 Cue（含完整 CueRole：各角色與 `roleNote`，供備援 Rundown 匯出）、各角色就位狀態、衝突警告、最近一次可復原的操作、維護模式旗標（`tech-stack.md` 2.1「維護模式」） |
 
