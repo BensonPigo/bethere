@@ -41,7 +41,7 @@ func Advance(cues []Cue, now time.Time) (Op, error) {
 	return op, nil
 }
 
-// Skip marks a pending cue as skipped. Cues are never deleted live (C1).
+// Skip marks a pending cue as skipped. Cues are never deleted live (access-control.md section 4).
 func Skip(cues []Cue, id int64) (Op, error) {
 	c, ok := find(cues, id)
 	if !ok {

@@ -87,7 +87,7 @@ func TestUS_X_1_2_StylistSeesOnlyItsOwnCuesAndNotes(t *testing.T) {
 	}
 	body := r.Body.String()
 	// Another role's cue, note and name; the unassigned cue in progress
-	// (A5); the role list; any other role's ids.
+	// (api.md 5.3); the role list; any other role's ids.
 	for _, hidden := range []string{"B專屬備註", "B敬酒", "敬酒", "新秘B", "迎賓", "賓客入場", `"roles"`, `"current"`, `"activeCueId"`, `"undo"`, "總召"} {
 		if strings.Contains(body, hidden) {
 			t.Errorf("stylist response contains %q: %s", hidden, body)
@@ -237,7 +237,7 @@ func TestUS_M_1_2_ActiveCueWithStartAndLength(t *testing.T) {
 	}
 }
 
-// Another Master device sees the change on its next poll (E2).
+// Another Master device sees the change on its next poll (NFR-2).
 func TestUS_M_1_4_AnotherMasterDeviceSeesTheChange(t *testing.T) {
 	e := newEnv(t)
 	e.mustWrite(pathStart)
@@ -454,7 +454,7 @@ func TestUS_M_4_5_StylistTargetFollowsUndo(t *testing.T) {
 // ---------------------------------------------------------------- US-ST-1
 
 // The stylist's countdown target is the first assigned pending cue; the
-// snapshot carries its effective start and the server time (S3).
+// snapshot carries its effective start and the server time (sync-and-offline.md section 4).
 func TestUS_ST_1_1_SnapshotCarriesTheCountdownData(t *testing.T) {
 	e := newEnv(t)
 	e.exec(`UPDATE cues SET offset_min = -5 WHERE id = ?`, e.cue["一進預備"])
@@ -508,7 +508,7 @@ func TestUS_ST_1_4_AssignedCueInProgressIsShown(t *testing.T) {
 	}
 }
 
-// Draft also gets the full role snapshot (A8).
+// Draft also gets the full role snapshot (api.md 5.6).
 func TestUS_ST_1_5_DraftGivesTheFullRoleSnapshot(t *testing.T) {
 	e := newEnv(t)
 	s := e.snap(e.stylist)
@@ -579,7 +579,7 @@ func TestCapabilityTableEveryCell(t *testing.T) {
 
 // ---------------------------------------------------------------- section 5
 
-// The key sets of every snapshot shape are fixed (T17).
+// The key sets of every snapshot shape are fixed (tech-stack.md 2.2「型別」).
 func TestSnapshotKeySets(t *testing.T) {
 	e := newEnv(t)
 	e.mustWrite(pathStart)
@@ -781,7 +781,7 @@ func TestProcessingOrder(t *testing.T) {
 	e.write(pathAdvance, e.master).wantError(t, http.StatusUnprocessableEntity, "not_live")
 }
 
-// Context errors on lookups and writes are 500, never "invalid" (F6).
+// Context errors on lookups and writes are 500, never "invalid" (tech-stack.md 2.1「逾時與錯誤」).
 func TestUS_X_1_6_ContextErrorsAreNeverInvalid(t *testing.T) {
 	e := newEnv(t)
 	for _, mk := range []func() (context.Context, context.CancelFunc){
@@ -808,7 +808,7 @@ func TestUS_X_1_6_ContextErrorsAreNeverInvalid(t *testing.T) {
 	}
 }
 
-// Every read of a lookup or snapshot has the 3 s timeout (T3b).
+// Every read of a lookup or snapshot has the 3 s timeout (tech-stack.md 2.1「逾時與錯誤」).
 func TestReadsHaveThreeSecondTimeout(t *testing.T) {
 	e := newEnv(t)
 	e.get(e.master)
@@ -865,7 +865,7 @@ func TestAuthorizationHeaderIsStrict(t *testing.T) {
 	}
 }
 
-// F11 and the body rules: one JSON object of at most 16 KB with exactly
+// api.md section 1, version and body rules: one JSON object of at most 16 KB with exactly
 // "version", an integer of 1 or more.
 func TestWriteBodyIsStrict(t *testing.T) {
 	e := newEnv(t)
@@ -897,7 +897,7 @@ func TestWriteBodyIsStrict(t *testing.T) {
 	e.do(http.MethodPost, pathStart, e.master, " \n{ \"version\" : "+v+" }\n ").wantResult(t, "ok")
 }
 
-// ---------------------------------------------------------------- F9, F13
+// ------------------------------------- no-store; /api/report is gone
 
 func TestEveryAPIFailureIsNoStoreWithoutResult(t *testing.T) {
 	e := newEnv(t)
@@ -942,7 +942,7 @@ func TestReportEndpointIsGone(t *testing.T) {
 	}
 }
 
-// Logs never contain headers, bodies, tokens or hashes (T13), including
+// Logs never contain headers, bodies, tokens or hashes (tech-stack.md 2.1「日誌」), including
 // when requests fail.
 func TestLogsCarryNoCredentials(t *testing.T) {
 	e := newEnv(t)

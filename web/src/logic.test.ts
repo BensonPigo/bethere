@@ -102,7 +102,7 @@ describe("stylist view", () => {
   });
 });
 
-describe("local data wipe rules (access-control 3.3, api A15)", () => {
+describe("local data wipe rules (access-control 3.3, api section 7)", () => {
   const wipes = (status: number, ct: string | null, body: unknown) =>
     shouldWipeLocalData(classifyResponse(status, ct, body));
 
@@ -142,7 +142,7 @@ describe("local data wipe rules (access-control 3.3, api A15)", () => {
   });
 });
 
-describe("A16 local key", () => {
+describe("local snapshot key", () => {
   it("is snap: + SHA-256('bethere-local:' + token), never the token", async () => {
     const token = "AAAAAAAAAAAAAAAAAAAAAA";
     const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("bethere-local:" + token));

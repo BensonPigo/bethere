@@ -17,7 +17,7 @@ type ShiftRequest struct {
 }
 
 // Conflict means a cue is expected to end after the next fixed cue starts.
-// Conflicts are shown, never enforced (data-model.md M6).
+// Conflicts are shown, never enforced (data-model.md 4.2).
 type Conflict struct {
 	CueID      int64
 	FixedCueID int64
@@ -41,7 +41,7 @@ func (e *ShiftTooEarlyError) Error() string {
 func (e *ShiftTooEarlyError) Unwrap() error { return ErrShiftTooEarly }
 
 // PlanShift computes a time shift without applying it, so the same code
-// serves the preview and the real write (tech-stack.md T5). Rules follow
+// serves the preview and the real write (tech-stack.md 2.1「平移預覽」). Rules follow
 // data-model.md 4.2.
 func PlanShift(cues []Cue, req ShiftRequest, now time.Time) (ShiftPlan, error) {
 	if req.DeltaMin == 0 || req.DeltaMin > MaxShiftMin || req.DeltaMin < -MaxShiftMin {
@@ -52,7 +52,7 @@ func PlanShift(cues []Cue, req ShiftRequest, now time.Time) (ShiftPlan, error) {
 		return ShiftPlan{}, ErrCueNotFound
 	}
 	// Keep only exclusions that name a cue of this rundown, once each; the
-	// request is logged for the after-event review (C3).
+	// request is logged for the after-event review (data-model.md, ActionLog).
 	var excluded []int64
 	for _, id := range req.Excluded {
 		if _, ok := find(cues, id); ok && !slices.Contains(excluded, id) {

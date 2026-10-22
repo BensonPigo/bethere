@@ -2,11 +2,11 @@
 
 - 狀態：已接受
 - 日期：2026-10-20
-- 對應：`access-control.md` P4；`data-model.md` M9；`archive/clarification.md` C5；`tech-stack.md` T10、T-F；需求 F5
+- 對應：`access-control.md` 3.3；`data-model.md` Event；`archive/clarification.md` C5；`tech-stack.md` 2.1「資料刪除」；NFR-5
 
 ## 背景
 
-活動結束後連結不應繼續看得到流程與人員資料（F5）。原需求是「活動結束後 Token 失效、資料保留 90 天後刪除」。但只刪資料庫不夠：Litestream 備份、磁碟、GCS 的 soft delete 都會讓資料多留幾天。結束也不能依賴「有人記得按」，因為當天的新人就是開發者。
+活動結束後連結不應繼續看得到流程與人員資料（NFR-5）。原需求是「活動結束後 Token 失效、資料保留 90 天後刪除」。但只刪資料庫不夠：Litestream 備份、磁碟、GCS 的 soft delete 都會讓資料多留幾天。結束也不能依賴「有人記得按」，因為當天的新人就是開發者。
 
 ## 決定
 
@@ -20,7 +20,7 @@
 | 選項 | 優點 | 缺點 |
 | --- | --- | --- |
 | 自動結束 + 資料庫 80 天、全部副本 90 天（採用） | 刪除承諾涵蓋備份 | 事後匯出期限從 90 天縮為 80 天 |
-| 資料庫 90 天刪除（原 C5） | 照原需求 | 備份會多留數天，「90 天刪除」實際上不成立 |
+| 資料庫 90 天刪除（原需求） | 照原需求 | 備份會多留數天，「90 天刪除」實際上不成立 |
 | 總召手動按「結束活動」 | 彈性 | 忘了按，連結就一直有效 |
 | GCS 生命週期規則自動刪備份 | 不需人工 | 資料庫閒置時可能把唯一的備份刪光 |
 
@@ -32,4 +32,4 @@
 
 ## 參考
 
-- `tech-stack.md` T10、3.3 節；`data-model.md` Event
+- `tech-stack.md` 2.1「資料刪除」；`operations/runbook.md` 第 4 節；`data-model.md` Event

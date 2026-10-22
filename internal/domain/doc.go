@@ -11,7 +11,7 @@ package domain
 import (
 	"errors"
 
-	_ "time/tzdata" // event time zones must resolve on any host (tech-stack.md T12)
+	_ "time/tzdata" // event time zones must resolve on any host (tech-stack.md 2.1「時間」)
 )
 
 var (

@@ -6,7 +6,7 @@
 
 ## 背景
 
-這條規則在 `tech-stack.md`（原 T4）訂定，ADR-0015、ADR-0016 與 `process/development-process.md` 第 9 節都依賴它，但沒有自己的 ADR。
+這條規則在 `tech-stack.md` 2.1「SQL 與遷移」訂定，ADR-0015、ADR-0016 與 `process/development-process.md` 第 9 節都依賴它，但沒有自己的 ADR。
 
 部署出問題時，回退方式是換回上一個發行版（ADR-0009），資料庫不跟著回退。舊版程式必須能直接打開新版遷移過的資料庫，否則回退會失敗，而回退通常發生在最需要它的時候（活動當天或前幾天）。
 

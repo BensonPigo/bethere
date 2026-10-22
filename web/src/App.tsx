@@ -1,4 +1,4 @@
-// `/` entry: pick the screen from the snapshot's role type (tech-stack.md T16).
+// `/` entry: pick the screen from the snapshot's role type (tech-stack.md 2.2「路由」).
 import { isMasterSnapshot } from "./api";
 import type { RoleSnapshot } from "./api";
 import { isLineBrowser, tokenFromHash } from "./env";

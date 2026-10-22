@@ -12,13 +12,13 @@ import (
 	"github.com/BensonPigo/bethere/internal/api"
 )
 
-// Entry paths all render the single-page app; see tech-stack.md T16.
+// Entry paths all render the single-page app; see tech-stack.md 2.2「路由」.
 var entryPaths = []string{"/", "/print", "/recover"}
 
 type Config struct {
 	Static  fs.FS
 	Store   api.Store
-	Now     func() time.Time // serve passes time.Now only (api.md A13)
+	Now     func() time.Time // serve passes time.Now only (api.md section 1)
 	Version string
 	Logger  *slog.Logger
 }
@@ -30,7 +30,7 @@ func New(cfg Config) http.Handler {
 		w.Write([]byte("ok\n"))
 	})
 
-	// Deployment check without credentials and without event data (A6).
+	// Deployment check without credentials and without event data (api.md section 3).
 	mux.HandleFunc("GET /api/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -40,7 +40,7 @@ func New(cfg Config) http.Handler {
 	})
 
 	// The token-authenticated API (api.md section 3). The prototype's
-	// POST /api/report is gone (A7).
+	// POST /api/report is gone (api.md section 3).
 	api.New(api.Config{Store: cfg.Store, Now: cfg.Now, Logger: cfg.Logger}).Register(mux)
 
 	index := func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +78,7 @@ func isAPI(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/api/")
 
 // noStoreAPI sets Cache-Control: no-store on every /api/ response before
 // any handler runs, so router 404 and 405 responses, body errors and 500s
-// carry it too (api.md section 1, F9).
+// carry it too (api.md section 1).
 func noStoreAPI(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAPI(r) {

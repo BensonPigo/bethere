@@ -467,7 +467,7 @@ func TestSkip(t *testing.T) {
 		t.Errorf("Skip(99) err = %v, want ErrCueNotFound", err)
 	}
 
-	// data-model.md M10: a skip can be undone back to Pending.
+	// data-model.md 4.1: a skip can be undone back to Pending.
 	undo, err := Undo(skipped, op)
 	if err != nil {
 		t.Fatal(err)
@@ -611,7 +611,7 @@ func TestUndoKeepsLiveTitleEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipped := op.ApplyTo(cues)
-	skipped[0].Title = "一進預備（延後）" // edited live (P8) after the skip
+	skipped[0].Title = "一進預備（延後）" // edited live (access-control.md section 4) after the skip
 	undo, err := Undo(skipped, op)
 	if err != nil {
 		t.Fatal(err)

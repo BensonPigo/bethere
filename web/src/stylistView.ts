@@ -1,4 +1,4 @@
-// V2a view model (screen-design.md section 5, US-ST-1). Pure so it can be tested.
+// Stylist mode view model (screen-design.md section 5, US-ST-1). Pure so it can be tested.
 import type { RoleCue, RoleSnapshot } from "./api";
 import { remainingMs } from "./clock";
 

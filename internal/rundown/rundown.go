@@ -1,5 +1,5 @@
 // Package rundown reads the rundown CSV file of requirements/stories/m1.md (US-M-0,
-// Q2): UTF-8 with an optional byte order mark, a header row of column
+// rundown file format): UTF-8 with an optional byte order mark, a header row of column
 // names, then one cue per row.
 //
 //	seq          required  positive integer, unique

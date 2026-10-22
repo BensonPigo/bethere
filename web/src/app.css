@@ -1,4 +1,4 @@
-/* App screens: V1 Master, V2a Stylist, V6 banners. Print page styles stay in style.css. */
+/* App screens: Master console, Stylist mode, status banners. Print page styles stay in style.css. */
 html, body, #app { height: 100%; }
 .app { height: 100%; display: flex; flex-direction: column; }
 .app.full { align-items: center; justify-content: center; text-align: center; padding: 24px; }

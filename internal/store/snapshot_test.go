@@ -90,7 +90,7 @@ func TestSnapshotReadsTheWholeEvent(t *testing.T) {
 	}
 }
 
-// LastOp is exactly what UndoLastCueOp would reverse (M7).
+// LastOp is exactly what UndoLastCueOp would reverse (data-model.md 4.1).
 func TestSnapshotLastOpFollowsUndo(t *testing.T) {
 	f := newFixture(t)
 	f.start(t)
@@ -129,7 +129,7 @@ func TestSnapshotLastOpFollowsUndo(t *testing.T) {
 
 // A revocation, a new write or a purge committed after the token was
 // resolved cannot be paired with that lookup: the whole snapshot is read
-// as of the lookup (api.md A9, F4). The next read sees the revocation.
+// as of the lookup (api.md section 7). The next read sees the revocation.
 func TestSnapshotIsOneReadTransaction(t *testing.T) {
 	f := newFixture(t)
 	if err := f.s.AssignRole(ctx, f.cueIDs[0], f.stylist, "", f.masterBy, at(0, 0)); err != nil {
@@ -196,7 +196,7 @@ func TestSnapshotDuringPurgeStaysWhole(t *testing.T) {
 }
 
 // A cancelled or expired context is never reported as "no such token"
-// (api.md F6, T3b), for a valid token or an unknown one, on lookups and
+// (tech-stack.md 2.1「逾時與錯誤」), for a valid token or an unknown one, on lookups and
 // on writes.
 func TestContextErrorsAreNeverInvalidToken(t *testing.T) {
 	f := newFixture(t)
@@ -237,7 +237,7 @@ func TestContextErrorsAreNeverInvalidToken(t *testing.T) {
 }
 
 // The token query itself failing inside the transaction (here: its table
-// is gone) is a database error, never "no such token" (T3b). The
+// is gone) is a database error, never "no such token" (tech-stack.md 2.1「逾時與錯誤」). The
 // cancelled-context cases above fail earlier, at BEGIN, so they alone
 // would not catch a lookup that maps query errors to ErrInvalidToken.
 func TestFailingTokenQueryIsNeverInvalid(t *testing.T) {

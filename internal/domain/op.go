@@ -15,7 +15,7 @@ type Change struct {
 
 // Op is a single undoable operation. Undo yields another Op of the same
 // kind with each Change reversed. Shift keeps what the Master asked for,
-// for the after-event review (C3).
+// for the after-event review (data-model.md, ActionLog).
 type Op struct {
 	Kind    OpKind
 	Changes []Change
@@ -38,7 +38,7 @@ func (op Op) ApplyTo(cues []Cue) []Cue {
 }
 
 // Undo reverses op, which must be the latest operation (data-model.md
-// M7). Every cue it touched must still be exactly in its After state;
+// data-model.md 4.1). Every cue it touched must still be exactly in its After state;
 // otherwise something else changed it and the undo is refused.
 func Undo(cues []Cue, op Op) (Op, error) {
 	if len(op.Changes) == 0 {
