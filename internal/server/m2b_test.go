@@ -398,8 +398,11 @@ func TestUS_M_7_ReissueAndRevoke(t *testing.T) {
 		e.post(pathRevoke, e.master, map[string]any{"roleId": e.stylistRole}).wantResult(t, "ok")
 	}
 	e.get(tok).wantResult(t, "invalid")
-	// A role whose link is revoked can be reissued, and the Master is
-	// never told "invalid" about the target (security review P1).
+	// A role whose link is revoked can be checked in, assigned and
+	// reissued, and the Master is never told "invalid" about the target
+	// (security review P1).
+	e.proxyCheckIn(e.stylistRole, true).wantResult(t, "ok")
+	e.assign(e.cue["迎賓"], assignment(e.stylistRole, nil)).wantResult(t, "ok")
 	r = e.post(pathReissue, e.master, map[string]any{"roleId": e.stylistRole})
 	r.wantResult(t, "ok")
 	e.snap(r.body["token"].(string))
