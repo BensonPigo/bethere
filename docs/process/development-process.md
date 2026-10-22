@@ -84,7 +84,7 @@
 ## 6. Git 與 CI
 
 - 開發在功能分支（例如 `m1/master-advance`），完成後合併進 `main`。
-- CI（`.github/workflows/ci.yml`）在每次 push 與 pull request 執行：Go 的 `vet` 與 `test` 跑 Linux、Windows，**macOS 只在 `main` 上跑**（runner 昂貴且常排隊，2026-10-22 PO 決定）；前端 build 跑 Linux。
+- CI（`.github/workflows/ci.yml`）在每次 push 與 pull request 執行：Go 的 `vet` 與 `test` 跑 Linux、Windows，**macOS 只在 `main` 上跑**（runner 昂貴且常排隊，2026-10-22 PO 決定）；前端單元測試（`npm test`）與 build 跑 Linux。
 - **push 的授權**（D-4）：agent 可自行 push 功能分支；合併進 `main` 與 push `main` 由 PO 決定。
 
 ## 7. PO 決定（2026-10-21）
