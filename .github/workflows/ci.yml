@@ -1,22 +1,35 @@
-# Objective test results for every push and pull request
-# (docs/process/development-process.md section 7).
+# Objective test results for every code change
+# (docs/process/development-process.md section 6). Changes that touch only
+# Markdown run docs.yml instead.
 name: CI
 
 on:
   push:
+    paths-ignore: ["docs/**", "**.md"]
   pull_request:
+    paths-ignore: ["docs/**", "**.md"]
+  # macOS runs only here: weekly, and by hand when needed.
+  schedule:
+    - cron: "0 1 * * 1" # Mondays 09:00 Taipei
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# A newer push to the same branch makes the running check pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   go:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners are costly and often queued, so macOS runs only on
-        # main; feature branches get Linux (production) and Windows.
-        os: ${{ github.ref == 'refs/heads/main' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
+        # Linux is production and Windows the development machine. macOS
+        # runners cost ten times as much, so they run only on the weekly
+        # schedule or a manual run.
+        os: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
