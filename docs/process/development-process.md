@@ -54,7 +54,7 @@
    - **情境條件**（`US-M-2.C1`）：依現場使用場景寫成可操作的檢查，例如「手機平放在 1 公尺外，3 秒內看得出剩幾分鐘」，由 PO 或真實使用者在真手機上判定。條件中的數字先照文件，實測後依結果調整。每條情境條件註明由誰、在什麼場合判定（ADR-0027）。
 2. **實作**：附上測試，測試名稱帶驗收條件編號，例如 `TestUS_M_2_1_ShiftSkipsFixedCues`。
 3. **證明測試有效**：關鍵規則（時間平移、權限與驗證結果、資料保存）要做「改回去 → 測試失敗」，並在 commit 訊息或驗收報告中記錄。時間平移另加性質測試（property-based test）。
-4. **機器驗證**：push 功能分支後，CI 在 Linux、Windows 上執行（合併進 `main` 後另跑 macOS） `go vet ./...` 與 `go test ./...`；開發時在本機自行執行即可，不設 commit 前的強制檢查。
+4. **機器驗證**：一件工作完成後 push 功能分支，CI 在 Linux、Windows 上執行 `go vet ./...` 與 `go test ./...`；開發時在本機自行執行即可，不設 commit 前的強制檢查。
 5. **Demo**：技術負責人在本機啟動服務，附上操作步驟；PO 自己操作，判定情境條件。
 6. **完成**：機器驗證通過、PO 判定情境條件成立，合併進 `main`。
 
@@ -84,7 +84,12 @@
 ## 6. Git 與 CI
 
 - 開發在功能分支（例如 `m1/master-advance`），完成後合併進 `main`。
-- CI（`.github/workflows/ci.yml`）在每次 push 與 pull request 執行：Go 的 `vet` 與 `test` 跑 Linux、Windows，**macOS 只在 `main` 上跑**（runner 昂貴且常排隊，2026-10-22 PO 決定）；前端單元測試（`npm test`）與 build 跑 Linux。
+- CI 以 GitHub Actions 執行，repo 為私人，用的是有限的免費分鐘數（Windows 計 2 倍、macOS 計 10 倍），所以只在需要的地方跑（2026-10-22 PO 決定）：
+  - **程式修改**（`.github/workflows/ci.yml`）：push 與 pull request 時，Go 的 `vet` 與 `test` 跑 Linux、Windows；前端單元測試（`npm test`）與 build 跑 Linux。
+  - **只改 Markdown**（`.github/workflows/docs.yml`）：只在 Linux 跑文件規則檢查（`internal/docscheck`）。
+  - **macOS**：每週一定時跑一次，或手動觸發（`gh workflow run CI`），不隨 push 執行。
+  - 同一分支有新的 push 時，取消還在跑的舊執行。
+  - agent 在一件工作完成時才 push，不是每個 commit 都 push。
 - **push 的授權**：agent 可自行 push 功能分支；合併進 `main` 與 push `main` 由 PO 決定。
 
 ## 7. PO 決定

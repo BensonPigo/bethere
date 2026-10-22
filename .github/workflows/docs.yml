@@ -1,0 +1,27 @@
+# Documentation rules for changes that touch only Markdown
+# (docs/adr/0017-documentation-structure-and-id-scheme.md). Code changes run
+# the same checks inside ci.yml's go test.
+name: Docs
+
+on:
+  push:
+    paths: ["docs/**", "**.md"]
+  pull_request:
+    paths: ["docs/**", "**.md"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docscheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go test ./internal/docscheck/
