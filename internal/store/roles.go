@@ -19,22 +19,36 @@ var (
 	ErrEventEnded          = errors.New("event has ended")
 	ErrInvalidRecoveryCode = errors.New("no event with this recovery code")
 	ErrRoleType            = errors.New("unknown role type")
+	ErrRoleView            = errors.New("this role type cannot use this screen")
 )
 
-// AddRole adds a non-Master role to an event.
+// AddRole adds a non-Master role to an event with its type's default
+// screen.
 func (s *Store) AddRole(ctx context.Context, eventID int64, name string, typ domain.RoleType, actor Actor, now time.Time) (int64, error) {
+	return s.AddRoleWithView(ctx, eventID, name, typ, "", actor, now)
+}
+
+// AddRoleWithView adds a non-Master role that opens the given screen; an
+// empty view means the type's default (ADR-0025). Types and views are
+// checked here, not by the schema (ADR-0016).
+func (s *Store) AddRoleWithView(ctx context.Context, eventID int64, name string, typ domain.RoleType, view domain.View,
+	actor Actor, now time.Time) (int64, error) {
 	if typ == domain.Master {
 		return 0, ErrMasterRole
 	}
 	if !typ.Valid() {
 		return 0, ErrRoleType
 	}
+	if view != "" && !typ.AllowsView(view) {
+		return 0, ErrRoleView
+	}
 	var roleID int64
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		if _, _, err := guard(ctx, tx, eventID, actor, now); err != nil {
 			return err
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO roles (event_id, name, type) VALUES (?, ?, ?)`, eventID, name, typ)
+		res, err := tx.ExecContext(ctx, `INSERT INTO roles (event_id, name, type, view) VALUES (?, ?, ?, ?)`,
+			eventID, name, typ, sql.NullString{String: string(view), Valid: view != ""})
 		if err != nil {
 			return err
 		}
@@ -128,6 +142,7 @@ type TokenOwner struct {
 	EventID  int64
 	RoleType domain.RoleType
 	RoleName string
+	View     domain.View // resolved: the stored screen or the type's default
 	Actor    Actor
 }
 
@@ -152,11 +167,14 @@ func (s *Store) LookupToken(ctx context.Context, tokenHash []byte, now time.Time
 // other failure, a cancelled or expired context included, is returned as
 // is and never as ErrInvalidToken (tech-stack.md 2.1「逾時與錯誤」).
 func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time) (TokenOwner, domain.Event, int64, error) {
-	var o TokenOwner
-	err := tx.QueryRowContext(ctx, `SELECT r.id, r.event_id, r.type, r.name
+	var (
+		o    TokenOwner
+		view sql.NullString
+	)
+	err := tx.QueryRowContext(ctx, `SELECT r.id, r.event_id, r.type, r.name, r.view
 		FROM access_tokens t JOIN roles r ON r.id = t.role_id
 		WHERE t.token_hash = ? AND t.revoked_at IS NULL`, tokenHash).
-		Scan(&o.RoleID, &o.EventID, &o.RoleType, &o.RoleName)
+		Scan(&o.RoleID, &o.EventID, &o.RoleType, &o.RoleName, &view)
 	if errors.Is(err, sql.ErrNoRows) {
 		// database/sql reports a context cancelled before the row was read
 		// as the context's error, not ErrNoRows; checking ctx as well keeps
@@ -169,6 +187,7 @@ func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Ti
 	if err != nil {
 		return TokenOwner{}, domain.Event{}, 0, err
 	}
+	o.View = resolveView(o.RoleType, view)
 	e, v, err := loadEvent(ctx, tx, o.EventID)
 	if err != nil {
 		return TokenOwner{}, domain.Event{}, 0, err
@@ -208,4 +227,13 @@ func roleOf(ctx context.Context, tx *sql.Tx, roleID int64) (int64, domain.RoleTy
 	)
 	err := tx.QueryRowContext(ctx, `SELECT event_id, type FROM roles WHERE id = ?`, roleID).Scan(&eventID, &typ)
 	return eventID, typ, notFound(err)
+}
+
+// resolveView is the stored screen, or the type's default when none is
+// stored or the stored one does not suit the type (a hand-edited row).
+func resolveView(t domain.RoleType, stored sql.NullString) domain.View {
+	if v := domain.View(stored.String); stored.Valid && t.AllowsView(v) {
+		return v
+	}
+	return t.DefaultView()
 }
