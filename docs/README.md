@@ -23,7 +23,7 @@
 | [scope.md](requirements/scope.md) | 功能清單 × 優先層級（P0／P1／P2）× 里程碑；限制；非功能需求（NFR） |
 | [roles-and-scenarios.md](requirements/roles-and-scenarios.md) | 各角色的現場使用情境與原始使用者故事；P0 以外的故事作為待辦 |
 | [stories/m1.md](requirements/stories/m1.md) | M1 最小閉環的故事與驗收條件（已驗收） |
-| [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次彩排的故事與驗收條件（草稿） |
+| [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次彩排的故事與驗收條件（PO 定稿） |
 
 ## design/ 設計
 
