@@ -253,7 +253,7 @@ func addRole(args []string, c cli) error {
 	fs := flag.NewFlagSet("add-role", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "database file (required)")
 	name := fs.String("name", "", "role name, e.g. 新秘 (required)")
-	typ := fs.String("type", "", "role type: Stylist or Host (required)")
+	typ := fs.String("type", "", "role type: Stylist, Media, StageAV or Host (required)")
 	view := fs.String("view", "", "screen: HandsFree or Glance; default by type (ADR-0025)")
 	baseURL := fs.String("base-url", "", "https://<host> the link points to (required)")
 	if err := parseFlags(fs, args, c); err != nil {
@@ -264,11 +264,11 @@ func addRole(args []string, c cli) error {
 			return err
 		}
 	}
-	// M2a opens Stylist and Host; Media and StageAV follow in M2b, and P1
-	// types cannot be created in P0 (api.md section 4).
+	// P0 opens Stylist, Media, StageAV and Host; P1 types cannot be
+	// created (api.md section 4).
 	roleType := domain.RoleType(*typ)
-	if roleType != domain.Stylist && roleType != domain.Host {
-		return fmt.Errorf("%w: -type %q: only Stylist or Host", errUsage, *typ)
+	if !roleType.HasOwnCues() && roleType != domain.Host {
+		return fmt.Errorf("%w: -type %q: only Stylist, Media, StageAV or Host", errUsage, *typ)
 	}
 	roleView := domain.View(*view)
 	if roleView != "" && !roleType.AllowsView(roleView) {

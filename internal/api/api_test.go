@@ -58,18 +58,28 @@ func TestLastSeenOnlyAfterSuccessfulAuthentication(t *testing.T) {
 		return rec.Code
 	}
 
+	// lastSeenAt is keyed by the link's id (api.md section 7 item 5).
+	idOf := func(tok string) int64 {
+		o, err := st.LookupToken(ctx, auth.HashToken(tok), now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o.TokenID
+	}
+	masterID, stylistID := idOf(master), idOf(stylist)
+
 	unknown, _ := auth.NewToken()
 	send(http.MethodGet, "/api/snapshot", unknown, "")
 	send(http.MethodGet, "/api/snapshot", master[:21], "")
-	if _, ok := a.LastSeen(auth.HashToken(unknown)); ok {
-		t.Error("unknown token recorded")
+	if len(a.lastSeen) != 0 {
+		t.Errorf("recorded before any successful request: %v", a.lastSeen)
 	}
-	if _, ok := a.LastSeen(auth.HashToken(master)); ok {
-		t.Error("recorded before any successful request")
+	if _, ok := a.LastSeen(0); ok {
+		t.Error("no link (id 0) has a last use")
 	}
 
 	send(http.MethodGet, "/api/snapshot", master, "")
-	if at, ok := a.LastSeen(auth.HashToken(master)); !ok || !at.Equal(now) {
+	if at, ok := a.LastSeen(masterID); !ok || !at.Equal(now) {
 		t.Errorf("master last seen %v %v", at, ok)
 	}
 	// A refused write still proved the link.
@@ -77,13 +87,13 @@ func TestLastSeenOnlyAfterSuccessfulAuthentication(t *testing.T) {
 	if code := send(http.MethodPost, "/api/cues/advance", stylist, `{"version":1}`); code != http.StatusForbidden {
 		t.Fatalf("stylist advance: %d", code)
 	}
-	if at, ok := a.LastSeen(auth.HashToken(stylist)); !ok || !at.Equal(clock) {
+	if at, ok := a.LastSeen(stylistID); !ok || !at.Equal(clock) {
 		t.Errorf("stylist last seen %v %v", at, ok)
 	}
 	// After the end nothing is recorded.
 	clock = now.AddDate(0, 0, 2)
 	send(http.MethodGet, "/api/snapshot", master, "")
-	if at, _ := a.LastSeen(auth.HashToken(master)); !at.Equal(now) {
+	if at, _ := a.LastSeen(masterID); !at.Equal(now) {
 		t.Errorf("ended event updated last seen to %v", at)
 	}
 }
@@ -101,8 +111,9 @@ func TestFormatTimeIsUTCWithMilliseconds(t *testing.T) {
 }
 
 func TestCapabilityTableDeniesByDefault(t *testing.T) {
-	for _, c := range []capability{capReadSnapshot, capAdvance, capUndo, capShift, capability(99)} {
-		for _, typ := range []domain.RoleType{"", "master", "MASTER", "Admin", domain.Media, domain.StageAV,
+	for _, c := range []capability{capReadSnapshot, capAdvance, capUndo, capShift, capCheckIn, capProxyCheckIn,
+		capEditRundown, capLinks, capability(99)} {
+		for _, typ := range []domain.RoleType{"", "master", "MASTER", "Admin",
 			domain.VenueLead, domain.Reception, domain.Cashier, domain.Runner} {
 			if allowed(c, typ) {
 				t.Errorf("allowed(%d, %q)", c, typ)
@@ -110,9 +121,17 @@ func TestCapabilityTableDeniesByDefault(t *testing.T) {
 		}
 	}
 	// Host reads its dashboard and nothing else (api.md section 4).
-	for _, c := range []capability{capAdvance, capUndo, capShift} {
-		if allowed(c, domain.Host) || allowed(c, domain.Stylist) {
-			t.Errorf("capability %d allowed for Host or Stylist", c)
+	for _, c := range []capability{capAdvance, capUndo, capShift, capProxyCheckIn, capEditRundown, capLinks} {
+		for _, typ := range []domain.RoleType{domain.Host, domain.Stylist, domain.Media, domain.StageAV} {
+			if allowed(c, typ) {
+				t.Errorf("capability %d allowed for %s", c, typ)
+			}
+		}
+	}
+	// Only the roles with cues of their own check in by themselves.
+	for _, typ := range []domain.RoleType{domain.Master, domain.Host} {
+		if allowed(capCheckIn, typ) {
+			t.Errorf("%s may check in", typ)
 		}
 	}
 	if !allowed(capReadSnapshot, domain.Host) {

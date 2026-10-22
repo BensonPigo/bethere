@@ -104,9 +104,14 @@ func TestUS_X_1_2_StylistSeesOnlyItsOwnCuesAndNotes(t *testing.T) {
 		t.Errorf("own roleNote = %v", n)
 	}
 	body := r.Body.String()
-	// Another role's cue, note and name; the unassigned cue in progress
-	// (api.md 5.3); the role list; any other role's ids.
-	for _, hidden := range []string{"B專屬備註", "B敬酒", "敬酒", "新秘B", "迎賓", "賓客入場", `"roles"`, `"current"`, `"activeCueId"`, `"undo"`, "總召"} {
+	// Of the unassigned cue in progress only its title, once, as
+	// currentTitle (US-X-6.4): not its note, id or time.
+	if s["currentTitle"] != "迎賓" || strings.Count(body, "迎賓") != 1 {
+		t.Errorf("currentTitle = %v; 迎賓 appears %d times", s["currentTitle"], strings.Count(body, "迎賓"))
+	}
+	// Another role's cue, note and name; the rest of the unassigned cue in
+	// progress (api.md 5.3); the role list; any other role's ids.
+	for _, hidden := range []string{"B專屬備註", "B敬酒", "敬酒", "新秘B", "賓客入場", `"roles"`, `"current"`, `"activeCueId"`, `"undo"`, "總召"} {
 		if strings.Contains(body, hidden) {
 			t.Errorf("stylist response contains %q: %s", hidden, body)
 		}
@@ -441,7 +446,8 @@ func TestUS_M_4_3_OnlyTheLatestOperationOnce(t *testing.T) {
 	if u := s["undo"].(map[string]any); u["available"] != false || u["description"] != nil {
 		t.Errorf("draft undo = %v", u)
 	}
-	e.write(pathUndo, e.master).wantError(t, http.StatusUnprocessableEntity, "not_live")
+	// Undo runs in draft too since M2b (US-M-6.4); there is nothing yet.
+	e.write(pathUndo, e.master).wantError(t, http.StatusUnprocessableEntity, "nothing_to_undo")
 	e.start()
 	s = e.snap(e.master)
 	if s["undo"].(map[string]any)["available"] != false {
@@ -602,7 +608,7 @@ func TestCapabilityTableEveryCell(t *testing.T) {
 					if _, ok := r.snapshot(t)["roles"]; !ok {
 						t.Error("not a Master snapshot")
 					}
-				case (typ == domain.Stylist || typ == domain.Host) && ep == pathSnapshot:
+				case (typ.HasOwnCues() || typ == domain.Host) && ep == pathSnapshot:
 					r.wantResult(t, "ok")
 					if _, ok := r.snapshot(t)["roles"]; ok {
 						t.Errorf("%s got a Master snapshot", typ)
@@ -631,7 +637,7 @@ func TestSnapshotKeySets(t *testing.T) {
 	wantKeys(t, "ok response", r.body, "result", "snapshot")
 	m := r.snapshot(t)
 	wantKeys(t, "Master snapshot", m, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "event", "cues",
-		"activeCueId", "undo", "roles", "conflicts", "overrunMin")
+		"activeCueId", "undo", "roles", "conflicts", "overrunMin", "outOfOrder")
 	wantKeys(t, "role", m["role"].(map[string]any), "type", "name", "view")
 	wantKeys(t, "eventDay", m["eventDay"].(map[string]any), "date", "timezone")
 	wantKeys(t, "event", m["event"].(map[string]any), "name", "date", "timezone")
@@ -648,13 +654,14 @@ func TestSnapshotKeySets(t *testing.T) {
 		t.Errorf("roles = %v", roles)
 	}
 	for _, ro := range roles {
-		wantKeys(t, "Master role list item", ro.(map[string]any), "id", "name", "type")
+		wantKeys(t, "Master role list item", ro.(map[string]any), "id", "name", "type", "checkedIn", "lastSeenAt", "hasLink")
 	}
 
 	s := e.get(e.stylist)
 	wantKeys(t, "ok response", s.body, "result", "snapshot")
 	ss := s.snapshot(t)
-	wantKeys(t, "Stylist snapshot", ss, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "cues", "notice")
+	wantKeys(t, "Stylist snapshot", ss, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "cues", "notice",
+		"myCheckIn", "currentTitle")
 	wantKeys(t, "role", ss["role"].(map[string]any), "type", "name", "view")
 	for _, c := range cues(t, ss) {
 		wantKeys(t, "Stylist cue", c, "id", "seq", "title", "effectiveStart", "durationMin", "isFixed", "offsetMin",

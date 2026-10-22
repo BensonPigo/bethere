@@ -28,6 +28,18 @@ type SnapshotData struct {
 	// Shifts are the latest shifts and undone shifts, newest first, for
 	// the change notices of each role (screen-design.md 4.4).
 	Shifts []ShiftRecord
+	// Assigns are the latest inserts and assignment changes that showed a
+	// cue to new roles, newest first, for the "new cue" notice (ADR-0021).
+	Assigns []AssignRecord
+}
+
+// AssignRecord is one logged insert or assignment change: when, which cue,
+// and which roles it newly showed the cue to. Removals are not kept: a role
+// taken off a cue gets no notice (ADR-0021).
+type AssignRecord struct {
+	At    time.Time
+	CueID int64
+	Added []int64
 }
 
 // ShiftRecord is one logged shift, or the undo of one: when, and every cue
@@ -60,6 +72,10 @@ type RoleInfo struct {
 	ID   int64
 	Name string
 	Type domain.RoleType
+	// ActiveTokenID is the id of the role's active link, 0 when it has
+	// none: the key of its lastSeenAt (api.md section 7 item 5).
+	ActiveTokenID int64
+	CheckedIn     bool // an active, not undone check-in (data-model.md CheckIn)
 }
 
 // afterTokenResolved, when set by a test, runs inside Snapshot's read
@@ -95,6 +111,9 @@ func (s *Store) Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (
 		return SnapshotData{}, err
 	}
 	if d.Shifts, err = loadShifts(ctx, tx, e.ID); err != nil {
+		return SnapshotData{}, err
+	}
+	if d.Assigns, err = loadAssigns(ctx, tx, e.ID); err != nil {
 		return SnapshotData{}, err
 	}
 	return d, nil
@@ -162,7 +181,10 @@ func loadSnapshotCues(ctx context.Context, tx *sql.Tx, eventID int64) ([]Snapsho
 }
 
 func loadRoles(ctx context.Context, q querier, eventID int64) ([]RoleInfo, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id, name, type FROM roles WHERE event_id = ? ORDER BY display_order, id`, eventID)
+	rows, err := q.QueryContext(ctx, `SELECT r.id, r.name, r.type,
+			COALESCE((SELECT t.id FROM access_tokens t WHERE t.role_id = r.id AND t.revoked_at IS NULL), 0),
+			EXISTS (SELECT 1 FROM check_ins c WHERE c.role_id = r.id AND c.undone_at IS NULL)
+		FROM roles r WHERE r.event_id = ? ORDER BY r.display_order, r.id`, eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +192,7 @@ func loadRoles(ctx context.Context, q querier, eventID int64) ([]RoleInfo, error
 	var roles []RoleInfo
 	for rows.Next() {
 		var r RoleInfo
-		if err := rows.Scan(&r.ID, &r.Name, &r.Type); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Type, &r.ActiveTokenID, &r.CheckedIn); err != nil {
 			return nil, err
 		}
 		roles = append(roles, r)
@@ -245,6 +267,34 @@ func loadShifts(ctx context.Context, q querier, eventID int64) ([]ShiftRecord, e
 			continue // unreadable, or the undo of an advance or skip
 		}
 		out = append(out, ShiftRecord{At: fromNS(at), Changes: op.Changes})
+	}
+	return out, rows.Err()
+}
+
+// loadAssigns reads the latest inserts and assignment changes that added
+// a role. Like loadShifts, a row this release cannot read is skipped.
+func loadAssigns(ctx context.Context, q querier, eventID int64) ([]AssignRecord, error) {
+	rows, err := q.QueryContext(ctx, `SELECT at, payload FROM action_logs
+		WHERE event_id = ? AND type IN (?, ?) ORDER BY id DESC LIMIT ?`,
+		eventID, logInsert, logAssign, recentShifts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AssignRecord
+	for rows.Next() {
+		var (
+			at      int64
+			payload string
+		)
+		if err := rows.Scan(&at, &payload); err != nil {
+			return nil, err
+		}
+		var r assignRecord
+		if json.Unmarshal([]byte(payload), &r) != nil || len(r.Added) == 0 {
+			continue
+		}
+		out = append(out, AssignRecord{At: fromNS(at), CueID: r.CueID, Added: r.Added})
 	}
 	return out, rows.Err()
 }

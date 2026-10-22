@@ -234,8 +234,7 @@ func TestAddRoleRefusals(t *testing.T) {
 		args  []string
 		code  int
 	}{
-		// api.md section 4: Stylist and Host in M2a.
-		"Media":        {master, []string{"-type", "Media"}, 2},
+		// api.md section 4: Stylist, Media, StageAV and Host in P0.
 		"Host Glance":  {master, []string{"-type", "Host", "-view", "Glance"}, 2},
 		"Console":      {master, []string{"-view", "Console"}, 2},
 		"bad view":     {master, []string{"-view", "handsfree"}, 2},
@@ -448,7 +447,8 @@ func TestTokenFromLink(t *testing.T) {
 	}
 }
 
-// US-X-4.1: add-role takes the screen, and Host is open from M2a.
+// US-X-4.1, US-X-6.1: add-role takes the screen; Host is open from M2a,
+// Media and StageAV from M2b.
 func TestUS_X_4_1_AddRoleSetsTheScreen(t *testing.T) {
 	db := newDB(t)
 	master, _, _ := newEvent(t, db)
@@ -460,6 +460,10 @@ func TestUS_X_4_1_AddRoleSetsTheScreen(t *testing.T) {
 		{[]string{"-name", "新人", "-type", "Host"}, "Host", "Dashboard"},
 		{[]string{"-name", "新秘", "-type", "Stylist"}, "Stylist", "HandsFree"},
 		{[]string{"-name", "助理", "-type", "Stylist", "-view", "Glance"}, "Stylist", "Glance"},
+		// US-X-6.1: Media and StageAV open in M2b, Glance by default.
+		{[]string{"-name", "攝影", "-type", "Media"}, "Media", "Glance"},
+		{[]string{"-name", "音控", "-type", "StageAV"}, "StageAV", "Glance"},
+		{[]string{"-name", "攝影B", "-type", "Media", "-view", "HandsFree"}, "Media", "HandsFree"},
 	} {
 		args := append([]string{"add-role", "-db", db, "-base-url", base}, c.args...)
 		r := runWith(master+"\n", nil, args...)

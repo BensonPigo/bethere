@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
+
+	"github.com/BensonPigo/bethere/internal/store"
 )
 
 // body is a parsed write or preview request (api.md section 1).
@@ -14,6 +17,16 @@ type body struct {
 	fromCueID int64
 	deltaMin  int
 	excluded  []int64
+	roleID    int64
+	checkedIn bool
+	// The live rundown edits (api.md section 3, M2b).
+	cueID       int64
+	afterCueID  int64
+	start       time.Time
+	durationMin int
+	title       string
+	notePublic  *string
+	roles       []store.Assignment
 }
 
 type fieldKind int
@@ -22,7 +35,16 @@ const (
 	positiveInt fieldKind = iota // an id or a version: 1 or more
 	signedInt                    // a shift in minutes
 	idList                       // an array of ids, at most maxExcluded
+	boolean                      // true or false
+	count                        // a length in minutes: 0 or more
+	text                         // a string
+	optText                      // a string or null
+	timestamp                    // an RFC 3339 time
+	roleList                     // [{"roleId":n,"roleNote":"…"|null}…], at most maxRoles
 )
+
+// maxRoles bounds the roles of one cue (api.md section 3).
+const maxRoles = 50
 
 // fieldSet is the fields a request takes; all are required but
 // "excluded", which may be left out.
@@ -33,6 +55,20 @@ type fieldSet map[string]fieldKind
 const maxExcluded = 200
 
 var versionOnly = fieldSet{"version": positiveInt}
+
+// The check-ins carry no version (ADR-0023); a role's own check-in takes
+// its role from the token alone, so a roleId there is an unknown field.
+var (
+	ownCheckInFields   = fieldSet{"checkedIn": boolean}
+	proxyCheckInFields = fieldSet{"roleId": positiveInt, "checkedIn": boolean}
+	// A link change carries no version either: it is not a cue (ADR-0023).
+	linkFields   = fieldSet{"roleId": positiveInt}
+	skipFields   = fieldSet{"version": positiveInt, "cueId": positiveInt}
+	insertFields = fieldSet{"version": positiveInt, "afterCueId": positiveInt, "start": timestamp,
+		"durationMin": count, "title": text, "notePublic": optText, "roles": roleList}
+	assignFields = fieldSet{"version": positiveInt, "cueId": positiveInt, "roles": roleList}
+	editFields   = fieldSet{"version": positiveInt, "cueId": positiveInt, "title": text, "notePublic": optText}
+)
 
 // shiftFields is the shift's body, with the version for the real write
 // and without it for the preview.
@@ -82,6 +118,12 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 				b.version = v
 			case "fromCueId":
 				b.fromCueID = v
+			case "roleId":
+				b.roleID = v
+			case "cueId":
+				b.cueID = v
+			case "afterCueId":
+				b.afterCueID = v
 			}
 		case signedInt:
 			v, ok := readInt(dec, true)
@@ -93,6 +135,52 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 			if b.excluded, err = readIDs(dec); err != nil {
 				return body{}, false
 			}
+		case boolean:
+			tok, err := dec.Token()
+			v, isBool := tok.(bool)
+			if err != nil || !isBool {
+				return body{}, false
+			}
+			b.checkedIn = v
+		case count:
+			tok, err := dec.Token()
+			n, isNumber := tok.(json.Number)
+			if err != nil || !isNumber {
+				return body{}, false
+			}
+			v, ok := parseInt(string(n), true)
+			if !ok || v < 0 || v > 1<<31-1 {
+				return body{}, false
+			}
+			b.durationMin = int(v)
+		case text:
+			s, ok := readString(dec)
+			if !ok {
+				return body{}, false
+			}
+			b.title = s
+		case optText:
+			s, ok := readOptString(dec)
+			if !ok {
+				return body{}, false
+			}
+			b.notePublic = s
+		case timestamp:
+			s, ok := readString(dec)
+			if !ok {
+				return body{}, false
+			}
+			t, err := time.Parse(time.RFC3339Nano, s)
+			if err != nil {
+				return body{}, false
+			}
+			b.start = t
+		case roleList:
+			roles, ok := readRoles(dec)
+			if !ok {
+				return body{}, false
+			}
+			b.roles = roles
 		}
 	}
 	if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
@@ -119,6 +207,76 @@ func readInt(dec *json.Decoder, signed bool) (int64, bool) {
 		return 0, false
 	}
 	return parseInt(string(n), signed)
+}
+
+func readString(dec *json.Decoder) (string, bool) {
+	tok, err := dec.Token()
+	s, isString := tok.(string)
+	return s, err == nil && isString
+}
+
+// readOptString reads a string or null; null is nil.
+func readOptString(dec *json.Decoder) (*string, bool) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, false
+	}
+	if tok == nil {
+		return nil, true
+	}
+	s, isString := tok.(string)
+	return &s, isString
+}
+
+// readRoles reads the assignment list of a cue: each item exactly
+// {"roleId":n,"roleNote":"…"|null}, with the same strictness as the body
+// itself, and no role twice.
+func readRoles(dec *json.Decoder) ([]store.Assignment, bool) {
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('[') {
+		return nil, false
+	}
+	roles := []store.Assignment{}
+	seenRole := map[int64]bool{}
+	for dec.More() {
+		if len(roles) == maxRoles {
+			return nil, false
+		}
+		if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+			return nil, false
+		}
+		var (
+			a    store.Assignment
+			seen = map[string]bool{}
+		)
+		for dec.More() {
+			tok, err := dec.Token()
+			key, isString := tok.(string)
+			if err != nil || !isString || seen[key] {
+				return nil, false
+			}
+			seen[key] = true
+			var ok bool
+			switch key {
+			case "roleId":
+				a.RoleID, ok = readInt(dec, false)
+			case "roleNote":
+				a.RoleNote, ok = readOptString(dec)
+			}
+			if !ok {
+				return nil, false
+			}
+		}
+		if tok, err := dec.Token(); err != nil || tok != json.Delim('}') || !seen["roleId"] || !seen["roleNote"] ||
+			seenRole[a.RoleID] {
+			return nil, false
+		}
+		seenRole[a.RoleID] = true
+		roles = append(roles, a)
+	}
+	if tok, err := dec.Token(); err != nil || tok != json.Delim(']') {
+		return nil, false
+	}
+	return roles, true
 }
 
 var errBadIDs = errors.New("excluded must be an array of ids")

@@ -18,6 +18,14 @@ type okResponse struct {
 	Snapshot any    `json:"snapshot"`
 }
 
+// reissueResponse is the one response that carries a new link's token
+// (US-M-7.1); the client keeps only the snapshot.
+type reissueResponse struct {
+	Result   string `json:"result"` // "ok"
+	Snapshot any    `json:"snapshot"`
+	Token    string `json:"token"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
