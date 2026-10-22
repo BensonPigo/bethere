@@ -55,8 +55,8 @@
 | --- | --- |
 | US-M-6.1 | **Given** 活動為 Live、某 Cue 為 Pending，**When** 總召在 Cue 詳情點「略過」，**Then** 該 Cue 變為 Skipped，`eventVersion` + 1，寫入 `cue.skip` 操作紀錄 |
 | US-M-6.2 | 推進跳過 Skipped 的 Cue，直接開始下一個 Pending |
-| US-M-6.3 | 進行中、已完成、已略過的 Cue 不能略過（422）；Draft 階段不能略過 |
-| US-M-6.4 | 「復原上一步」可撤銷略過，Cue 回到 Pending；復原按鈕顯示「撤銷：略過『…』」 |
+| US-M-6.3 | 進行中、已完成、已略過的 Cue 不能略過（422）；Draft 與 Live 都可以略過，讓活動日當天第一次推進前就能取消環節（PO 於 2026-10-22 修改，原為「Draft 階段不能略過」） |
+| US-M-6.4 | 「復原上一步」可撤銷略過，Cue 回到 Pending；復原按鈕顯示「撤銷：略過『…』」；Draft 階段同樣可以復原 |
 | US-M-6.5 | 被略過的 Cue 從角色的「下一個與你有關的 Cue」與新秘倒數中消失；時間軸上以 `⊘` 淡化顯示 |
 | US-M-6.6 | 略過帶版本號；版本不符時被拒絕（同 US-M-2.7） |
 
@@ -81,7 +81,7 @@
 
 | 編號 | 驗收條件 |
 | --- | --- |
-| US-M-8.1 | **Given** 活動為 Live，**When** 總召輸入開始時間、長度、標題，選擇插在哪個 Cue 之後並確認，**Then** 新 Cue 的 `scheduledStart` = 輸入時間、`offsetMin = 0`、狀態 Pending；插入位置之後的 `seq` 依序加一，維持唯一、連續；單一交易，`eventVersion` + 1 |
+| US-M-8.1 | **Given** 活動為 Draft 或 Live（活動日當天第一次推進前仍是 Draft），**When** 總召輸入開始時間、長度、標題，選擇插在哪個 Cue 之後並確認，**Then** 新 Cue 的 `scheduledStart` = 輸入時間、`offsetMin = 0`、狀態 Pending；插入位置之後的 `seq` 依序加一，維持唯一、連續；單一交易，`eventVersion` + 1 |
 | US-M-8.2 | 新增時可同時指派角色與角色備註 |
 | US-M-8.3 | **Given** Cue 為 Pending，**When** 總召新增或移除指派，**Then** 立即生效；進行中、已完成、已略過的 Cue 不能改指派（422） |
 | US-M-8.4 | 新增與改派寫入操作紀錄（`rundown.insert`、`rundown.assign`），**不是**「復原上一步」的步驟；插入 Cue 後，之前的平移仍可復原（ADR-0021「之後要注意」） |

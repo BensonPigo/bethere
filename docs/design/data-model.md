@@ -126,7 +126,7 @@ erDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> Draft: 開發者 create-event
-    Draft --> Draft: 編輯 Rundown（Master）<br/>改活動日期（復原碼，新舊 endsAt 都晚於現在）
+    Draft --> Draft: 編輯 Rundown、略過與復原（Master）<br/>改活動日期（復原碼，新舊 endsAt 都晚於現在）
     Draft --> Live: 第一次推進（Master，僅活動日當天）
     Draft --> Ended: 現在 ≥ endsAt
     Live --> Ended: 現在 ≥ endsAt（活動日隔天 04:00）
