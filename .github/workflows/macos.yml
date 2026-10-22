@@ -1,0 +1,31 @@
+# Go on macOS, the second development machine. Its runners cost ten times
+# Linux, so it runs only when Go code reaches main (before anyone pulls it
+# onto a Mac), weekly for changes in the runner image, and by hand
+# (docs/process/development-process.md section 6).
+name: macOS
+
+on:
+  push:
+    branches: [main]
+    paths: ["**.go", "go.mod", "go.sum"]
+  schedule:
+    - cron: "0 1 * * 1" # Mondays 09:00 Taipei
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
