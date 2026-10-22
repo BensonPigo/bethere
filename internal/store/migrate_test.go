@@ -91,9 +91,11 @@ func TestMigration0002KeepsEveryRowAndTheIDCounter(t *testing.T) {
 
 func TestMigrationRefusesAnUnmarkedDrop(t *testing.T) {
 	fsys := onlyFirst(t)
-	fsys["migrations/0002_drop.sql"] = &fstest.MapFile{Data: []byte("DROP TABLE check_ins;")}
-	if _, err := open(ctx, filepath.Join(t.TempDir(), "x.db"), true, fsys); !errors.Is(err, errUnmarkedDrop) {
-		t.Fatalf("err = %v, want errUnmarkedDrop", err)
+	for _, drop := range []string{"DROP TABLE check_ins;", "drop\ntable check_ins;", "Drop  \tTable check_ins;"} {
+		fsys["migrations/0002_drop.sql"] = &fstest.MapFile{Data: []byte(drop)}
+		if _, err := open(ctx, filepath.Join(t.TempDir(), "x.db"), true, fsys); !errors.Is(err, errUnmarkedDrop) {
+			t.Errorf("%q: err = %v, want errUnmarkedDrop", drop, err)
+		}
 	}
 }
 

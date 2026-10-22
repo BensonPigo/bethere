@@ -214,7 +214,8 @@ func lastUndoableOp(ctx context.Context, q querier, eventID int64) (*domain.Op, 
 // past a newer log format must still serve every snapshot (ADR-0015).
 func loadShifts(ctx context.Context, q querier, eventID int64) ([]ShiftRecord, error) {
 	rows, err := q.QueryContext(ctx, `SELECT at, type, payload FROM action_logs
-		WHERE event_id = ? AND type IN (?, 'undo') ORDER BY id DESC LIMIT ?`,
+		WHERE event_id = ? AND (type = ? OR (type = 'undo' AND payload LIKE '%"shift":%'))
+		ORDER BY id DESC LIMIT ?`,
 		eventID, opLogPrefix+string(domain.OpShift), recentShifts)
 	if err != nil {
 		return nil, err

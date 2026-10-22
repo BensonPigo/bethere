@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -217,6 +218,9 @@ func migrate(ctx context.Context, db *sql.DB, fsys fs.FS, current int) error {
 // gone; such a migration runs with foreign keys off instead (ADR-0019).
 const rebuildMarker = "-- bethere:foreign_keys=off"
 
+// dropTable finds a DROP TABLE however it is spaced or cased.
+var dropTable = regexp.MustCompile(`(?i)\bDROP\s+TABLE\b`)
+
 var (
 	errUnmarkedDrop = errors.New("migration drops a table but does not start with " + rebuildMarker)
 	errForeignKeys  = errors.New("could not switch foreign keys as required")
@@ -230,7 +234,7 @@ var (
 // broken reference, or nothing is committed.
 func applyMigration(ctx context.Context, db *sql.DB, body string, version int) (err error) {
 	rebuild := strings.HasPrefix(body, rebuildMarker)
-	if !rebuild && strings.Contains(strings.ToUpper(body), "DROP TABLE") {
+	if !rebuild && dropTable.MatchString(body) {
 		return errUnmarkedDrop
 	}
 	conn, err := db.Conn(ctx)
