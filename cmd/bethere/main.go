@@ -3,7 +3,7 @@
 //
 //	bethere serve          -db <path> [-addr host:port]
 //	bethere create-event   -db <path> -name <name> -date YYYY-MM-DD -tz <zone> -master-name <name> -base-url https://<host>
-//	bethere add-role       -db <path> -name <name> -type Stylist -base-url https://<host>
+//	bethere add-role       -db <path> -name <name> -type Stylist|Host [-view HandsFree|Glance] -base-url https://<host>
 //	bethere import-rundown -db <path> -file rundown.csv
 //	bethere version
 //
@@ -253,7 +253,8 @@ func addRole(args []string, c cli) error {
 	fs := flag.NewFlagSet("add-role", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "database file (required)")
 	name := fs.String("name", "", "role name, e.g. 新秘 (required)")
-	typ := fs.String("type", "", "role type; M1 accepts only Stylist (required)")
+	typ := fs.String("type", "", "role type: Stylist or Host (required)")
+	view := fs.String("view", "", "screen: HandsFree or Glance; default by type (ADR-0025)")
 	baseURL := fs.String("base-url", "", "https://<host> the link points to (required)")
 	if err := parseFlags(fs, args, c); err != nil {
 		return err
@@ -263,10 +264,15 @@ func addRole(args []string, c cli) error {
 			return err
 		}
 	}
-	// M1 opens only Stylist; Media, StageAV and Host follow in M2, and P1
+	// M2a opens Stylist and Host; Media and StageAV follow in M2b, and P1
 	// types cannot be created in P0 (api.md section 4).
-	if domain.RoleType(*typ) != domain.Stylist {
-		return fmt.Errorf("%w: -type %q: M1 accepts only Stylist", errUsage, *typ)
+	roleType := domain.RoleType(*typ)
+	if roleType != domain.Stylist && roleType != domain.Host {
+		return fmt.Errorf("%w: -type %q: only Stylist or Host", errUsage, *typ)
+	}
+	roleView := domain.View(*view)
+	if roleView != "" && !roleType.AllowsView(roleView) {
+		return fmt.Errorf("%w: -view %q does not suit -type %s", errUsage, *view, roleType)
 	}
 	base, err := parseBaseURL(*baseURL)
 	if err != nil {
@@ -283,7 +289,7 @@ func addRole(args []string, c cli) error {
 	if err != nil {
 		return err
 	}
-	roleID, err := st.AddRole(ctx, master.EventID, *name, domain.Stylist, master.Actor, time.Now())
+	roleID, err := st.AddRoleWithView(ctx, master.EventID, *name, roleType, roleView, master.Actor, time.Now())
 	if err != nil {
 		return err
 	}
@@ -294,7 +300,10 @@ func addRole(args []string, c cli) error {
 	if err := st.IssueToken(ctx, roleID, auth.HashToken(token), master.Actor, time.Now()); err != nil {
 		return fmt.Errorf("role %d was added but its link was not issued: %w", roleID, err)
 	}
-	fmt.Fprintf(c.stdout, "Added role %d: %s (Stylist).\n", roleID, *name)
+	if roleView == "" {
+		roleView = roleType.DefaultView()
+	}
+	fmt.Fprintf(c.stdout, "Added role %d: %s (%s, %s).\n", roleID, *name, roleType, roleView)
 	fmt.Fprintf(c.stdout, "Link (shown only this once):\n  %s\n", link(base, token))
 	return nil
 }
