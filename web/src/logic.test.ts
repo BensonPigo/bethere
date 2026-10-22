@@ -6,7 +6,7 @@ import { isLineBrowser, tokenFromHash } from "./env";
 import { dateInZone, formatHM } from "./format";
 import { isStaleLive, pruneStale, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
-import { delayText, freshNotice, monthDay, noticeText, signed, suggestedShift } from "./notice";
+import { delayText, freshNotice, monthDay, noticeText, originalTime, signed, suggestedShift } from "./notice";
 import type { ShiftNotice } from "./api";
 
 const MIN = 60000;
@@ -258,5 +258,13 @@ describe("M2a helpers", () => {
     expect(classifyResponse(200, JSON_CT, { result: "ok", snapshot: host }).kind).toBe("ok");
     expect(classifyResponse(200, JSON_CT, { result: "ok", snapshot: { ...host, role: { type: "Stylist", name: "x" } } }).kind)
       .toBe("failure");
+  });
+});
+
+describe("ADR-0028 original time beside a shifted cue", () => {
+  it("shows the rundown time, not the offset", () => {
+    expect(originalTime("2027-06-06T08:28:00.000Z", 10, "Asia/Taipei")).toBe("原 16:18");
+    expect(originalTime("2027-06-06T08:18:00.000Z", -5, "Asia/Taipei")).toBe("原 16:23");
+    expect(originalTime("2027-06-06T08:28:00.000Z", 0, "Asia/Taipei")).toBeNull();
   });
 });

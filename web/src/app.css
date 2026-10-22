@@ -13,7 +13,7 @@ html, body, #app { height: 100%; }
 
 .master { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
 .timeline { overflow-y: auto; background: var(--card); border-radius: 12px; padding: 8px; position: relative; }
-.cue { display: grid; grid-template-columns: 32px 64px 1fr auto; gap: 8px; align-items: center; min-height: 56px; padding: 6px 10px; border-radius: 8px; font-size: 19px; }
+.cue { display: grid; grid-template-columns: 32px minmax(64px, auto) 1fr auto; gap: 8px; align-items: center; min-height: 56px; padding: 6px 10px; border-radius: 8px; font-size: 19px; }
 .cue .time { font-variant-numeric: tabular-nums; color: var(--muted); }
 .cue .mark { color: var(--muted); font-size: 14px; white-space: nowrap; }
 .cue.completed { opacity: 0.5; }
@@ -88,7 +88,9 @@ button.overrun { min-height: 56px; background: #fdd663; color: #111; font-size: 
 .next-card .count { font-size: 22px; margin-top: 4px; }
 .next-card .note { margin-top: 8px; color: var(--muted); }
 .later { font-size: 18px; }
-.offset { color: var(--accent); margin-left: 4px; }
+.original { margin-left: 6px; font-size: 0.6em; font-weight: 600; white-space: nowrap; }
+.original.later { color: var(--accent); }
+.original.earlier { color: #81c995; }
 .preday { width: 100%; max-width: 560px; text-align: left; }
 .preday-row { display: grid; grid-template-columns: 64px 1fr; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid #333; font-size: 18px; }
 .preday-row .note { grid-column: 2; color: var(--muted); font-size: 15px; }
