@@ -14,11 +14,9 @@ export function App() {
   const s = useSession(token);
   const line = isLineBrowser(navigator.userAgent);
 
-  const lineBanner = line && (
-    <div class="line-banner">
-      你正在使用 LINE 內建瀏覽器，離線與列印功能可能無法使用。請改以 Safari 或 Chrome 開啟此連結。
-    </div>
-  );
+  // product-vision.md V2: works fully inside LINE; only a quiet note, never
+  // a request to switch browsers.
+  const lineBanner = line && <div class="line-note">在 LINE 中開啟時，沒有網路可能打不開本頁</div>;
 
   if (!token) return <Full>{lineBanner}<div class="msg">找不到連結資訊，請使用總召給你的完整連結開啟</div></Full>;
   if (s.phase === "invalid") return <Full>{lineBanner}<div class="msg">連結已失效，請向總召索取新連結</div></Full>;

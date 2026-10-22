@@ -1,6 +1,6 @@
 # BeThere 文件索引
 
-建議閱讀順序：先需求、再設計。後面的文件依賴前面的。想先看全貌，從 `architecture/architecture-overview.md` 開始；想知道某個決定為什麼這樣選，看 `adr/`。
+建議閱讀順序：先 `requirements/product-vision.md`，再需求、設計。後面的文件依賴前面的。想先看全貌，從 `architecture/architecture-overview.md` 開始；想知道某個決定為什麼這樣選，看 `adr/`。
 
 ## process/ 開發流程
 
@@ -12,6 +12,7 @@
 
 | 文件 | 內容 |
 | --- | --- |
+| [product-vision.md](requirements/product-vision.md) | **產品願景與原則**：要解決的問題、兩個核心價值、V1～V5 原則；所有取捨的最上層依據 |
 | [user-stories.md](requirements/user-stories.md) | 角色、現場使用情境與使用者故事 |
 | [clarification.md](requirements/clarification.md) | 需求釐清清單與已確認決定、MVP（P0／P1／P2）範圍 |
 | [m1-acceptance.md](requirements/m1-acceptance.md) | M1 最小閉環的故事與驗收條件（功能條件與情境條件） |
@@ -45,7 +46,7 @@
 
 > 只寫現況；歷史見 git log。
 
-- **目前里程碑**：M1 最小閉環，目標 2026-11 中；M0 已於 2026-10-21 完成。驗收條件草稿見 `requirements/m1-acceptance.md`。
+- **目前里程碑**：M1 最小閉環已實作並通過獨立驗證，待 PO 在電腦上 Demo 驗收；下一個是 M2a（平移、新人儀表板、第一次真人彩排）。
 - **已完成**：需求與 P0 設計；技術選型（`design/tech-stack.md`）；iOS 實機驗證（`tech-stack.md` 5.1）；`internal/domain` 與 `internal/store`。
 - **P0 範圍**：2026-10-21 縮小，CSV 匯入、以角色預覽、連結管理介面延到 P1（`requirements/clarification.md`）。
 - **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
