@@ -204,23 +204,142 @@ func migrate(ctx context.Context, db *sql.DB, fsys fs.FS, current int) error {
 		if err != nil {
 			return err
 		}
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-			tx.Rollback()
+		if err := applyMigration(ctx, db, string(body), n); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
-		}
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", n)); err != nil {
-			tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
-			return err
 		}
 	}
 	return nil
+}
+
+// rebuildMarker starts a migration that rebuilds a table. With foreign keys
+// on, dropping a table deletes every row that references it through ON
+// DELETE CASCADE, and PRAGMA foreign_key_check cannot notice rows that are
+// gone; such a migration runs with foreign keys off instead (ADR-0019).
+const rebuildMarker = "-- bethere:foreign_keys=off"
+
+var (
+	errUnmarkedDrop = errors.New("migration drops a table but does not start with " + rebuildMarker)
+	errForeignKeys  = errors.New("could not switch foreign keys as required")
+	errRowsChanged  = errors.New("migration changed the row count of an existing table")
+	errDanglingRefs = errors.New("migration left rows whose foreign keys point nowhere")
+)
+
+// applyMigration runs one migration and sets user_version in one
+// transaction, on one pinned connection so the foreign key setting applies
+// to it. A rebuild must keep every existing table's row count and leave no
+// broken reference, or nothing is committed.
+func applyMigration(ctx context.Context, db *sql.DB, body string, version int) (err error) {
+	rebuild := strings.HasPrefix(body, rebuildMarker)
+	if !rebuild && strings.Contains(strings.ToUpper(body), "DROP TABLE") {
+		return errUnmarkedDrop
+	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if rebuild {
+		if err := setForeignKeys(ctx, conn, false); err != nil {
+			return err
+		}
+		// Back on before the connection returns to the pool; if that
+		// fails the error stops startup and connect closes the pool.
+		defer func() {
+			if fkErr := setForeignKeys(ctx, conn, true); err == nil {
+				err = fkErr
+			}
+		}()
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var before map[string]int64
+	if rebuild {
+		if before, err = rowCounts(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, body); err != nil {
+		return err
+	}
+	if rebuild {
+		after, err := rowCounts(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for table, n := range before {
+			if m, ok := after[table]; !ok || m != n {
+				return fmt.Errorf("%w: %s had %d rows, now %d", errRowsChanged, table, n, m)
+			}
+		}
+		rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
+		if err != nil {
+			return err
+		}
+		dangling := rows.Next()
+		rows.Close()
+		if dangling {
+			return errDanglingRefs
+		}
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", version)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// setForeignKeys switches the pragma and reads it back: the pragma is a
+// silent no-op inside a transaction.
+func setForeignKeys(ctx context.Context, conn *sql.Conn, on bool) error {
+	want := 0
+	if on {
+		want = 1
+	}
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA foreign_keys = %d", want)); err != nil {
+		return err
+	}
+	var got int
+	if err := conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&got); err != nil {
+		return err
+	}
+	if got != want {
+		return errForeignKeys
+	}
+	return nil
+}
+
+// rowCounts counts the rows of every table but SQLite's own.
+func rowCounts(ctx context.Context, tx *sql.Tx) (map[string]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
+	if err != nil {
+		return nil, err
+	}
+	var tables []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		tables = append(tables, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int64, len(tables))
+	for _, t := range tables {
+		var n int64
+		// Table names come from sqlite_master, not from input.
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM "`+strings.ReplaceAll(t, `"`, `""`)+`"`).Scan(&n); err != nil {
+			return nil, err
+		}
+		counts[t] = n
+	}
+	return counts, nil
 }
 
 // write runs fn in one write transaction.

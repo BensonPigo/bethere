@@ -140,8 +140,8 @@ func TestOpenRefusesMissingOrExistingDatabase(t *testing.T) {
 func TestMigrationsAndPragmas(t *testing.T) {
 	s, path := newStore(t)
 	var version int
-	if err := s.w.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 1 {
-		t.Fatalf("user_version = %d (%v), want 1", version, err)
+	if err := s.w.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 2 {
+		t.Fatalf("user_version = %d (%v), want 2", version, err)
 	}
 	for _, p := range []struct {
 		db   string
