@@ -1,6 +1,8 @@
-// Stylist mode view model (screen-design.md section 5, US-ST-1). Pure so it can be tested.
+// View model of the cue screens: hands-free (screen-design.md section 5,
+// US-ST-1) and glance (section 4). Pure so it can be tested.
 import type { RoleCue, RoleSnapshot } from "./api";
 import { remainingMs } from "./clock";
+import { dateInZone } from "./format";
 
 export type Level = "calm" | "amber" | "red" | "overdue";
 
@@ -39,15 +41,28 @@ export function inProgressCue(cues: RoleCue[]): RoleCue | null {
 }
 
 export type StylistView =
-  | { kind: "draft" }
+  | { kind: "preDay"; cues: RoleCue[] } // a draft before the event day: the list, no countdown (US-X-2.1)
   | { kind: "none" } // nothing assigned
   | { kind: "countdown"; target: RoleCue; remaining: number; level: Level; topLine: string }
   | { kind: "inProgress"; cue: RoleCue }
   | { kind: "done" };
 
+// isEventDay tells whether the (server-corrected) now falls on the event day
+// in the event's zone. It needs only the snapshot, so it works offline.
+export function isEventDay(snap: { eventDay?: { date: string; timezone: string } }, correctedNowMs: number): boolean {
+  const d = snap.eventDay;
+  if (!d) return false;
+  return dateInZone(correctedNowMs, d.timezone) === d.date;
+}
+
+// A draft only waits on the event day itself: there the countdown runs as
+// when live, so a device that never saw the start still counts down
+// (ADR-0020, US-ST-1.8, US-ST-1.9).
 export function stylistView(snap: RoleSnapshot, localNowMs: number, skewMs: number): StylistView {
-  if (snap.eventStatus === "Draft") return { kind: "draft" };
   if (snap.cues.length === 0) return { kind: "none" };
+  if (snap.eventStatus === "Draft" && !isEventDay(snap, localNowMs + skewMs)) {
+    return { kind: "preDay", cues: [...snap.cues].sort((a, b) => a.seq - b.seq) };
+  }
   const target = nextPendingCue(snap.cues);
   const active = inProgressCue(snap.cues);
   if (target) {
