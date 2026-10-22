@@ -94,7 +94,7 @@
 | `event` | `{"name","date","timezone"}` |
 | `cues[]` | 全部 Cue：`id, seq, title, scheduledStart, effectiveStart, durationMin, isFixed, offsetMin, status, actualStart, actualEnd, notePublic, roles[]`；`roles[]` 為 `{"roleId","name","roleNote"}` |
 | `activeCueId` | 進行中的 Cue，沒有則為 `null` |
-| `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生 |
+| `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生，沒有可復原的操作時為 `null`。推進的描述以「開始的那個 Cue」命名；推進的是最後一個 Cue（沒有開始新的）時，以「完成的那個 Cue」命名（A17） |
 | `roles[]` | `{"id","name","type"}`（不含 Token 或使用紀錄；`lastSeenAt` 於 M2 追加） |
 
 ### 5.3 角色快照（Stylist、Media、StageAV）
@@ -187,6 +187,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | A14 | 所有快照只由一個函式產生，且一律是呼叫者自己角色的快照 | 避免 409 或寫入回應意外帶出 Master 快照 |
 | A15 | 客戶端清除本機資料前，另外確認 HTTP 200 與 JSON | 防止日後的處理器或代理在錯誤本文中帶出 `result` |
 | A16 | 瀏覽器本機快照的鍵改為 SHA-256（`"bethere-local:"` + Token），不等於伺服器的 Token 雜湊 | 伺服器的雜湊不應出現在伺服器以外；修訂 `tech-stack.md` T20 的鍵規則 |
+| A17 | 復原描述的命名規則（見 5.2 `undo`） | PO 於 2026-10-22 確認 |
 
 ## 10. 安全審查紀錄（2026-10-21）
 
