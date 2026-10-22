@@ -1,6 +1,7 @@
 package domain
 
-// RoleType decides a role's view and capabilities; it never changes after
+// RoleType decides a role's capabilities and what its snapshot holds; the
+// screen is its View (ADR-0025). It never changes after
 // the role is created (data-model.md Role).
 type RoleType string
 
