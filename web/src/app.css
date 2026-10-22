@@ -101,3 +101,35 @@ button.overrun { min-height: 56px; background: #fdd663; color: #111; font-size: 
 .dashboard.ok .state { color: #81c995; }
 .dashboard.late .state { color: #fdd663; }
 .dashboard .current { font-size: 6vw; background: none; }
+
+/* M2b: check-in (US-X-5), StageAV notes (US-X-6.6), skipped cues (US-M-6.5). */
+.glance-main { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+.checkin-bar { position: sticky; bottom: 0; padding-top: 8px; background: var(--bg); }
+button.checkin { width: 100%; min-height: 64px; font-size: 24px; font-weight: 800; border-radius: 14px; }
+button.checkin.done { background: #0d652d; color: #fff; }
+.note.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cue.skipped { opacity: 0.45; text-decoration: line-through; }
+.cue { cursor: pointer; }
+.overlay.ask { flex-direction: column; gap: 16px; }
+.overlay.ask button { min-width: 60%; min-height: 64px; font-size: 6vw; font-weight: 800; border-radius: 14px; }
+.overlay.ask small { font-size: 4vw; font-weight: 400; opacity: 0.8; }
+
+/* M2b console: roles and dialogs (screen-design.md 3.3, section 7). */
+.panel { overflow-y: auto; }
+.roles-panel { background: var(--card); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.roles-panel .label, .role-picker .label { color: var(--muted); font-size: 15px; }
+button.role-row { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 8px; min-height: 48px; text-align: left; background: none; color: var(--fg); }
+.role-row .in { color: #81c995; font-weight: 700; }
+.role-row .out { color: var(--muted); }
+.role-row small { color: var(--muted); }
+.dialog .menu { display: flex; flex-direction: column; gap: 12px; }
+.dialog .menu button, .dialog .shift-actions button { min-height: 56px; font-size: 20px; }
+button.danger { background: #8c1d18; color: #fff; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: var(--muted); }
+.field input, .field textarea, .pick input:not([type]), .link-text { min-height: 44px; font-size: 18px; padding: 6px 10px; border-radius: 8px; border: 1px solid #555; background: var(--bg); color: var(--fg); }
+.field textarea { min-height: 72px; }
+.role-picker { display: flex; flex-direction: column; gap: 6px; }
+.pick { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; min-height: 48px; }
+.pick label { display: flex; align-items: center; gap: 8px; font-size: 18px; }
+.pick input[type="checkbox"] { width: 28px; height: 28px; }
+.link-text { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 15px; }

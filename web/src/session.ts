@@ -1,7 +1,7 @@
 // Polling, clock skew, local snapshot and write handling for one token.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { fetchSnapshot, postShiftPreview, postWrite, shouldWipeLocalData } from "./api";
-import type { Outcome, ShiftNotice, ShiftPreview, ShiftRequest, Snapshot, WriteRequest } from "./api";
+import type { Notice, Outcome, ShiftPreview, ShiftRequest, Snapshot, WriteRequest } from "./api";
 import { freshNotice } from "./notice";
 import { addSkewSample, currentSkew } from "./clock";
 import { deleteSnapshot, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
@@ -21,6 +21,12 @@ const REJECTED: Record<string, string> = {
   undo_stale: "畫面已更新，請重新確認",
   shift_too_early: "有環節會早於現在，無法提早",
   invalid_delta: "平移分鐘數不正確",
+  not_pending: "這個環節已經開始或結束，不能變更",
+  invalid_position: "不能插在已開始的環節前面",
+  invalid_cue: "時間、長度、標題或備註不正確",
+  invalid_assignment: "只能指派給新秘、攝影或音控",
+  not_checkin_role: "這個角色不需要就位打卡",
+  master_role: "總召連結只能用復原碼換發",
 };
 
 // How long a change notice stays up (screen-design.md 4.4).
@@ -34,7 +40,7 @@ export function useSession(token: string | null) {
   const [lastOk, setLastOk] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [change, setChange] = useState<ShiftNotice | null>(null);
+  const [change, setChange] = useState<Notice | null>(null);
 
   const openedAt = useRef(Date.now());
   const key = useRef<string | null>(null);
@@ -44,6 +50,8 @@ export function useSession(token: string | null) {
   const noticeTimer = useRef<number | undefined>(undefined);
   const writing = useRef(false);
   const changeTimer = useRef<number | undefined>(undefined);
+  // The ETag of the last snapshot read by GET, in memory only (api.md 5.7).
+  const etag = useRef<string | undefined>(undefined);
 
   const flash = useCallback((msg: string) => {
     setNotice(msg);
@@ -53,6 +61,17 @@ export function useSession(token: string | null) {
 
   // Apply a response; returns true when it carried a live snapshot.
   const apply = useCallback((o: Outcome, startedAt: number): boolean => {
+    if (o.kind === "notModified") {
+      // Same content as the snapshot on screen: only the clock (api.md 5.7).
+      const received = Date.now();
+      samples.current = addSkewSample(samples.current, Date.parse(o.serverTime), (startedAt + received) / 2);
+      setSkew(currentSkew(samples.current));
+      setLastOk(received);
+      return true;
+    }
+    // A snapshot from anything but a GET has no ETag: the next GET is a
+    // full one, so a 304 never brings back an older screen.
+    etag.current = o.kind === "ok" ? o.etag : undefined;
     if (shouldWipeLocalData(o)) {
       stopped.current = true;
       if (key.current) deleteSnapshot(localStorage, key.current);
@@ -86,7 +105,7 @@ export function useSession(token: string | null) {
     inFlight.current = true;
     const startedAt = Date.now();
     try {
-      apply(await fetchSnapshot(token), startedAt);
+      apply(await fetchSnapshot(token, etag.current), startedAt);
     } finally {
       inFlight.current = false;
     }
@@ -125,21 +144,23 @@ export function useSession(token: string | null) {
     };
   }, [token, poll]);
 
-  const write = useCallback(
-    async (w: WriteRequest): Promise<boolean> => {
-      if (!token || !snap || writing.current) return false;
+  // send runs one write and applies its answer; the outcome is returned
+  // when it carried a live snapshot, null otherwise.
+  const send = useCallback(
+    async (w: WriteRequest): Promise<Outcome | null> => {
+      if (!token || !snap || writing.current) return null;
       writing.current = true;
       setBusy(true);
       const startedAt = Date.now();
-      let done = false;
+      let done: Outcome | null = null;
       try {
         const o = await postWrite(token, w, snap.eventVersion);
-        if (o.kind === "ok") done = apply(o, startedAt);
+        if (o.kind === "ok") done = apply(o, startedAt) ? o : null;
         else if (o.kind === "conflict") {
           apply(o, startedAt);
           flash("畫面已更新，請重新確認");
         } else if (o.kind === "rejected") flash(REJECTED[o.error] ?? "操作失敗，請稍後再試");
-        else if (o.kind === "failure" || o.kind === "preview") flash("操作失敗，請稍後再試");
+        else if (o.kind === "failure" || o.kind === "preview" || o.kind === "notModified") flash("操作失敗，請稍後再試");
         else apply(o, startedAt);
       } finally {
         writing.current = false;
@@ -149,6 +170,18 @@ export function useSession(token: string | null) {
       return done;
     },
     [token, snap, apply, flash],
+  );
+
+  const write = useCallback(async (w: WriteRequest) => (await send(w)) !== null, [send]);
+
+  // reissue returns the new link's token, which exists only in this
+  // response and is never stored (US-M-7.1).
+  const reissue = useCallback(
+    async (roleId: string | number): Promise<string | null> => {
+      const o = await send({ path: "/api/roles/reissue", roleId });
+      return o?.kind === "ok" && o.token ? o.token : null;
+    },
+    [send],
   );
 
   // The shift preview (US-M-2.1): read-only, so it neither locks the buttons
@@ -166,5 +199,5 @@ export function useSession(token: string | null) {
   );
 
   const offline = now - (lastOk ?? openedAt.current) > OFFLINE_AFTER_MS;
-  return { phase, snap, skew, now, offline, lastOk, notice, busy, write, preview, change };
+  return { phase, snap, skew, now, offline, lastOk, notice, busy, write, reissue, preview, change };
 }

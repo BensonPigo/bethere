@@ -1,17 +1,27 @@
 // Glance screen: phone in the pocket, a two-second look (screen-design.md
-// section 4; ADR-0025). Check-in comes in M2b.
-import type { RoleCue, RoleSnapshot, ShiftNotice } from "./api";
+// section 4; ADR-0025; US-X-6), with the check-in at the bottom (US-X-5).
+import type { Notice, RoleCue, RoleSnapshot, WriteRequest } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";
-import { noticeText } from "./notice";
+import { isEarlier, noticeText, noticedCues } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 import { countdownText, inProgressCue, stylistView } from "./roleView";
 
-type Props = { snap: RoleSnapshot; now: number; skew: number; change: ShiftNotice | null };
+type Props = {
+  snap: RoleSnapshot;
+  now: number;
+  skew: number;
+  change: Notice | null;
+  offline: boolean;
+  busy: boolean;
+  write: (w: WriteRequest) => Promise<boolean>;
+};
 
-export function Glance({ snap, now, skew, change }: Props) {
+export function Glance({ snap, now, skew, change, offline, busy, write }: Props) {
   const view = stylistView(snap, now, skew);
   const tz = snap.eventDay?.timezone || DEFAULT_TZ;
-  const moved = new Set((change?.changes ?? []).map((c) => String(c.cueId)));
+  const marked = noticedCues(change);
+  // StageAV notes hold file names: monospace, wrapped, never cut (US-X-6.6).
+  const noteClass = snap.role.type === "StageAV" ? "note mono" : "note";
 
   let main;
   switch (view.kind) {
@@ -22,7 +32,7 @@ export function Glance({ snap, now, skew, change }: Props) {
       main = <div class="msg">沒有指派給你的環節</div>;
       break;
     case "done":
-      main = <div class="msg">今日任務已完成</div>;
+      main = <div class="msg">你的環節都完成了</div>;
       break;
     case "inProgress":
       main = <div class="msg">{view.cue.title}進行中</div>;
@@ -34,7 +44,7 @@ export function Glance({ snap, now, skew, change }: Props) {
         .slice(0, 3);
       main = (
         <>
-          <div class={`next-card ${moved.has(String(view.target.id)) ? "flash" : ""}`}>
+          <div class={`next-card ${marked.has(String(view.target.id)) ? "flash" : ""}`}>
             <div class="label">下一個與你有關的</div>
             <div class="when">
               {formatHM(view.target.effectiveStart, tz)}
@@ -42,13 +52,14 @@ export function Glance({ snap, now, skew, change }: Props) {
             </div>
             <div class="title">{view.target.title}</div>
             <div class="count">倒數 {countdownText(view.remaining).big}{countdownText(view.remaining).unit}</div>
-            {view.target.roleNote && <div class="note">備註：{view.target.roleNote}</div>}
+            {view.target.roleNote && <div class={noteClass}>備註：{view.target.roleNote}</div>}
+            {view.target.notePublic && <div class={noteClass}>{view.target.notePublic}</div>}
           </div>
           {later.length > 0 && (
             <div class="later">
               <div class="label">稍後</div>
               {later.map((c) => (
-                <div class={moved.has(String(c.id)) ? "flash" : ""} key={c.id}>
+                <div class={marked.has(String(c.id)) ? "flash" : ""} key={c.id}>
                   {formatHM(c.effectiveStart, tz)} {c.title}
                   <OriginalTime start={c.effectiveStart} offsetMin={c.offsetMin} tz={tz} />
                 </div>
@@ -59,13 +70,36 @@ export function Glance({ snap, now, skew, change }: Props) {
       );
     }
   }
-  const active = inProgressCue(snap.cues);
+  // The cue in progress, whoever it is assigned to: its title only (US-X-6.4).
+  const current = snap.currentTitle ?? inProgressCue(snap.cues)?.title ?? null;
   return (
     <div class="glance">
-      {change && <div class={`change-banner ${change.deltaMin < 0 ? "earlier" : "later"}`}>{noticeText(change, tz)}</div>}
+      {change && <div class={`change-banner ${isEarlier(change) ? "earlier" : "later"}`}>{noticeText(change, tz)}</div>}
       <div class="glance-head">{snap.role.name}</div>
-      {active && view.kind === "countdown" && <div class="current-line">目前：{active.title}</div>}
-      {main}
+      {view.kind !== "preDay" && snap.eventStatus === "Live" && (
+        <div class="current-line">目前：{current ?? "準備中"}</div>
+      )}
+      <div class="glance-main">{main}</div>
+      <CheckInBar checkedIn={snap.myCheckIn ?? false} offline={offline} busy={busy} write={write} />
+    </div>
+  );
+}
+
+// US-X-5.1, US-X-5.7: fixed at the bottom; off while offline, never queued.
+function CheckInBar(props: { checkedIn: boolean; offline: boolean; busy: boolean; write: Props["write"] }) {
+  const { checkedIn, offline, busy, write } = props;
+  return (
+    <div class="checkin-bar">
+      {checkedIn ? (
+        <button class="checkin done" disabled={offline || busy} onClick={() => void write({ path: "/api/checkin", checkedIn: false })}>
+          已就位 ✔（取消）
+        </button>
+      ) : (
+        <button class="checkin" disabled={offline || busy} onClick={() => void write({ path: "/api/checkin", checkedIn: true })}>
+          我已就位
+        </button>
+      )}
+      {offline && <div class="reason">離線中，無法打卡</div>}
     </div>
   );
 }

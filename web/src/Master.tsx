@@ -1,7 +1,8 @@
-// Master console (screen-design.md section 3; US-M-1 to US-M-5).
+// Master console (screen-design.md section 3; US-M-1 to US-M-8).
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { CueStatus, MasterCue, MasterSnapshot, ShiftPreview, ShiftRequest, WriteRequest } from "./api";
+import type { CueStatus, MasterCue, MasterRole, MasterSnapshot, ShiftPreview, ShiftRequest, WriteRequest } from "./api";
 import { dateInZone, formatHM } from "./format";
+import { CueDialog, InsertDialog, RoleMenu, RolesPanel } from "./MasterDialogs";
 import { OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 
@@ -19,15 +20,20 @@ type Props = {
   offline: boolean;
   busy: boolean;
   write: (w: WriteRequest) => Promise<boolean>;
+  reissue: (roleId: string | number) => Promise<string | null>;
   preview: (req: ShiftRequest) => Promise<ShiftPreview | string>;
 };
 
-export function Master({ snap, correctedNow, offline, busy, write, preview }: Props) {
+// What the console has open over the panels: one dialog at a time.
+type Open = { kind: "role"; id: string | number } | { kind: "cue"; id: string | number } | { kind: "insert"; after: string | number };
+
+export function Master({ snap, correctedNow, offline, busy, write, reissue, preview }: Props) {
   const tz = snap.event.timezone || "Asia/Taipei";
   const active = snap.cues.find((c) => c.status === "InProgress") ?? null;
   const nextPending = snap.cues.find((c) => c.status === "Pending") ?? null;
   const focusId = (active ?? nextPending)?.id ?? null;
   const [shiftDelta, setShiftDelta] = useState<number | null>(null);
+  const [open, setOpen] = useState<Open | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -42,6 +48,9 @@ export function Master({ snap, correctedNow, offline, busy, write, preview }: Pr
   const draft = snap.eventStatus === "Draft";
   const lock = offline || busy;
   const conflicted = new Set(snap.conflicts.map((c) => String(c.cueId)));
+  const outOfOrder = new Set((snap.outOfOrder ?? []).map((o) => String(o.cueId)));
+  const cueById = (id: string | number) => snap.cues.find((c) => String(c.id) === String(id)) ?? null;
+  const roleById = (id: string | number): MasterRole | null => snap.roles.find((r) => String(r.id) === String(id)) ?? null;
 
   // ADR-0020: no start button; the first advance on the event day starts.
   let advanceReason: string | null = null;
@@ -55,7 +64,14 @@ export function Master({ snap, correctedNow, offline, busy, write, preview }: Pr
     <div class="master">
       <div class="timeline" ref={listRef}>
         {snap.cues.map((c) => (
-          <CueRow key={c.id} cue={c} tz={tz} conflict={conflicted.has(String(c.id))} />
+          <CueRow
+            key={c.id}
+            cue={c}
+            tz={tz}
+            conflict={conflicted.has(String(c.id))}
+            outOfOrder={outOfOrder.has(String(c.id))}
+            open={() => setOpen({ kind: "cue", id: c.id })}
+          />
         ))}
       </div>
       <div class="panel">
@@ -115,11 +131,33 @@ export function Master({ snap, correctedNow, offline, busy, write, preview }: Pr
           </button>
         </div>
 
-        <button class="undo" disabled={lock || draft || !snap.undo.available} onClick={() => void write({ path: "/api/cues/undo" })}>
+        {/* In draft too: a skip there can be undone (US-M-6.4). */}
+        <button class="undo" disabled={lock || !snap.undo.available} onClick={() => void write({ path: "/api/cues/undo" })}>
           <span>復原上一步</span>
           {snap.undo.available && <small>{snap.undo.description}</small>}
         </button>
+
+        <RolesPanel snap={snap} now={correctedNow} open={(r) => setOpen({ kind: "role", id: r.id })} />
       </div>
+
+      {open?.kind === "role" && roleById(open.id) && (
+        <RoleMenu role={roleById(open.id)!} lock={lock} write={write} reissue={reissue} close={() => setOpen(null)} />
+      )}
+      {open?.kind === "cue" && cueById(open.id) && (
+        <CueDialog
+          key={String(open.id)}
+          snap={snap}
+          cue={cueById(open.id)!}
+          tz={tz}
+          lock={lock}
+          write={write}
+          insertAfter={(c) => setOpen({ kind: "insert", after: c.id })}
+          close={() => setOpen(null)}
+        />
+      )}
+      {open?.kind === "insert" && cueById(open.after) && (
+        <InsertDialog snap={snap} after={cueById(open.after)!} tz={tz} lock={lock} write={write} close={() => setOpen(null)} />
+      )}
 
       {shiftDelta !== null && shiftDelta !== 0 && nextPending && (
         <ShiftPanel
@@ -241,9 +279,11 @@ function elapsedText(active: MasterCue, correctedNow: number): string {
   return `已進行 ${elapsed} 分 / 預計 ${active.durationMin} 分`;
 }
 
-function CueRow({ cue, tz, conflict }: { cue: MasterCue; tz: string; conflict: boolean }) {
+type RowProps = { cue: MasterCue; tz: string; conflict: boolean; outOfOrder: boolean; open: () => void };
+
+function CueRow({ cue, tz, conflict, outOfOrder, open }: RowProps) {
   return (
-    <div class={`cue ${cue.status.toLowerCase()}`} data-cue={String(cue.id)}>
+    <div class={`cue ${cue.status.toLowerCase()}`} data-cue={String(cue.id)} onClick={open} role="button">
       <span class="icon" aria-hidden="true">{ICON[cue.status]}</span>
       <span class="time">
         {formatHM(cue.effectiveStart, tz)}
@@ -252,6 +292,7 @@ function CueRow({ cue, tz, conflict }: { cue: MasterCue; tz: string; conflict: b
       <span class="title">{cue.title}</span>
       <span class="mark">
         {cue.isFixed && <span title="固定">■ 固定</span>} {conflict && <span title="固定環節衝突">⚠ 衝突</span>}{" "}
+        {outOfOrder && <span title="時間早於前一個環節">⚠ 倒序</span>}{" "}
         {STATUS_TEXT[cue.status]}
       </span>
     </div>

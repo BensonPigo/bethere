@@ -1,12 +1,12 @@
 // Change notices (screen-design.md 4.4, ADR-0021): shown once per device.
-import type { ShiftNotice } from "./api";
+import type { Notice, ShiftNotice } from "./api";
 import { formatHM } from "./format";
 
 const SUFFIX = ":notice";
 
 // freshNotice returns n when this device has not shown it yet and records it
 // as shown. Notices are told apart by their time; storage failures show it.
-export function freshNotice(n: ShiftNotice | null, store: Storage, snapKey: string): ShiftNotice | null {
+export function freshNotice(n: Notice | null, store: Storage, snapKey: string): Notice | null {
   if (!n) return null;
   try {
     if (store.getItem(snapKey + SUFFIX) === n.at) return null;
@@ -21,8 +21,14 @@ export function signed(min: number): string {
   return `${min > 0 ? "+" : min < 0 ? "−" : ""}${Math.abs(min)}`;
 }
 
-// "時程已更新 +10 分（原 11:15 → 現 11:25）", naming the earliest moved cue.
-export function noticeText(n: ShiftNotice, timeZone: string): string {
+// "時程已更新 +10 分（原 11:15 → 現 11:25）" for a shift, naming the
+// earliest moved cue; "新增環節：長輩致詞（12:00）" for a new assignment.
+export function noticeText(n: Notice, timeZone: string): string {
+  if (n.kind === "assign") return `新增環節：${n.title}（${formatHM(n.effectiveStart, timeZone)}）`;
+  return shiftText(n, timeZone);
+}
+
+function shiftText(n: ShiftNotice, timeZone: string): string {
   const first = [...n.changes].sort((a, b) => Date.parse(a.toStart) - Date.parse(b.toStart))[0];
   const detail = first ? `（原 ${formatHM(first.fromStart, timeZone)} → 現 ${formatHM(first.toStart, timeZone)}）` : "";
   return `時程已更新 ${signed(n.deltaMin)} 分${detail}`;
@@ -40,6 +46,15 @@ export function delayText(delayMin: number): { ok: boolean; text: string } {
 export function suggestedShift(overrunMin: number): number {
   return overrunMin <= 0 ? 0 : Math.ceil(overrunMin / 5) * 5;
 }
+
+// noticedCues are the ids a notice is about, for highlighting them.
+export function noticedCues(n: Notice | null): Set<string> {
+  if (!n) return new Set();
+  return n.kind === "assign" ? new Set([String(n.cueId)]) : new Set(n.changes.map((c) => String(c.cueId)));
+}
+
+// A shift earlier is shown in a different colour and arrow (US-ST-2.5).
+export const isEarlier = (n: Notice) => n.kind === "shift" && n.deltaMin < 0;
 
 // "6/6" from "2027-06-06".
 export function monthDay(date: string): string {

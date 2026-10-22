@@ -35,15 +35,29 @@ export type MasterCue = {
   roles: { roleId: string | number; name: string; roleNote: string | null }[];
 };
 
+export type MasterRole = {
+  id: string | number;
+  name: string;
+  type: string;
+  checkedIn: boolean;
+  lastSeenAt: string | null; // to the minute (api.md 5.2)
+  hasLink: boolean;
+};
+
 export type MasterSnapshot = SnapshotBase & {
   event: { name: string; date: string; timezone: string };
   cues: MasterCue[];
   activeCueId: string | number | null;
   undo: { available: boolean; description: string | null };
-  roles: { id: string | number; name: string; type: string }[];
+  roles: MasterRole[];
   conflicts: Conflict[];
   overrunMin: number; // minutes past the next pending cue's start (data-model.md 4.3)
+  outOfOrder: { cueId: string | number; prevCueId: string | number }[]; // US-M-8.6
 };
+
+// The role types that read their own cues, check in and can be assigned
+// cues (domain.RoleType.HasOwnCues).
+export const CUE_ROLE_TYPES = ["Stylist", "Media", "StageAV"];
 
 export type RoleCue = {
   id: string | number;
@@ -66,7 +80,24 @@ export type ShiftNotice = {
   changes: { cueId: string | number; fromStart: string; toStart: string }[];
 };
 
-export type RoleSnapshot = SnapshotBase & { cues: RoleCue[]; notice: ShiftNotice | null };
+// A cue newly assigned to the caller (ADR-0021).
+export type AssignNotice = {
+  kind: "assign";
+  at: string;
+  cueId: string | number;
+  title: string;
+  effectiveStart: string;
+};
+
+export type Notice = ShiftNotice | AssignNotice;
+
+export type RoleSnapshot = SnapshotBase & {
+  cues: RoleCue[];
+  notice: Notice | null;
+  // Absent in a snapshot saved by an older release.
+  myCheckIn?: boolean;
+  currentTitle?: string | null; // the cue in progress, whoever it is assigned to (US-X-6.4)
+};
 
 // The hosts' dashboard: no cues at all (api.md 5.4).
 export type HostSnapshot = SnapshotBase & { delayMin: number; currentTitle: string | null };
@@ -89,15 +120,63 @@ export type ShiftPreview = {
   tooEarly: { cueId: string | number; newStart: string } | null;
 };
 
+export type Assignment = { roleId: string | number; roleNote: string | null };
+
+export type NewCue = {
+  afterCueId: string | number;
+  start: string; // RFC 3339
+  durationMin: number;
+  title: string;
+  notePublic: string | null;
+  roles: Assignment[];
+};
+
 export type WriteRequest =
   | { path: "/api/cues/advance" | "/api/cues/undo" }
-  | { path: "/api/cues/shift"; shift: ShiftRequest };
+  | { path: "/api/cues/shift"; shift: ShiftRequest }
+  | { path: "/api/cues/skip"; cueId: string | number }
+  | { path: "/api/cues/insert"; cue: NewCue }
+  | { path: "/api/cues/roles"; cueId: string | number; roles: Assignment[] }
+  | { path: "/api/cues/edit"; cueId: string | number; title: string; notePublic: string | null }
+  // No version: check-ins and links are not cues (ADR-0023).
+  | { path: "/api/checkin"; checkedIn: boolean }
+  | { path: "/api/roles/checkin"; roleId: string | number; checkedIn: boolean }
+  | { path: "/api/roles/reissue" | "/api/roles/revoke"; roleId: string | number };
+
+// writeBody is the JSON body of a write (api.md section 3).
+export function writeBody(w: WriteRequest, version: number): Record<string, unknown> {
+  switch (w.path) {
+    case "/api/cues/advance":
+    case "/api/cues/undo":
+      return { version };
+    case "/api/cues/shift":
+      return { version, ...w.shift };
+    case "/api/cues/skip":
+      return { version, cueId: w.cueId };
+    case "/api/cues/insert":
+      return { version, ...w.cue };
+    case "/api/cues/roles":
+      return { version, cueId: w.cueId, roles: w.roles };
+    case "/api/cues/edit":
+      return { version, cueId: w.cueId, title: w.title, notePublic: w.notePublic };
+    case "/api/checkin":
+      return { checkedIn: w.checkedIn };
+    case "/api/roles/checkin":
+      return { roleId: w.roleId, checkedIn: w.checkedIn };
+    case "/api/roles/reissue":
+    case "/api/roles/revoke":
+      return { roleId: w.roleId };
+  }
+}
 
 // What a response means to the client (api.md section 2).
 export type Outcome =
   | { kind: "invalid" }
   | { kind: "ended" }
-  | { kind: "ok"; snapshot: Snapshot }
+  // token: only in a reissue's response, never stored (US-M-7.1).
+  | { kind: "ok"; snapshot: Snapshot; token?: string; etag?: string }
+  // 304 to a conditional GET: keep the snapshot, only resync the clock (api.md 5.7).
+  | { kind: "notModified"; serverTime: string }
   | { kind: "preview"; preview: ShiftPreview }
   | { kind: "conflict"; snapshot: Snapshot | null }
   | { kind: "rejected"; error: string } // 422 domain rule
@@ -134,7 +213,8 @@ export function classifyResponse(status: number, contentType: string | null, bod
     }
     if (json.result === "ok") {
       const snapshot = asSnapshot(json.snapshot);
-      return snapshot ? { kind: "ok", snapshot } : { kind: "failure" };
+      if (!snapshot) return { kind: "failure" };
+      return typeof json.token === "string" ? { kind: "ok", snapshot, token: json.token } : { kind: "ok", snapshot };
     }
     return { kind: "failure" };
   }
@@ -153,17 +233,24 @@ export function shouldWipeLocalData(outcome: Outcome): boolean {
 
 export const POLL_TIMEOUT_MS = 8000;
 
+// classifyNotModified is a 304: only with the server time header, else offline-like.
+export function classifyNotModified(serverTime: string | null): Outcome {
+  return serverTime && Number.isFinite(Date.parse(serverTime)) ? { kind: "notModified", serverTime } : { kind: "failure" };
+}
+
 async function request(
   method: "GET" | "POST",
   path: string,
   token: string,
   body?: unknown,
+  ifNoneMatch?: string,
 ): Promise<Outcome> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), POLL_TIMEOUT_MS);
   try {
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
     if (body !== undefined) headers["Content-Type"] = "application/json";
+    if (ifNoneMatch) headers["If-None-Match"] = ifNoneMatch;
     const res = await fetch(path, {
       method,
       headers,
@@ -171,13 +258,16 @@ async function request(
       cache: "no-store",
       signal: ctrl.signal,
     });
+    if (res.status === 304) return classifyNotModified(res.headers.get("X-Server-Time"));
     let parsed: unknown;
     try {
       parsed = await res.json();
     } catch {
       parsed = undefined;
     }
-    return classifyResponse(res.status, res.headers.get("Content-Type"), parsed);
+    const o = classifyResponse(res.status, res.headers.get("Content-Type"), parsed);
+    const etag = res.headers.get("ETag");
+    return o.kind === "ok" && etag ? { ...o, etag } : o;
   } catch {
     return { kind: "failure" };
   } finally {
@@ -185,10 +275,11 @@ async function request(
   }
 }
 
-export const fetchSnapshot = (token: string) => request("GET", "/api/snapshot", token);
+// The ETag is kept in memory only, per token (api.md 5.7).
+export const fetchSnapshot = (token: string, etag?: string) => request("GET", "/api/snapshot", token, undefined, etag);
 
 export const postWrite = (token: string, w: WriteRequest, version: number) =>
-  request("POST", w.path, token, w.path === "/api/cues/shift" ? { version, ...w.shift } : { version });
+  request("POST", w.path, token, writeBody(w, version));
 
 export const postShiftPreview = (token: string, shift: ShiftRequest) =>
   request("POST", "/api/cues/shift/preview", token, shift);

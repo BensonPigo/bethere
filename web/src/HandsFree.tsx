@@ -1,21 +1,30 @@
 // Hands-free screen: phone on the table, hands busy (screen-design.md
-// section 5; ADR-0025; US-ST-1, US-ST-2).
+// section 5; ADR-0025; US-ST-1, US-ST-2). Nothing on the countdown is to
+// be pressed: the check-in is asked once, with the keep-awake tap (US-X-5.2).
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import type { RoleSnapshot, ShiftNotice } from "./api";
+import type { Notice, RoleSnapshot, WriteRequest } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";
-import { noticeText } from "./notice";
+import { isEarlier, noticeText, noticedCues } from "./notice";
 import { countdownText, stylistView } from "./roleView";
 import { PreDayList } from "./Glance";
 import { OriginalTime } from "./OriginalTime";
 
-type Props = { snap: RoleSnapshot; now: number; skew: number; change: ShiftNotice | null };
+type Props = {
+  snap: RoleSnapshot;
+  now: number;
+  skew: number;
+  change: Notice | null;
+  offline: boolean;
+  write: (w: WriteRequest) => Promise<boolean>;
+};
 
-export function HandsFree({ snap, now, skew, change }: Props) {
+export function HandsFree({ snap, now, skew, change, offline, write }: Props) {
   const view = stylistView(snap, now, skew);
   const wake = useWakeLock();
   const tz = snap.eventDay?.timezone || DEFAULT_TZ;
-  // US-ST-2.2: the countdown flashes when the change moved the cue it counts to.
-  const flash = change !== null && view.kind === "countdown" && change.changes.some((c) => String(c.cueId) === String(view.target.id));
+  // US-ST-2.2: the countdown flashes when the change is about the cue it counts to.
+  const flash = view.kind === "countdown" && noticedCues(change).has(String(view.target.id));
+  const ask = useCheckInQuestion(snap, offline);
 
   let body;
   let level = "calm";
@@ -55,16 +64,41 @@ export function HandsFree({ snap, now, skew, change }: Props) {
   return (
     <div class={`stylist ${level}`}>
       {change && (
-        <div class={`change-banner ${change.deltaMin < 0 ? "earlier" : "later"}`}>
-          {change.deltaMin < 0 ? "▲ " : "▼ "}
+        <div class={`change-banner ${isEarlier(change) ? "earlier" : "later"}`}>
+          {change.kind === "shift" && (change.deltaMin < 0 ? "▲ " : "▼ ")}
           {noticeText(change, tz)}
         </div>
       )}
       {body}
-      {!wake.held && (
-        <div class="overlay" onClick={wake.request} role="button">
-          {wake.supported ? "點一下，保持螢幕常亮" : "此瀏覽器不支援螢幕常亮，請把手機的自動鎖定調長；點一下關閉此提示"}
+      {ask.open ? (
+        <div class="overlay ask">
+          <div>你已經到場了嗎？</div>
+          <button
+            class="checkin"
+            onClick={() => {
+              ask.done();
+              void wake.request();
+              void write({ path: "/api/checkin", checkedIn: true });
+            }}
+          >
+            我已就位
+          </button>
+          <button
+            onClick={() => {
+              ask.done();
+              void wake.request();
+            }}
+          >
+            還沒
+          </button>
+          <small>{wake.supported ? "按任一個都會保持螢幕常亮" : "此瀏覽器不支援螢幕常亮，請把手機的自動鎖定調長"}</small>
         </div>
+      ) : (
+        !wake.held && (
+          <div class="overlay" onClick={wake.request} role="button">
+            {wake.supported ? "點一下，保持螢幕常亮" : "此瀏覽器不支援螢幕常亮，請把手機的自動鎖定調長；點一下關閉此提示"}
+          </div>
+        )
       )}
     </div>
   );
@@ -81,6 +115,28 @@ function statusText(level: string): string {
     default:
       return "已逾時";
   }
+}
+
+// The check-in question is asked once per device and role (US-X-5.2), only
+// while online, and not when the role is checked in already.
+function useCheckInQuestion(snap: RoleSnapshot, offline: boolean) {
+  const key = `checkinAsked:${snap.eventDay?.date ?? ""}:${snap.role.name}`;
+  const [asked, setAsked] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const done = () => {
+    setAsked(true);
+    try {
+      localStorage.setItem(key, "1");
+    } catch {
+      /* asked again next time */
+    }
+  };
+  return { open: !asked && !offline && !(snap.myCheckIn ?? false), done };
 }
 
 // US-ST-1.6: request on tap; re-show the overlay whenever the lock is not held.
