@@ -1,4 +1,4 @@
-// Package rundown reads the rundown CSV file of m1-acceptance.md (US-M-0,
+// Package rundown reads the rundown CSV file of requirements/stories/m1.md (US-M-0,
 // Q2): UTF-8 with an optional byte order mark, a header row of column
 // names, then one cue per row.
 //

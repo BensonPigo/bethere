@@ -120,15 +120,51 @@ erDiagram
 ## 4. 核心行為規則
 
 ### 4.1 狀態轉換
-```
-Pending ──► InProgress ──► Completed
-   │
-   └──► Skipped
 
-復原上一步：InProgress → Pending、Completed → InProgress、Skipped → Pending
+活動的生命週期：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft: 開發者 create-event
+    Draft --> Draft: 編輯 Rundown（Master）<br/>改活動日期（復原碼，新舊 endsAt 都晚於現在）
+    Draft --> Live: 開始活動（Master，僅活動日當天）
+    Draft --> Ended: 現在 ≥ endsAt
+    Live --> Ended: 現在 ≥ endsAt（活動日隔天 04:00）
+    Ended --> Deleted: 每日排程，endsAt 後 80 天
+    Deleted --> [*]
+
+    note right of Ended
+        不儲存，即時算出
+        所有 Token 回「已結束」
+        復原碼可唯讀匯出
+    end note
+    note right of Live
+        只有 Master 可異動
+        編輯限縮為標題、備註、新增、略過（P8）
+    end note
 ```
+
+Cue 的狀態：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending
+    Pending --> InProgress: 推進（填 actualStart）
+    InProgress --> Completed: 推進（填 actualEnd）
+    Pending --> Skipped: 略過
+    InProgress --> Pending: 復原上一步
+    Skipped --> Pending: 復原上一步
+    Completed --> InProgress: 復原上一步
+
+    note right of InProgress
+        同一時間最多一個（activeCueId 由此推得）
+        平移不移動進行中的 Cue
+    end note
+```
+
 - 同一時間只有一個 `InProgress` 的 Cue（`Event.activeCueId`）。若現場要重疊進行，列為後續需求。
 - 推進為 InProgress 時填 `actualStart`；Completed 時填 `actualEnd`。
+- 主控台的「推進」在同一筆交易內把目前 Cue 改為 Completed、下一個 Pending 改為 InProgress；復原時兩者一起回退（US-M-3.2、US-M-4.1）。
 - 「復原上一步」只能回退最近一次操作，並寫入 ActionLog。略過也可以復原，Cue 回到 `Pending`（✎ 2026-10-21）。
 
 ### 4.2 時間平移演算法（A1～A3）
@@ -143,6 +179,36 @@ Pending ──► InProgress ──► Completed
 
 `InProgress` 的 Cue 不被平移（它已經開始了）；若總召想延長目前環節，用平移其下一個 Cue 起算。
 
+從預覽到各端更新的流程（預覽與套用用同一套演算法，ADR-0007）：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as 總召
+    participant V1 as 主控台 V1
+    participant S as bethere
+    participant D as SQLite
+    participant V2 as 新秘 V2a
+
+    M->>V1: 點「+10」
+    V1->>S: POST 平移試算（起點、+10、排除清單）
+    S->>D: 讀 Cue（唯讀）
+    S->>S: 同一套平移演算法，不寫入
+    S-->>V1: 受影響 Cue、固定 Cue 衝突、負值檢查結果
+    V1->>M: 預覽面板（可取消勾選）
+    M->>V1: 取消勾選一個 Cue
+    V1->>S: 再次試算
+    S-->>V1: 新預覽
+    M->>V1: 確認
+    V1->>S: POST 平移（version、起點、+10、排除清單）
+    S->>D: 單一交易：更新 offsetMin、ActionLog 記下前後狀態、version + 1
+    S-->>V1: 新快照（含衝突標記）
+    Note over V2: 最多 2 秒後的下一次輪詢
+    V2->>S: GET 快照
+    S-->>V2: 新的 effectiveStart、shiftNotice
+    V2->>V2: 倒數重算、背景色重評估、橫幅「時程已更新 +10 分」
+```
+
 ### 4.3 「全域偏移」的顯示值
 各畫面顯示的「+N 分」= **目前 InProgress（或下一個 Pending）Cue 的 `offsetMin`**。新人儀表板（P1）的「時程偏移狀態」也用這個值。
 
@@ -153,6 +219,118 @@ Pending ──► InProgress ──► Completed
 | Stylist / Media / StageAV | 自己有 CueRole 的 Cue + 該 Cue 的 `roleNote` | 自己的就位打卡 |
 | 其餘 P1 角色 | 同上 | 各自動作（P1 再定義） |
 
+### 4.5 領域服務
+
+Cue 操作的實作在 `internal/domain`。只列與行為有關的欄位與操作。
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Event {
+        +ID id
+        +Date eventDate
+        +string timezone
+        +EventStatus status
+        +string recoveryCodeHash
+        +endsAt() Time
+        +isEnded(now) bool
+        +start(now) error
+    }
+    class Cue {
+        +int seq
+        +Time scheduledStart
+        +int durationMin
+        +bool isFixed
+        +int offsetMin
+        +CueStatus status
+        +effectiveStart() Time
+        +effectiveEnd() Time
+    }
+    class Role {
+        +string name
+        +RoleType type
+        +capabilities() Capability[]
+    }
+    class AccessToken {
+        +string tokenHash
+        +Time revokedAt
+        +isActive() bool
+    }
+    class CueRole {
+        +string roleNote
+        +int leadMin
+    }
+    class CheckIn {
+        +Time at
+        +ID byRoleId
+        +Time undoneAt
+    }
+    class ActionLog {
+        +string actor
+        +string type
+        +json payload
+        +Time undoneAt
+    }
+    class Op {
+        +OpKind kind
+        +bool undone
+        +Change[] changes
+        +applyTo(cues) Cue[]
+    }
+    class Change {
+        +Cue before
+        +Cue after
+    }
+
+    class CueRules {
+        <<service>>
+        +PlanShift(cues, req, now) ShiftPlan
+        +Conflicts(cues) Conflict[]
+        +Advance(cues, now) Op
+        +Skip(cues, id) Op
+        +Undo(cues, op) Op
+    }
+    class SnapshotBuilder {
+        <<service>>
+        +build(event, role, now) Snapshot
+    }
+    class TokenVerifier {
+        <<service>>
+        +verify(token, now) Result
+    }
+    class Result {
+        <<enumeration>>
+        Invalid
+        Ended
+        Valid
+    }
+
+    Event "1" *-- "many" Cue
+    Event "1" *-- "many" Role
+    Role "1" *-- "0..1 有效" AccessToken
+    Cue "1" -- "many" CueRole
+    Role "1" -- "many" CueRole
+    Role "1" -- "many" CheckIn
+    Event "1" *-- "many" ActionLog
+    Op "1" *-- "many" Change
+    Change --> Cue
+    ActionLog ..> Op : payload
+
+    CueRules ..> Cue : 讀取
+    CueRules ..> Op : 產生
+    SnapshotBuilder ..> CueRole : 依角色過濾
+    TokenVerifier ..> AccessToken
+    TokenVerifier ..> Event : endsAt
+    TokenVerifier ..> Result
+```
+
+| 服務 | 規則 | 測試重點 |
+| --- | --- | --- |
+| CueRules（`internal/domain`） | `PlanShift` 同時供預覽與正式寫入；Op 由 `internal/store` 在單一交易內寫入並使 `eventVersion + 1` | 固定 Cue、排除勾選、進行中不動、負值時排除已逾時並拒絕早於現在、Fixed 衝突只警告、復原精確 |
+| SnapshotBuilder | 只含該角色可見的 Cue 與欄位；Master 帶完整 CueRole 與維護旗標 | 每種角色的鍵集合；Host 不含 Cue |
+| TokenVerifier | 依序判斷無效 → 已結束 → 有效；儲存層錯誤回錯誤而非「無效」 | 撤銷、過期、時區邊界、資料庫錯誤 |
+
 ## 5. P1 預留（P0 不實作）
 
 | 實體 | 用途 | 備註 |
@@ -161,18 +339,3 @@ Pending ──► InProgress ──► Completed
 | Task | 機動組任務池與認領 | `title, status, claimedByRoleId` |
 | AssetRef | 音控檔名對照 | 可先放在 `CueRole.roleNote`，需要時再拆 |
 | SupportRequest | 求助訊息（只路由給 Master 與 Runner） | F3 的過濾對象 |
-
-## 6. 待你確認的設計決定
-
-| # | 決定 | 預設（已確認 ☑） |
-| --- | --- | --- |
-| M1 | 偏移存在**每個 Cue 上**（`offsetMin`），而不是只存一個全域值 | 是，原因：有 Fixed Cue、排除勾選、略過時，全域值無法表達 ☑ |
-| M2 | Cue 有 `durationMin`，用來偵測 Fixed 衝突 | 是 ☑ |
-| M3 | 同一時間只有一個 InProgress Cue | 是 ☑ |
-| M4 | 一個 Role 是一個位子，可多支手機共用同一個 Token | 是 ☑ |
-| M5 | `InProgress` 的 Cue 不被平移 | 是 ☑ |
-| M6 | 平移造成 Fixed 衝突時：警告而不阻擋 | 是 ☑ |
-| M7 | 「復原」只回退最近一步 | 是 ☑ |
-| M8 | 平移的「不得早於現在」檢查 | 只在負值平移時檢查，已逾時的 Cue 自動排除（4.2）✎ 2026-10-20 |
-| M9 | 活動結束時間 | 不儲存，由 `eventDate` 與 `timezone` 即時算出 `endsAt`；Token 不另存到期時間 ✎ 2026-10-20 |
-| M10 | 略過能否復原 | 可以，以「復原上一步」回到 `Pending`（4.1）✎ 2026-10-21 |

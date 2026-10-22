@@ -2,7 +2,6 @@
 
 > 邏輯設計，不綁定技術棧。對應需求：F1（撤銷）、F2（權限範圍）、F3（新人視圖過濾）、B4（連結發送）、C5（活動結束失效）。
 > 資料實體見 `data-model.md`，快照見 `sync-and-offline.md`。
-> 2026-10-20 修訂：Owner 併入 Master、管理密碼改為復原碼、Token 保留在網址、取消 `notBefore` 與 Token 限頻、活動自動結束（見第 7 節 ✎）。
 
 ---
 
@@ -16,7 +15,7 @@
 | 越權 | 廠商改網址或打 API，想看別人的 Cue 或做總召的操作 | 資訊外洩、時程被竄改 |
 | 猜測連結 | 暴力猜 Token 或復原碼 | 128 位元熵下不可行 |
 | 復原碼外流 | 紙本遺失或被拍到 | 等同完全接管：可換發 Master、改 Draft 階段的活動日期；只能由開發者以伺服器端指令重設 |
-| 維運權限外流 | 備援操作者的 Google 帳號被盜或誤用（`tech-stack.md` 3.1） | 等同完全接管：可改 VM 啟動腳本、登入主機、重設復原碼、讀取資料庫與備份；IAM 權限設到期時間，婚禮後數天自動失效；權限期間留在 VM 上的後門不會跟著失效，所以婚後重建一次 VM（`tech-stack.md` 3.3） |
+| 維運權限外流 | 備援操作者的 Google 帳號被盜或誤用（`operations/runbook.md` 第 2 節） | 等同完全接管：可改 VM 啟動腳本、登入主機、重設復原碼、讀取資料庫與備份；IAM 權限設到期時間，婚禮後數天自動失效；權限期間留在 VM 上的後門不會跟著失效，所以婚後重建一次 VM（`operations/runbook.md` 第 4 節） |
 | 誤操作 | 總召手滑、兩台裝置同時操作 | 時程錯亂（版本號與復原已處理） |
 | 活動後殘留 | 活動結束後連結仍可看到賓客與流程資料 | 隱私（F5） |
 
@@ -38,6 +37,33 @@
 
 復原碼由**備援操作者**保管，不交給總召（ADR-0018），並且與 Master 連結**分開保存**，不能只有新人本人知道。總召遺失 Master 連結時聯絡備援操作者，由備援操作者在 `/recover` 換發後以 LINE 傳給總召。建立活動的指令只把兩者顯示在畫面上，不寫入任何日誌。復原碼單獨外流就等同完全接管（見第 1 節），只能由開發者以伺服器端指令重設。
 
+以復原碼換發 Master 連結的流程：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor O as 備援操作者
+    actor M as 當天總召
+    participant B as /recover 頁面
+    participant S as bethere
+    participant D as SQLite
+
+    M->>O: Master 連結遺失或外流，聯絡備援操作者
+    O->>B: 開啟 /recover（不需 Token）
+    O->>B: 輸入復原碼
+    B->>S: POST 換發 Master（復原碼只在本文）
+    S->>S: 正規化（忽略空白、連字號與大小寫）後計算雜湊
+    S->>D: 以復原碼雜湊查詢活動
+    alt 不符
+        S-->>B: 失敗（no-store）
+    else 符合
+        S->>D: 交易：舊 Master Token 撤銷、建立新的、寫 ActionLog（actor = 復原碼）
+        S-->>B: 新 Master 連結（no-store）
+        O->>M: 以 LINE 傳送新的 Master 連結
+        Note over M: 外流情況下，到 V4 檢查並重發可疑的角色連結
+    end
+```
+
 > 為什麼合併：原設計的 Owner 是新人本人，婚禮當天無法操作，「由 Owner 救援 Master」的路徑實際上走不通。合併後，當天所有管理動作都在總召手上。
 > Master 角色唯一且不能新增、修改或刪除（見 `data-model.md` Role），加上 Master 連結不能重發 Master（P5）、不能改活動日期、只能在活動當天開始活動，拿到外流 Master 連結的人無法把總召鎖在外面，也無法讓活動提前開始或結束。
 
@@ -55,7 +81,7 @@
 連結形如 `https://<host>/#t=<token>`，Token 放在 **URL 片段（`#` 之後）**，而且**一直留在網址上，不清除**：
 
 - 片段**不會被送到伺服器**，也不會出現在 Referer 與伺服器存取紀錄裡；LINE 等通訊軟體產生連結預覽時，爬蟲也拿不到 Token。
-- 頁面**一律以網址中的 Token 為準**，每次開啟都從網址讀取，不依賴本機儲存。目標是從 LINE 內建瀏覽器改用 Safari 開、加入書籤、加到主畫面時都帶著 Token；這依賴瀏覽器保留片段，**須實機驗證**（見 `sync-and-offline.md` 第 8 節）。
+- 頁面**一律以網址中的 Token 為準**，每次開啟都從網址讀取，不依賴本機儲存。目標是從 LINE 內建瀏覽器改用 Safari 開、加入書籤、加到主畫面時都帶著 Token；這依賴瀏覽器保留片段，**須實機驗證**（iOS 已驗證，見 `tech-stack.md` 5.1；Android 見 `docs/README.md` 的 RISK-1）。
 - 前端以一般 HTTP 請求呼叫 API（同步方式為輪詢，見 `sync-and-offline.md` S1），Token 放在請求標頭，不放查詢字串。
 - 因為網址含 Token：不載入任何第三方腳本，並設定嚴格的內容安全政策（CSP）。
 
@@ -80,6 +106,47 @@
 - 重發新連結時，舊連結同時失效；總召介面顯示新的連結與 QR Code。
 - Master 連結外流或遺失時，以復原碼換發（見第 2 節）；其他仍使用舊 Master 連結的裝置需要改用新連結。外流情況下，換發後應在 V4 檢查角色清單（ActionLog 記有舊連結建立或重發過的角色），撤銷或重發可疑的連結。
 
+連結的狀態：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: 產生（Master 或 create-event）
+    Active --> Revoked: 撤銷，或重發（同時建立新的 Active）
+    Active --> EventEnded: 現在 ≥ endsAt
+    Revoked --> [*]: 隨活動刪除
+    EventEnded --> [*]: 隨活動刪除
+
+    note right of Active
+        同一 Role 最多一個 Active
+        驗證結果：有效
+    end note
+    note right of Revoked
+        驗證結果：無效
+        與「Token 錯誤」不區分
+    end note
+```
+
+撤銷與重發的流程：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as 總召
+    participant S as bethere
+    participant D as SQLite
+    participant Old as 持舊連結的裝置
+    actor R as 該角色
+
+    M->>S: POST 重發（角色）
+    S->>S: 驗 Master、目標不是 Master
+    S->>D: 交易：舊 Token 填 revokedAt、建立新 Token 雜湊、寫 ActionLog
+    S-->>M: 新連結與 QR Code（PNG data URI，明文只出現這一次）
+    Old->>S: 下一次輪詢（舊 Token）
+    S-->>Old: result = 無效
+    Old->>Old: 刪除該 Token 的快照，顯示「連結已失效」
+    M-->>R: 以 LINE 傳新連結（系統不代發）
+```
+
 ## 4. 授權：動作權限表（F2）
 
 權限以**動作（capability）** 為單位，由 Token 所屬 Role 的 `type` 決定。伺服器對每個請求先驗 Token，再依 capability 判斷，**不信任客戶端傳來的角色資訊**。
@@ -102,7 +169,7 @@
 說明：
 - **活動不需手動結束**：到 `Event.endsAt` 自動結束（見 3.3），不會因為忘了按而讓連結一直有效。
 - **復原碼的三項用途**（第 2 節）不在表內，它們不經過 Token。
-- **Live 階段的有限編輯**：對應 C1，只允許改標題、備註、新增 Cue、略過；不允許改 `scheduledStart` 等結構性欄位（避免與平移衝突）。
+- **Live 階段的有限編輯**：對應 C1，只允許改標題、備註、新增 Cue、略過；不允許改 `scheduledStart` 等結構性欄位（避免與平移衝突），也不能改 Cue 的角色指派（A6；現場要改由總召口頭通知）。
 - **Host 的視圖**只回傳彙總數字（偏移、就位率），伺服器根本不產生 Cue 與求助訊息，滿足 F3。
 - P1 角色（領班、機動組等）的權限表於 P1 設計時補上，格式相同。
 
@@ -123,18 +190,3 @@
 4. 接收者之後可直接點原本的 LINE 訊息、書籤或主畫面圖示開啟，網址都帶著 Token。
 5. 活動前把 Master 連結交給當天的總召；復原碼交給備援操作者（見第 2 節）。
 6. 換手機或清除資料：重新點開原本的 LINE 訊息即可，不需要重發。連結被撤銷時，才向總召索取新連結。
-
-## 7. 設計決定
-
-> `☑` 已確認（採用預設）　`✎` 已確認（2026-10-20 修改）
-
-| # | 決定 | 內容 | 狀態 |
-| --- | --- | --- | --- |
-| P1 | 管理身分 | 只有 Master 一種管理身分（原 Owner 併入）；復原碼由系統產生，用途見第 2 節 | ✎ |
-| P2 | Token 放在 URL 片段（`#t=`），不放路徑或查詢字串 | 是，而且一直留在網址上不清除；外流以撤銷重發處理 | ✎ |
-| P3 | 連結生效時間 | 取消 `notBefore`，連結產生即可使用；活動前顯示「活動尚未開始」 | ✎ |
-| P4 | 活動結束後 Token 失效 | 活動日隔天 04:00 自動結束並失效，不需手動結束；結束時間由活動日期即時算出 | ✎ |
-| P5 | Master Token 可重發一般角色的連結，但不能動 Master 自己的 | 是；Master 連結只能以復原碼換發 | ☑ |
-| P6 | 撤銷的生效方式 | 下一次輪詢即回應「無效」；本機資料的清除規則見 3.3 | ✎ |
-| P7 | 驗證失敗的回應 | 分「無效／已結束／有效」三種結構化回應；不對 Token 與復原碼限頻 | ✎ |
-| P8 | Live 階段的編輯限縮為：改標題與備註、新增 Cue、略過 | 是 | ☑ |

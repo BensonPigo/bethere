@@ -40,9 +40,9 @@
 | `V1`～`V5` | 產品原則 | `product/vision.md` |
 | `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`X` 所有角色 | `requirements/stories/` |
 | `US-<角色>-<n>.C<m>` | 故事的情境條件 | `requirements/stories/` |
-| `NFR-<n>` | 非功能需求與品質目標 | `requirements/scope.md` |
+| `NFR-<n>` | 非功能需求與品質目標 | `requirements/scope.md` 第 4 節 |
 | `ADR-<NNNN>` | 決定（唯一的決定編號） | `adr/` |
-| `RISK-<n>` | 風險與待驗證項目 | `README.md` 狀態節 |
+| `RISK-<n>` | 風險與待驗證項目 | `docs/README.md` 狀態節 |
 
 - 只有會被跨文件引用的東西才編號；其他用名稱稱呼。
 - 測試名稱帶驗收條件編號，例如 `TestUS_M_3_2_...`。
@@ -60,7 +60,9 @@ ADR-0017 之前使用的代號，全部退役。同一字母在不同文件意�
 - **RISK-n**：風險清單。
 - **刪除**：已過時或已被其他項目涵蓋，附理由。
 
-另外兩組代號**不退役**，維持原意：里程碑 `M0`～`M3`（含 `M2a`、`M2b`），以及功能優先層級 `P0`～`P2`（`requirements/clarification.md` D 節）。
+另外兩組代號**不退役**，維持原意：里程碑 `M0`～`M3`（含 `M2a`、`M2b`），以及功能優先層級 `P0`～`P2`（`requirements/scope.md` 第 1 節）。
+
+下表的檔名是代號**原本**所在的位置，不隨步驟 3 的搬移更新：`requirements/clarification.md` 現在是 `archive/clarification.md`，`architecture/architecture-overview.md` 現在是 `architecture/overview.md`，`requirements/m1-acceptance.md` 現在是 `requirements/stories/m1.md`。
 
 ### `requirements/clarification.md` 的 A：需求釐清：規格模糊之處
 
@@ -337,35 +339,3 @@ ADR-0017 之前使用的代號，全部退役。同一字母在不同文件意�
 | D-2 | P0 範圍縮小：CSV 匯入、以角色預覽、連結管理介面改由開發者以指令操作，或延到 P1：縮小；第一場的婚前操作由開發者以指令完成（clarification.md 已確認事項） | 需求 → `requirements/scope.md`（B2、B4、B5 已逐項反映） |
 | D-3 | 當天的總召與備援操作者是誰：未定。M1 彩排前若仍未定，由 PO 找一位親友代為扮演總召；此項是時程風險，每個里程碑檢查一次 | RISK-5 |
 | D-4 | agent 可自行 push 功能分支（不含 main），讓 CI 每次都執行：授權；main 的合併與 push 仍由 PO 決定 | 規則 → `process/development-process.md` 第 6 節 |
-
-## 4. 步驟 2 配置的新代號
-
-步驟 3 會把這兩份清單搬到正本（`requirements/scope.md`、`README.md` 狀態節），之後以正本為準，本節刪除。
-
-### NFR
-
-| 代號 | 內容 | 來源 | 驗證方式 |
-| --- | --- | --- | --- |
-| NFR-1 | 單場上限 50 人同時在線 | E1 | 負載測試 |
-| NFR-2 | 總召操作後，95% 的終端 3 秒內更新 | E2、Q1 | 負載測試＋實機往返 |
-| NFR-3 | 伺服器或網路中斷時，開過頁面的裝置仍能唯讀顯示、倒數照跑；總召不能操作 | E3、Q2 | 實機離線測試、婚前演練 |
-| NFR-4 | 支援 iOS Safari、Android Chrome 近兩個主要版本，以及 iOS／Android 的 LINE 內建瀏覽器（連線時完整可用；離線不保證，見 ADR-0010） | E5 | 實機驗證 |
-| NFR-5 | 活動結束後連結立即失效；伺服器端所有副本 90 天內消失 | F5、Q6 | 第 85 天人工驗收 |
-| NFR-6 | 任何失敗都表現為「離線」，不會讓裝置清掉快照 | Q3 | 自動測試 |
-| NFR-7 | 平移結果與 `design/data-model.md` 4.2 一致，可精確復原 | Q5 | 單元測試＋性質測試 |
-| NFR-8 | VM 或磁碟故障時，備援操作者 15 分鐘內恢復 | Q7 | 暫存專案演練 |
-
-### RISK
-
-| 代號 | 風險 | 來源 | 處理 |
-| --- | --- | --- | --- |
-| RISK-1 | Android（Chrome、LINE、主畫面）實機驗證未做 | R1～R5、K1 | M3 |
-| RISK-2 | 延遲預算沒有緩衝 | K2、R4 | M3 負載測試；必要時把輪詢縮到 1～1.5 秒 |
-| RISK-3 | 單一 VM 單點故障 | K3 | 刻意接受；離線快取、紙本、15 分鐘恢復 |
-| RISK-4 | 當天維運腳本未寫、未演練 | K4 | M3 |
-| RISK-5 | 備援操作者與當天總召未定；未定期間復原碼只有開發者保管 | K5、D-3、ADR-0018 | 每個里程碑檢查；找不到就接受只剩離線快取與紙本 |
-| RISK-6 | 正式網域尚未購買 | K6 | 發出任何真實連結前處理 |
-| RISK-7 | iOS 清除 7 天未互動網站的資料 | K8 | 活動前一天請所有人再開一次連結 |
-| RISK-8 | `ping` 揭露版本號；Cue id 遞增 | api 安全審查 F14 | 接受 |
-| RISK-9 | 維護模式未實作，M3 前正式環境不放真實資料 | api 安全審查 | M3 |
-| RISK-10～14 | `README.md`「已知且接受的風險（store 層）」的 5 條 | — | 步驟 3 原文照搬並編號 |

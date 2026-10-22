@@ -25,9 +25,9 @@
 ## 後果
 
 - 好處：最壞情況是全場暫時離線，而不是資料消失。
-- 代價：還原後要人工核對並解除維護模式（`tech-stack.md` 3.1 步驟 4～5）。
+- 代價：還原後要人工核對並解除維護模式（`operations/runbook.md` 第 2 節程序 2 步驟 4～5）。
 - 之後要注意：這些規則都要有自動測試（找不到資料庫、`BETHERE_INIT` 遇既有資料庫、資料庫錯誤回伺服器錯誤、維護模式的放行範圍）。
 
 ## 參考
 
-- `access-control.md` 3.3；`tech-stack.md` 3.1
+- `access-control.md` 3.3；`operations/runbook.md` 第 2 節

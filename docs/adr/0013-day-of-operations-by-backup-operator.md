@@ -35,4 +35,4 @@
 
 ## 參考
 
-- `tech-stack.md` 3.1、3.2、3.3 節
+- `operations/runbook.md` 第 2～4 節
