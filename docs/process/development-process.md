@@ -53,7 +53,7 @@
    - **情境條件**（`US-M-2.C1`）：依現場使用場景寫成可操作的檢查，例如「手機平放在 1 公尺外，3 秒內看得出剩幾分鐘」，由 PO 或真實使用者在真手機上判定。
 2. **實作**：附上測試，測試名稱帶驗收條件編號，例如 `TestUS_M_2_1_ShiftSkipsFixedCues`。
 3. **證明測試有效**：關鍵規則（時間平移、權限與驗證結果、資料保存）要做「改回去 → 測試失敗」，並在 commit 訊息或驗收報告中記錄。時間平移另加性質測試（property-based test）。
-4. **機器驗證**：push 功能分支後，CI 在 Linux、macOS、Windows 上執行 `go vet ./...` 與 `go test ./...`；開發時在本機自行執行即可，不設 commit 前的強制檢查。
+4. **機器驗證**：push 功能分支後，CI 在 Linux、Windows 上執行（合併進 `main` 後另跑 macOS） `go vet ./...` 與 `go test ./...`；開發時在本機自行執行即可，不設 commit 前的強制檢查。
 5. **Demo**：技術負責人在本機啟動服務，附上操作步驟；PO 自己操作，判定情境條件。
 6. **完成**：機器驗證通過、PO 判定情境條件成立，合併進 `main`。
 
@@ -83,7 +83,7 @@
 ## 6. Git 與 CI
 
 - 開發在功能分支（例如 `m1/master-advance`），完成後合併進 `main`。
-- CI（`.github/workflows/ci.yml`）在每次 push 與 pull request 執行：Go 的 `vet` 與 `test` 跑 Linux、macOS、Windows，前端 build 跑 Linux。
+- CI（`.github/workflows/ci.yml`）在每次 push 與 pull request 執行：Go 的 `vet` 與 `test` 跑 Linux、Windows，**macOS 只在 `main` 上跑**（runner 昂貴且常排隊，2026-10-22 PO 決定）；前端 build 跑 Linux。
 - **push 的授權**（D-4）：agent 可自行 push 功能分支；合併進 `main` 與 push `main` 由 PO 決定。
 
 ## 7. PO 決定（2026-10-21）
