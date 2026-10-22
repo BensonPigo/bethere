@@ -24,7 +24,7 @@ var (
 // effective end times far from overflowing.
 const MaxCueDurationMin = 24 * 60
 
-// ImportRow is one cue of a rundown file (m1-acceptance.md, US-M-0), as
+// ImportRow is one cue of a rundown file (requirements/stories/m1.md, US-M-0), as
 // read by the caller. Line is the row's line in the file, for messages.
 type ImportRow struct {
 	Line        int

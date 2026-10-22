@@ -1,7 +1,7 @@
 # 畫面資訊架構 (Screen Design) — P0 範圍
 
 > 只定義「每個畫面放什麼、什麼優先、有哪些狀態」，不涉及視覺風格與技術實作。線框為示意。
-> 依據：`user-stories.md` 的使用情境、`data-model.md`、`sync-and-offline.md`、`access-control.md`。
+> 依據：`requirements/roles-and-scenarios.md` 的使用情境、`data-model.md`、`sync-and-offline.md`、`access-control.md`。
 
 ---
 
@@ -176,6 +176,30 @@
 - **倒數畫面沒有任何需要點的東西**：就位打卡改在進入畫面前完成（首次載入時詢問一次），避免手上有髮蠟時點擊；唯一的例外是上述常亮提示層。
 - 平移發生時：數字直接重算，背景色重新評估，並出現與 V2 相同的更新橫幅。
 
+常亮提示層的狀態：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Unsupported: 瀏覽器沒有 Wake Lock
+    [*] --> Prompt: 支援 Wake Lock
+    Unsupported --> [*]: 一次性提示：調整手機自動鎖定
+
+    Prompt --> Requesting: 點畫面任何位置
+    Requesting --> Held: 取得常亮
+    Requesting --> Prompt: 被拒（例如 NotAllowedError）
+    Held --> Prompt: 系統釋放常亮
+
+    note right of Prompt
+        全螢幕「點一下，保持螢幕常亮」
+        首次載入時與就位打卡詢問合併
+    end note
+    note right of Held
+        提示層消失，只剩倒數
+        iOS 切到別的 App 再回來仍保持
+        關掉 App 重開後需再點一次
+    end note
+```
+
 ## 6. V3 Rundown 編輯器（Master，Draft）
 
 以**表格**為主，適合在電腦上編輯：
@@ -209,7 +233,7 @@
 
 - 入口：V1 頂部「匯出備援」、V2 底部「備援」、V3 工具列。
 - 選項：全部（僅 Master）或個別角色（各角色只能匯出自己的）。
-- 內容與格式依 `sync-and-offline.md` 第 10 節；畫面只需「預覽 → 列印 / 下載」兩步。
+- 內容與格式依 `sync-and-offline.md` 第 9 節；畫面只需「預覽 → 列印 / 下載」兩步。
 - 匯出頁頭顯示「匯出於 HH:MM，版本 N」。
 
 ## 9. V6 共通狀態層
@@ -227,17 +251,3 @@
 | 維護中（僅 Master） | 醒目橫幅「維護中，其他角色無法連線」；其他角色此時看到的是「離線」（`tech-stack.md` T3d） |
 
 > 何時進入離線見 `sync-and-offline.md` 第 5 節；連結失效、未開始、已結束的判斷與本機資料清除規則見 `access-control.md` 3.3。
-
-## 10. 尚未決定
-
-| # | 問題 | 建議預設 | 狀態 |
-| --- | --- | --- | --- |
-| U1 | 推進按鈕是否需要二次確認 | 不需要，靠「復原上一步」 | ☑ |
-| U2 | 平移是否一律先經預覽面板 | 是 | ☑ |
-| U3 | 新秘模式的就位打卡放在進入畫面前，不放在倒數畫面 | 是；另外，未取得常亮時以全螢幕提示層請使用者點一下（實機驗證 iOS 重開頁面後需點擊才能常亮） | ✎ 2026-10-21 |
-| U4 | 預設暗色主題 | 是，可切換亮色 | ☑ |
-| U5 | 平移預覽的起點預設為「下一個 Pending Cue」，可手動改 | 是 | ☑ |
-| U6 | 已完成的 Cue 在時間軸中淡化並可收合 | 是 | ☑ |
-| U7 | 倒數背景色門檻：>15 平靜、5～15 琥珀、<5 紅 | 是，之後可調 | ☑ |
-| U8 | 新秘模式 V2a 是否與一般 V2 分開，由角色類型決定（非使用者切換） | 是 | ☑ |
-| U9 | 新秘倒數的目標 | 下一個指派給新秘的 Pending Cue 的 `effectiveStart`，與 V2 相同；沒有 Pending 也沒有進行中的 Cue 時顯示「今日任務已完成」 | ✎ 2026-10-20 |

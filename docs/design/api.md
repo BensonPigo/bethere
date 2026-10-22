@@ -1,7 +1,7 @@
 # API 規格 (API) — M1 範圍
 
-> 狀態：PO 核准（2026-10-21）；已經安全審查，無 P0／P1，發現已處理（第 10 節）。
-> 範圍：`requirements/m1-acceptance.md` 的 US-M-1、US-M-3、US-M-4、US-ST-1、US-X-1；之後的里程碑在本文件追加端點。
+> 狀態：PO 核准（2026-10-21）；已經安全審查（2026-10-21），無 P0／P1，發現均已處理；審查紀錄見 git 歷史。
+> 範圍：`requirements/stories/m1.md` 的 US-M-1、US-M-3、US-M-4、US-ST-1、US-X-1；之後的里程碑在本文件追加端點。
 > 依據：`access-control.md`（身分、驗證結果、權限表）、`sync-and-offline.md`（輪詢與快照）、`data-model.md`（狀態轉換）、`tech-stack.md`（T3b、T6、T7、T13、T14）。本文件的決定以 A 編號列在第 9 節。
 
 ---
@@ -11,16 +11,16 @@
 | 項目 | 規則 |
 | --- | --- |
 | 格式 | 請求與回應皆為 JSON（`Content-Type: application/json`），UTF-8 |
-| Token | 只放在 `Authorization: Bearer <token>` 標頭（A1）。不接受查詢字串、Cookie 或本文中的 Token |
-| Token 格式 | 16 位元組隨機值的 base64url（無補位），恰好 22 字元；伺服器以 SHA-256（對這 22 個字元的 ASCII 位元組）查詢（A2）。格式不符視為「格式錯誤」（400），**不是**「無效」 |
+| Token | 只放在 `Authorization: Bearer <token>` 標頭（A1；Caddy 預設在存取日誌中遮蔽 `Authorization`，不要啟用 `log_credentials`）。不接受查詢字串、Cookie 或本文中的 Token |
+| Token 格式 | 16 位元組隨機值的 base64url（無補位），恰好 22 字元；伺服器以 SHA-256（對這 22 個字元的 ASCII 位元組）查詢（A2；指令產生連結與伺服器查詢用同一規則，不需先解碼）。格式不符視為「格式錯誤」（400），**不是**「無效」 |
 | 快取 | 所有 `/api/` 回應（含錯誤）一律 `Cache-Control: no-store`，由中介層統一設定 |
 | 本文 | 上限 16 KB；只接受單一 JSON 物件；**未知欄位一律拒絕**（400）；`version` 缺少、為 `null`、不是整數或小於 1 都回 400 |
-| 活動與角色 | Token 驗證的請求**不帶** `eventId` 或自己的 `roleId`；活動與角色一律取自 Token（A3） |
+| 活動與角色 | Token 驗證的請求**不帶** `eventId` 或自己的 `roleId`；活動與角色一律取自 Token（A3；杜絕跨活動與冒用他人角色） |
 | 時間 | 一律 UTC，RFC 3339（含小數秒），例如 `2027-06-06T03:15:00.123Z` |
 | 跨來源 | 不回任何 `Access-Control-*` 標頭、不使用 Cookie；Token 只在標頭，所以 CSRF 不適用 |
 | 頻率限制 | 不對 Token 限頻（`access-control.md` P7） |
 | 日誌 | 不記錄請求標頭、本文、Token、Token 雜湊；錯誤回應只回固定的錯誤代碼，不回內部錯誤訊息（T13） |
-| 時鐘 | `serve` 只使用系統時鐘，不提供任何覆寫時間的設定或參數（A13）；彩排用另一場日期為彩排當天的活動 |
+| 時鐘 | `serve` 只使用系統時鐘，不提供任何覆寫時間的設定或參數（A13；正式環境若殘留覆寫的時間，可能讓所有裝置收到 `ended` 而被清除）；彩排用另一場日期為彩排當天的活動 |
 | 逾時 | 快照讀取的資料庫查詢帶 3 秒 context 逾時（T3b）；`http.Server` 設定讀取、寫入、閒置逾時 |
 
 ## 2. 回應的兩種形狀
@@ -35,7 +35,7 @@
 | `ended` | Token 有效，但活動已過 `endsAt`（查詢時的 `store.ErrEventEnded`，或寫入時對**自己活動**的 `domain.ErrEnded`） | 只有 `{"result":"ended"}`，**不含任何活動資料** | 顯示「活動已結束」，清除該 Token 的本機資料 |
 | `ok` | 其餘 | `{"result":"ok","snapshot":{…}}` | 正常顯示 |
 
-客戶端**只有**在 HTTP 狀態為 200、`Content-Type` 為 JSON、本文可解析，且 `result` 明確為 `invalid` 或 `ended` 時才清除本機資料（`access-control.md` 3.3；A15）。
+客戶端**只有**在 HTTP 狀態為 200、`Content-Type` 為 JSON、本文可解析，且 `result` 明確為 `invalid` 或 `ended` 時才清除本機資料（`access-control.md` 3.3；A15）。這是為了防止日後的處理器或代理在錯誤本文中帶出 `result`。
 
 ### 2.2 錯誤（不帶 `result`）
 
@@ -57,10 +57,10 @@
 | `POST /api/event/start` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
 | `POST /api/cues/advance` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
 | `POST /api/cues/undo` | Token | Master | `{"version":n}` | `ok` + 新的 Master 快照 |
-| `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用（A6） |
+| `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用（A6）；不含活動資料 |
 
 - Master 的寫入都要帶 `version`（S6）；寫入成功的回應直接附上新快照（S1），總召不必等下一次輪詢。
-- **`POST /api/report` 移除**（A7）。
+- **`POST /api/report` 移除**（A7）：實機驗證原型已完成；它不需憑證、會寫入日誌並記錄 Token 前綴。M3 的 Android 驗證改以截圖與手動紀錄。
 
 ## 4. 權限
 
@@ -73,7 +73,7 @@
 | `POST /api/cues/advance` | ✔ | 403 | 403 | 403 | 403 | 403 |
 | `POST /api/cues/undo` | ✔ | 403 | 403 | 403 | 403 | 403 |
 
-- **M1 只開放 Master 與 Stylist**：`bethere add-role` 在 M1 只接受 Stylist，Media、StageAV、Host 於 M2 開放（A4）。P1 角色類型（VenueLead、Reception、Cashier、Runner）在 P0 不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
+- **M1 只開放 Master 與 Stylist**：`bethere add-role` 在 M1 只接受 Stylist，Media、StageAV、Host 於 M2 開放（A4；M1 的畫面只有這兩種，未定義的類型不能落入寬鬆的預設權限）。P1 角色類型（VenueLead、Reception、Cashier、Runner）在 P0 不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
 - 權限檢查在 API 層。store 只確認操作者的憑證仍有效且屬於同一活動，**不檢查角色類型**（`access-control.md` 第 5 節第 6 條），所以每個寫入端點都必須先通過本表。
 
 ## 5. 快照
@@ -94,7 +94,7 @@
 | `event` | `{"name","date","timezone"}` |
 | `cues[]` | 全部 Cue：`id, seq, title, scheduledStart, effectiveStart, durationMin, isFixed, offsetMin, status, actualStart, actualEnd, notePublic, roles[]`；`roles[]` 為 `{"roleId","name","roleNote"}` |
 | `activeCueId` | 進行中的 Cue，沒有則為 `null` |
-| `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生，沒有可復原的操作時為 `null`。推進的描述以「開始的那個 Cue」命名；推進的是最後一個 Cue（沒有開始新的）時，以「完成的那個 Cue」命名（A17） |
+| `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生，沒有可復原的操作時為 `null`。推進的描述以「開始的那個 Cue」命名；推進的是最後一個 Cue（沒有開始新的）時，以「完成的那個 Cue」命名（A17，PO 於 2026-10-22 確認） |
 | `roles[]` | `{"id","name","type"}`（不含 Token 或使用紀錄；`lastSeenAt` 於 M2 追加） |
 
 ### 5.3 角色快照（Stylist、Media、StageAV）
@@ -102,7 +102,7 @@
 | 欄位 | 說明 |
 | --- | --- |
 | `cues[]` | **只有指派給自己的 Cue**：`id, seq, title, effectiveStart, durationMin, isFixed, offsetMin, status, notePublic, roleNote`（只有自己的 `roleNote`） |
-| （無 `current`） | 目前進行中的 Cue 只有在指派給自己時才會出現在 `cues[]`（狀態 `InProgress`）；未指派的進行中 Cue 不揭露任何內容（A5） |
+| （無 `current`） | 目前進行中的 Cue 只有在指派給自己時才會出現在 `cues[]`（狀態 `InProgress`）；未指派的進行中 Cue 不揭露任何內容（A5）。V2a 在未指派時本來就只顯示「準備中」；M2b 的攝影、音控視圖若需要「目前環節」，屆時由 PO 決定 |
 
 ### 5.4 彙總快照（Host）
 
@@ -118,7 +118,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 
 ### 5.6 Draft 階段
 
-非 Master 角色在 Draft 階段也回完整的角色快照（A8），讓裝置在活動前就存好離線快照（`tech-stack.md` 3.2）；畫面依 `eventStatus` 顯示「活動尚未開始」。
+非 Master 角色在 Draft 階段也回完整的角色快照（A8），讓裝置在活動前就存好離線快照（`operations/runbook.md` 第 3 節）；畫面依 `eventStatus` 顯示「活動尚未開始」。
 
 ## 6. 錯誤對照
 
@@ -144,15 +144,15 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 ## 7. 伺服器端規則
 
 1. **每個請求**：解析標頭 → 查 Token（`store.LookupToken`）→ 依第 4 節檢查權限 → 執行。
-2. **快照只有一個產生函式**：`GET`、寫入成功、409 三處都呼叫同一個函式，它在**單一唯讀交易**內查 Token 並組出**呼叫者自己角色**的快照（A9、A14），結果依第 6 節對照。store 需新增這個函式（現有的 `LookupToken` 自己開關交易，分兩次呼叫會留下空窗）；以「兩步之間撤銷或結束」的測試驗證。
+2. **快照只有一個產生函式**：`GET`、寫入成功、409 三處都呼叫同一個函式，它在**單一唯讀交易**內查 Token 並組出**呼叫者自己角色**的快照（A9、A14），結果依第 6 節對照。在同一交易內查 Token 與組快照，撤銷與結束才會立即生效、沒有毫秒級的空窗；只有一個產生函式，避免 409 或寫入回應意外帶出 Master 快照。store 需新增這個函式（現有的 `LookupToken` 自己開關交易，分兩次呼叫會留下空窗）；以「兩步之間撤銷或結束」的測試驗證。
 3. **處理順序**：解析標頭 → 查 Token → 權限（403）→ 解析本文（400）→ 寫入 → 重新讀取快照。409 只會在通過權限檢查後出現。
 4. **寫入成功後重新讀取的結果**：讀到 `ok` 回 200 與新快照；讀到 `invalid` 或 `ended`（例如寫入與讀取之間被撤銷）就回那個結果；資料庫錯誤回 500（寫入已生效，客戶端下一次輪詢會看到）。一個回應**絕不同時**帶 `error` 與 `result`；409 附的快照同樣依此處理，讀不到 `ok` 就改回對應的 `result` 或 500。
 5. **`lastSeenAt`**：只在 Token 驗證成功之後於記憶體更新（T7）；M3 加入維護模式後，改為通過維護檢查之後才更新。
 6. **所有寫入**都帶 store 的 `Actor`，在同一交易內重新確認憑證並寫入操作紀錄。
 7. **指令（`bethere` 子命令）**：
-   - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（A10）。
+   - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（A10；避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫，ADR-0012）。
    - `create-event`、`add-role`、`import-rundown` 一律以「不建立新資料庫」的方式開啟；連結與復原碼只印到終端機（stdout），不經過結構化日誌（A11）。
-   - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經 `LookupToken` 取得操作者（A12）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
+   - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經 `LookupToken` 取得操作者（A12；不留在 shell 歷史與程序清單）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
    - `import-rundown` 在單一交易內寫入全部 Cue 與指派，任一列不合法就整份不寫入（US-M-0.2）。
 
 ## 8. 安全邊界相關的限制
@@ -166,47 +166,3 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
   - 404、405、本文過大、400、403、409、500 的回應都有 `no-store` 且不帶 `result`。
   - `POST /api/report` 回 404 或 405（A7）。
   - `BETHERE_INIT` 為 `0`、`true`、` 1`、`yes` 時拒絕啟動（A10）。
-
-## 9. 決定
-
-| # | 決定 | 理由 |
-| --- | --- | --- |
-| A1 | Token 用 `Authorization: Bearer` 標頭 | Caddy 預設在存取日誌中遮蔽 `Authorization`；不要啟用 `log_credentials`（依鎖定的 Caddy 版本確認） |
-| A2 | 雜湊的輸入為 22 字元的 Token 字串本身 | 指令產生連結與伺服器查詢用同一規則，不需先解碼 |
-| A3 | Token 驗證的請求不帶活動或自己的角色 id | 杜絕跨活動與冒用他人角色 |
-| A4 | M1 只開放 Master 與 Stylist；P0 不能建立 P1 角色類型 | M1 的畫面只有這兩種；未定義的類型不能落入寬鬆的預設權限 |
-| A5 | 角色快照**不**揭露未指派給自己的進行中 Cue | 符合 F3 與 US-X-1.2；V2a 在未指派時本來就只顯示「準備中」。M2 的 V2（攝影、音控）若需要「目前環節」，屆時由 PO 決定並同步修改 F3 |
-| A6 | 保留 `GET /api/ping`（不需憑證） | 部署後確認版本（`architecture/runtime-views.md`）；不含活動資料 |
-| A7 | 移除 `POST /api/report` | 實機驗證原型已完成；它不需憑證、會寫入日誌並記錄 Token 前綴。M3 的 Android 驗證改以截圖與手動紀錄 |
-| A8 | Draft 階段也回完整的角色快照 | 讓活動前一天開啟時就存好離線快照 |
-| A9 | 查 Token 與組快照在同一個讀取交易 | 撤銷與結束立即生效，沒有毫秒級的空窗 |
-| A10 | `BETHERE_INIT` 只接受 `1` | 避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫（ADR-0012） |
-| A11 | 子命令的秘密只印到終端機 | `access-control.md` 第 2 節；`tech-stack.md` T11 |
-| A12 | 寫入型子命令從標準輸入讀取 Master 連結 | 不留在 shell 歷史與程序清單；不必新增繞過憑證的操作者 |
-| A13 | `serve` 只用系統時鐘 | 正式環境若殘留覆寫的時間，可能讓所有裝置收到 `ended` 而被清除 |
-| A14 | 所有快照只由一個函式產生，且一律是呼叫者自己角色的快照 | 避免 409 或寫入回應意外帶出 Master 快照 |
-| A15 | 客戶端清除本機資料前，另外確認 HTTP 200 與 JSON | 防止日後的處理器或代理在錯誤本文中帶出 `result` |
-| A16 | 瀏覽器本機快照的鍵改為 SHA-256（`"bethere-local:"` + Token），不等於伺服器的 Token 雜湊 | 伺服器的雜湊不應出現在伺服器以外；修訂 `tech-stack.md` T20 的鍵規則 |
-| A17 | 復原描述的命名規則（見 5.2 `undo`） | PO 於 2026-10-22 確認 |
-
-## 10. 安全審查紀錄（2026-10-21）
-
-結論：無 P0、P1。處理方式：
-
-| 發現 | 嚴重度 | 處理 |
-| --- | --- | --- |
-| F1 未指派的進行中 Cue 標題外洩，與 US-X-1.2 衝突 | P2 | 修正（A5） |
-| F2 子命令以什麼身分寫入未定義 | P2 | 修正（A12） |
-| F3 寫入回應與 409 的快照來源與對照未定義 | P3 | 修正（第 7 節、A14） |
-| F4 單一交易需要新的 store 函式 | P3 | 修正（第 7 節） |
-| F5 雜湊規則不一致會清掉所有裝置 | P3 | 修正（測試向量與端到端測試） |
-| F6 逾時或取消可能被誤判為查無 Token（未證實） | P3 | 以測試確認 |
-| F7 客戶端清除條件未檢查 HTTP 狀態 | P3 | 修正（A15） |
-| F8 覆寫時鐘的風險 | P3 | 修正（A13） |
-| F9 錯誤回應的 `no-store` | P4 | 以測試確認 |
-| F10 瀏覽器的鍵等於伺服器的雜湊 | P4 | 修正（A16） |
-| F11 `version` 不合法的處理 | P4 | 修正（第 1 節） |
-| F12 規格涵蓋 M1 以外的角色 | P4 | 修正（A4） |
-| F13 `/api/report` 仍在程式中 | P4 | M1 實作時移除並測試 |
-| F14 `ping` 揭露版本號、Cue id 遞增 | P4 | 接受 |
-| 維護模式延到 M3 | P4 | 接受；M3 前正式環境不放真實資料 |

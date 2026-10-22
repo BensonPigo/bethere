@@ -2,7 +2,7 @@
 
 - 狀態：已接受
 - 日期：2026-10-20
-- 對應：`access-control.md` P4；`data-model.md` M9；`clarification.md` C5；`tech-stack.md` T10、T-F；需求 F5
+- 對應：`access-control.md` P4；`data-model.md` M9；`archive/clarification.md` C5；`tech-stack.md` T10、T-F；需求 F5
 
 ## 背景
 

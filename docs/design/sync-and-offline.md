@@ -5,18 +5,6 @@
 
 ---
 
-## 已確認決定
-
-| # | 決定 | 狀態 |
-| --- | --- | --- |
-| S1 | 客戶端以固定間隔每 2 秒輪詢，伺服器每次都回該角色的完整快照；不使用 SSE 或 WebSocket。總召操作走一般 API 請求，回應直接附上新快照（2026-10-20 修改：原為推送為主、斷線退回輪詢） | ✎ |
-| S2 | 每次回應「該角色可見的完整狀態快照」，不回差異 | ☑ |
-| S3 | 伺服器送 `effectiveStart` 與伺服器時間；客戶端用本機時鐘加校正值自行倒數 | ☑ |
-| S4 | 離線快取最後一次快照，唯讀顯示並標示「離線中，資料更新於 HH:MM」，倒數照跑 | ☑ |
-| S5 | 總召離線時禁止操作並提示，不做離線佇列 | ☑ |
-| S6 | 多台總召裝置可同時操作；每個操作帶版本號，過期就拒絕並更新畫面，不做合併 | ☑ |
-| S7 | 部署與託管：Google Cloud Compute Engine 台灣（asia-east1）單一 VM + SQLite + Litestream 備份到 GCS，詳見 `tech-stack.md` 第 3 節（2026-10-20 決定） | ✎ |
-
 ## 1. 資料流
 
 ```
@@ -33,6 +21,49 @@
 - 每次輪詢都回完整快照（含 `serverTime`），客戶端不需要自己組裝狀態，同步也不依賴 `eventVersion`；它用於總召寫入的衝突檢查（第 3 節）與匯出標示。
 - 以 50 台裝置估算（E1 上限 50 人，同一角色可能多支手機，數量級相同），約每秒 25 個請求，負擔很小；換來的是不需要處理推送連線的驗證、斷線重連與降級狀態。
 - 上一次輪詢還沒完成時跳過這一輪，請求不會重疊；單次請求超過 8 秒未回應即主動中止，算一次失敗。
+
+開啟連結與輪詢的流程：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 角色工作人員
+    participant B as 瀏覽器（SPA）
+    participant L as localStorage
+    participant S as bethere
+    participant D as SQLite
+
+    U->>B: 點 LINE 裡的連結（Token 在網址片段）
+    Note over B: 網址片段不會送到伺服器
+    B->>B: 從網址讀 Token，計算 SHA-256
+    B->>L: 讀取 snap:雜湊
+    alt 有本機快照
+        L-->>B: 最後一份快照
+        B->>U: 立刻渲染（標示資料時間）
+    end
+    loop 每 2 秒（上一次未完成就跳過，逾時 8 秒）
+        B->>S: GET 快照（Token 在標頭）
+        S->>D: 以 Token 雜湊查詢（唯讀連線池，3 秒逾時）
+        alt 查無有效 Token
+            S-->>B: result = 無效
+            B->>L: 刪除該 Token 的快照
+            B->>U: 「連結已失效，請向總召索取新連結」，停止輪詢
+        else 已過 endsAt
+            S-->>B: result = 已結束（不附活動資料）
+            B->>L: 刪除該 Token 的快照
+            B->>U: 「活動已結束，感謝你的協助」
+        else 有效
+            S->>S: 更新 lastSeen（記憶體）
+            S->>D: 依角色組裝快照
+            S-->>B: result = 有效、快照、serverTime
+            B->>B: 更新時鐘偏差（中位數）
+            B->>L: 覆寫 snap:雜湊
+            B->>U: 重繪
+        else 逾時、5xx、Wi-Fi 登入頁、無法解析
+            B->>U: 超過約 10 秒沒有成功回應即顯示「離線中」，保留快照、倒數照跑
+        end
+    end
+```
 
 ## 2. 快照（Snapshot）
 
@@ -59,6 +90,27 @@
 - 只有 Master Token 能寫入 Cue 狀態；其他角色的寫入（就位打卡）彼此不衝突，不檢查版本。
 - 這會讓「總召 A 剛平移、總召 B 的畫面還沒更新就按推進」被擋下，避免基於過期畫面的錯誤操作。
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M1 as 總召（平板）
+    actor M2 as 總召（手機）
+    participant S as bethere
+    participant D as SQLite
+
+    Note over M1,M2: 兩台都看到 eventVersion = 41
+    M1->>S: POST 推進（version = 41）
+    S->>S: 驗 Token、capability = 推進
+    S->>D: 交易：比對版本、改 Cue 狀態、寫 ActionLog、version = 42
+    S-->>M1: 成功 + 新快照（version 42）
+    M2->>S: POST 平移 +10（version = 41）
+    S->>D: 交易：比對版本
+    D-->>S: 目前版本 42，不符
+    S-->>M2: 拒絕 + 最新快照（version 42）
+    M2->>M2: 提示「畫面已更新，請重新確認」並刷新
+    Note over M2: 總召看過最新狀態後再決定是否平移
+```
+
 ## 4. 時鐘與倒數（S3、E7）
 
 1. 每次輪詢收到回應時，客戶端計算 `clockSkew = serverTime − localNow`。從本機快取載入的快照不計算。
@@ -72,6 +124,37 @@
 - 失敗與停止輪詢的判定見 `access-control.md` 3.3。
 - 恢復連線後的第一次輪詢即取得最新快照，**以伺服器版本為準**覆蓋本機狀態。頁面從背景回到前景時立即輪詢一次。
 - 離線期間，倒數仍依本機時鐘加上最後一次校正值繼續跑。離線超過 5 分鐘時，V6 會提示倒數可能不準，因為這段時間內可能已被平移。
+
+客戶端的連線狀態：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Starting: 開啟頁面
+    Starting --> Online: 第一次輪詢成功
+    Starting --> Offline: 約 10 秒沒有成功回應（有本機快照就先顯示）
+    Online --> Offline: 約 10 秒沒有成功回應
+    Offline --> Online: 任一次輪詢成功（以伺服器版本覆蓋本機）
+    Offline --> OfflineStale: 離線超過 5 分鐘
+    OfflineStale --> Online: 輪詢成功
+    Online --> Invalid: result = 無效
+    Offline --> Invalid: result = 無效
+    Online --> Ended: result = 已結束
+    Offline --> Ended: result = 已結束
+    Invalid --> [*]: 停止輪詢、刪除本機快照
+    Ended --> [*]: 刪除本機快照
+
+    note right of Offline
+        「離線中，資料更新於 HH:MM」
+        總召停用所有寫入
+        倒數依最後的時鐘偏差繼續
+        維護模式下的非 Master 也在這裡
+    end note
+    note right of OfflineStale
+        追加「倒數可能不準」
+    end note
+```
+
+只有可解析且 `result` 明確為「無效」或「已結束」的回應會進入終止狀態；HTTP 401、403、5xx、逾時、會場 Wi-Fi 登入頁都只算離線。
 
 ## 6. 離線快取（S4、S5）
 
@@ -95,21 +178,11 @@
 
 合計最壞約 3 秒、平均約 2 秒，剛好等於目標、沒有緩衝。實測若達不到，先把輪詢間隔調到 1～1.5 秒（請求量仍很小）。
 
-## 8. 已知風險（延到技術選型與實測時驗證）
+## 8. 已知風險
 
-| 風險 | 說明 | 緩解方向 |
-| --- | --- | --- |
-| iOS 背景 | iOS Safari 在螢幕鎖定或切到背景後會暫停輪詢 | 回到前景時立即輪詢；新秘有 Wake Lock，影響較小 |
-| 主畫面與 LINE 保留 Token | Token 在網址片段裡；加到 iOS 主畫面、或從 LINE 內建瀏覽器改用 Safari 開啟時，片段必須被保留。若提供 Web App manifest，不可設定會蓋掉網址的固定 `start_url` | 實作前以實機驗證（`tech-stack.md` 第 5 節 R1） |
-| Wake Lock 支援 | 部分舊版瀏覽器不支援；iOS 重開頁面後需使用者點擊才能取得（`tech-stack.md` 5.1） | 以功能偵測為準，不支援時提示使用者調整手機自動鎖定設定；未取得時以提示層請使用者點一下（`screen-design.md` V2a） |
-| 場地網路品質 | 地下室或訊號弱的宴會廳 | 婚前到場地實測；必要時準備行動熱點作為備援 |
-| 單點故障 | 伺服器當機時所有端只剩離線快取 | 活動前備份 Rundown 為可離線列印的版本（見第 10 節） |
+見 `docs/README.md` 的風險清單（RISK-1、RISK-3、RISK-15、RISK-16）。
 
-## 9. 尚未決定
-
-- 無。S7 已於 `tech-stack.md` 決定。
-
-## 10. 備援 Rundown（已納入 P0 ☑）
+## 9. 備援 Rundown
 
 對伺服器或網路完全失效的最後保險。
 

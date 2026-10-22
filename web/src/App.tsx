@@ -14,7 +14,7 @@ export function App() {
   const s = useSession(token);
   const line = isLineBrowser(navigator.userAgent);
 
-  // product-vision.md V2: works fully inside LINE; only a quiet note, never
+  // product/vision.md V2: works fully inside LINE; only a quiet note, never
   // a request to switch browsers.
   const lineBanner = line && <div class="line-note">在 LINE 中開啟時，沒有網路可能打不開本頁</div>;
 

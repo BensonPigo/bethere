@@ -2,7 +2,7 @@
 
 - 狀態：已接受
 - 日期：2026-10-22
-- 對應：`requirements/product-vision.md` V5；`requirements/clarification.md` C4
+- 對應：`product/vision.md` V5；`archive/clarification.md` C4
 
 ## 背景
 
@@ -50,6 +50,6 @@ BeThere 目前是個人 side project，第一個目標是 2027-06-06 的婚禮�
 
 ## 參考
 
-- `requirements/product-vision.md`
+- `product/vision.md`
 - `process/development-process.md` 第 8、9 節（外部診斷）
 - `design/tech-stack.md` T4
