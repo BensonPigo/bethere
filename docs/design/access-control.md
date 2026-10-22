@@ -102,7 +102,7 @@ sequenceDiagram
 
 ### 3.4 撤銷
 - 撤銷後，伺服器對該 Token 的請求立即回應「無效」；對方裝置在下一次輪詢（約 2 秒內）就會收到，並依 3.3 處理。
-- 重發新連結時，舊連結同時失效；總召介面顯示新的連結與 QR Code。
+- 重發新連結時，舊連結同時失效；總召介面顯示新的連結與「複製」按鈕（QR Code 屬 P1 的角色與連結管理介面，`requirements/stories/m2b.md`）。
 - Master 連結外流或遺失時，以復原碼換發（見第 2 節）；其他仍使用舊 Master 連結的裝置需要改用新連結。外流情況下，換發後應在角色與連結管理畫面檢查角色清單（ActionLog 記有舊連結建立或重發過的角色），撤銷或重發可疑的連結。
 
 連結的狀態：
@@ -139,7 +139,7 @@ sequenceDiagram
     M->>S: POST 重發（角色）
     S->>S: 驗 Master、目標不是 Master
     S->>D: 交易：舊 Token 填 revokedAt、建立新 Token 雜湊、寫 ActionLog
-    S-->>M: 新連結與 QR Code（PNG data URI，明文只出現這一次）
+    S-->>M: 新 Token（明文只出現這一次；QR Code 於 P1）
     Old->>S: 下一次輪詢（舊 Token）
     S-->>Old: result = 無效
     Old->>Old: 刪除該 Token 的快照，顯示「連結已失效」
