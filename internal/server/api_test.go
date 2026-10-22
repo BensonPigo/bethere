@@ -569,6 +569,7 @@ func TestUS_ST_1_5_DraftGivesTheFullRoleSnapshot(t *testing.T) {
 var allRoleTypes = []domain.RoleType{
 	domain.Master, domain.Stylist, domain.Media, domain.StageAV, domain.Host,
 	domain.VenueLead, domain.Reception, domain.Cashier, domain.Runner,
+	"Admin", // a type no release knows (api.md section 4, 其他類型)
 }
 
 // Every cell of the capability table (api.md section 4) for M1: Master
