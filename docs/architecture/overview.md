@@ -142,4 +142,5 @@ flowchart TB
 | 安全標頭 | CSP 不允許 inline script 與第三方來源；`no-referrer`；`noindex`；API `no-store` | `tech-stack.md` 2.1「安全標頭」 |
 | 日誌 | `slog` JSON 到 stdout；不記錄請求標頭與本文（Token 與復原碼） | `tech-stack.md` 2.1「日誌」 |
 | 稽核 | 所有改變狀態的操作寫入 ActionLog | `data-model.md` ActionLog |
+| 監控 | 外部 Uptime Check 探測伺服器與備份新鮮度；告警在凍結期改送備援操作者 | ADR-0024 |
 | 測試 | 領域表格驅動、API 以 `httptest` + 暫存 SQLite、前端 Vitest、負載 `oha`、實機清單 | `tech-stack.md` 第 4 節 |

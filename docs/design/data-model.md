@@ -36,11 +36,11 @@ erDiagram
 | eventDate | date | 年份限 2000～2199，Cue 時間同樣限在這個範圍，確保以奈秒儲存與日期運算不會溢位 |
 | timezone | text | 預設 `Asia/Taipei`；只接受程式內的時區清單（目前只有 `Asia/Taipei`），確保在任何主機都讀得回來 |
 | status | enum | 儲存 `Draft` / `Live`（Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |
-| liveStartedAt | timestamp? | 按「開始活動」的時間 |
+| liveStartedAt | timestamp? | 活動開始（活動日當天第一次推進）的時間 |
 | activeCueId | ID? | 目前進行中的 Cue。**不儲存**，由狀態為 `InProgress` 的 Cue 推得，避免兩份真相 |
 | recoveryCodeHash | text | 復原碼的雜湊（見 `access-control.md` 第 2 節） |
 
-`timezone` 建立後不可修改；`eventDate` 只能以復原碼、在 Draft 階段修改（見 `access-control.md` 第 2 節）。「開始活動」只能在 `eventDate` 當天（依 `timezone`）執行。
+`timezone` 建立後不可修改；`eventDate` 只能以復原碼、在 Draft 階段修改（見 `access-control.md` 第 2 節）。活動只能在 `eventDate` 當天（依 `timezone`）開始：Draft 狀態下的第一次推進在同一筆交易內把活動改為 Live 並開始第一個 Cue；復原這次推進時活動仍維持 Live（ADR-0020）。
 
 **衍生值（不存）**
 - `endsAt` = `eventDate` 隔天 04:00（依 `timezone` 換算為 UTC）。
@@ -126,7 +126,7 @@ erDiagram
 stateDiagram-v2
     [*] --> Draft: 開發者 create-event
     Draft --> Draft: 編輯 Rundown（Master）<br/>改活動日期（復原碼，新舊 endsAt 都晚於現在）
-    Draft --> Live: 開始活動（Master，僅活動日當天）
+    Draft --> Live: 第一次推進（Master，僅活動日當天）
     Draft --> Ended: 現在 ≥ endsAt
     Live --> Ended: 現在 ≥ endsAt（活動日隔天 04:00）
     Ended --> Deleted: 每日排程，endsAt 後 80 天
@@ -139,7 +139,8 @@ stateDiagram-v2
     end note
     note right of Live
         只有 Master 可異動
-        編輯限縮為標題、備註、新增、略過
+        編輯限縮為標題、備註、新增、略過、
+        Pending Cue 的角色指派
     end note
 ```
 
@@ -174,6 +175,7 @@ stateDiagram-v2
 3. **負值檢查**（只在 `deltaMin < 0` 時進行）：若任一保留的 Cue 平移後的 `effectiveStart` 早於「現在」，整次操作拒絕並說明是哪個 Cue。正值平移不做這項檢查，因為延誤時平移後仍早於現在是正常情況。
 4. 對每個保留的 Cue：`offsetMin += deltaMin`，並在 ActionLog 記下該 Cue 平移前後的狀態。
 5. **Fixed 衝突檢查**：平移後，若某 Cue 的 `effectiveEnd` 晚於其後最近一個 Fixed Cue 的 `scheduledStart`，**不阻擋**，但標記衝突並在主控台顯示。
+   **時間倒序檢查**：任一 Pending Cue 的 `effectiveStart` 早於 `seq` 在它前面最近一個未略過 Cue 的 `effectiveStart` 時，同樣不阻擋、只標記（取消勾選平移或活動中新增 Cue 都可能造成，ADR-0021）。
 6. 整個過程是單一交易，完成後 `eventVersion + 1`，各端在下一次輪詢取得新狀態。
 
 `InProgress` 的 Cue 不被平移（它已經開始了）；若總召想延長目前環節，用平移其下一個 Cue 起算。
@@ -208,8 +210,11 @@ sequenceDiagram
     ST->>ST: 倒數重算、背景色重評估、橫幅「時程已更新 +10 分」
 ```
 
-### 4.3 「全域偏移」的顯示值
-各畫面顯示的「+N 分」= **目前 InProgress（或下一個 Pending）Cue 的 `offsetMin`**。新人儀表板的「延誤 N 分」也用這個值。
+### 4.3 「全域偏移」、超時與延誤的顯示值
+- 各畫面顯示的「+N 分」= **目前 InProgress（或下一個 Pending）Cue 的 `offsetMin`**。
+- **超時分鐘** = `max(0, 現在 − 下一個 Pending Cue 的 effectiveStart)`，向下取整。以下一個待辦 Cue 為準，因為進行中的 Cue 不被平移（4.2）；總召平移後續後超時即歸零。超時達 5 分鐘時，主控台提示平移，預填量為超時分鐘以 5 為單位無條件進位（ADR-0022）。
+- 新人儀表板的**延誤** = 上述 `offsetMin` + 超時分鐘；未滿 5 分鐘顯示「一切順利」。
+- 超時與延誤由伺服器在快照中算好（ADR-0007）。
 
 ### 4.4 角色視圖的資料範圍
 | 角色 | 可讀 | 可寫（動作） |
@@ -329,6 +334,15 @@ classDiagram
 | CueRules（`internal/domain`） | `PlanShift` 同時供預覽與正式寫入；Op 由 `internal/store` 在單一交易內寫入並使 `eventVersion + 1` | 固定 Cue、排除勾選、進行中不動、負值時排除已逾時並拒絕早於現在、Fixed 衝突只警告、復原精確 |
 | SnapshotBuilder | 只含該角色可見的 Cue 與欄位；Master 帶完整 CueRole 與維護旗標 | 每種角色的鍵集合；Host 不含 Cue |
 | TokenVerifier | 依序判斷無效 → 已結束 → 有效；儲存層錯誤回錯誤而非「無效」 | 撤銷、過期、時區邊界、資料庫錯誤 |
+
+### 4.6 活動中新增 Cue 與改派角色
+
+Live 階段的規則（ADR-0021）：
+
+- **新增 Cue**：輸入實際要開始的時間、`durationMin`、標題與插入位置（插在哪個 Cue 之後）。輸入的時間存成 `scheduledStart`，`offsetMin = 0`，狀態為 `Pending`；插入位置之後的 Cue `seq` 依序加一，維持唯一、連續。
+- **改派角色**：只能對 `Pending` 的 Cue 新增或移除 CueRole（含 `roleNote`）。
+- 以上都寫入 ActionLog，`type` 不以 `cue.` 開頭（例如 `rundown.insert`、`rundown.assign`），不算「復原上一步」的步驟（ADR-0015）。
+- 新指派的角色在下一次快照收到變更提示（`sync-and-offline.md` 第 2 節）。
 
 ## 5. P1 預留（P0 不實作）
 
