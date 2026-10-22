@@ -236,3 +236,37 @@ func TestSnapshotListsShiftsAndUndosNewestFirst(t *testing.T) {
 		}
 	}
 }
+
+// Undos of advances must not push the latest shift out of the look-back.
+func TestShiftNoticeSurvivesManyAdvanceUndos(t *testing.T) {
+	f := newFixture(t)
+	if err := f.s.IssueToken(ctx, f.stylist, hash("st"), f.masterBy, at(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	v, _, err := f.s.Advance(ctx, f.eventID, f.version(t), f.masterBy, at(10, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	shift := func(cues []domain.Cue) (domain.Op, error) {
+		plan, err := domain.PlanShift(cues, domain.ShiftRequest{FromCueID: f.cueIDs[1], DeltaMin: 10}, at(10, 1))
+		return plan.Op, err
+	}
+	if v, _, err = f.s.ApplyCueOp(ctx, f.eventID, v, f.masterBy, at(10, 1), shift); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < recentShifts+5; i++ {
+		if v, _, err = f.s.Advance(ctx, f.eventID, v, f.masterBy, at(10, 2)); err != nil {
+			t.Fatal(err)
+		}
+		if v, _, err = f.s.UndoLastCueOp(ctx, f.eventID, v, f.masterBy, at(10, 2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d, err := f.s.Snapshot(ctx, hash("st"), at(10, 3))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Shifts) != 1 || !d.Shifts[0].At.Equal(at(10, 1)) {
+		t.Errorf("shifts = %d, want the one shift at 10:01", len(d.Shifts))
+	}
+}
