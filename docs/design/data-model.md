@@ -75,8 +75,9 @@ erDiagram
 | name | text | 例：「新秘」、「婚攝 A」 |
 | type | enum | `Master` / `Stylist` / `Media` / `StageAV` / `VenueLead` / `Reception` / `Cashier` / `Runner` / `Host` |
 | displayOrder | int | |
+| view | enum? | 使用哪種畫面：`HandsFree`（免手持）／`Glance`（快速瞄）／`Dashboard`（平安儀表板）／`Console`（主控台）。未設定時依類型預設：Master → Console、Host → Dashboard、Stylist → HandsFree、其他 → Glance。必須與類型相容：Master 只能 Console、Host 只能 Dashboard，其他類型只能 HandsFree 或 Glance。在建立角色時設定（ADR-0025） |
 
-`type` 決定使用哪種視圖與可做的動作，建立後不可修改。每個活動只有一個 `Master` 角色，在建立活動時產生，不能新增、刪除。一般角色只能在 Draft 階段刪除，刪除時在同一交易內撤銷其 Token 並移除 CueRole。**一個 Role 是一個「位子」**，同一位子可被多支手機同時使用；兩位攝影師就建兩個 Role。
+`type` 決定可做的動作與快照內容，建立後不可修改。每個活動只有一個 `Master` 角色，在建立活動時產生，不能新增、刪除。一般角色只能在 Draft 階段刪除，刪除時在同一交易內撤銷其 Token 並移除 CueRole。**一個 Role 是一個「位子」**，同一位子可被多支手機同時使用；兩位攝影師就建兩個 Role。
 
 ### AccessToken（存取憑證）
 | 欄位 | 型別 | 說明 |
@@ -189,7 +190,7 @@ sequenceDiagram
     participant C as 總召主控台
     participant S as bethere
     participant D as SQLite
-    participant ST as 新秘模式
+    participant ST as 新秘（免手持畫面）
 
     M->>C: 點「+10」
     C->>S: POST 平移試算（起點、+10、排除清單）

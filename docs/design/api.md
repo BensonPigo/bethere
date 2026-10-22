@@ -86,7 +86,8 @@
 | `eventVersion` | 單調遞增整數 |
 | `serverTime` | 產生快照時的伺服器時間 |
 | `eventStatus` | `Draft` 或 `Live`（結束時回 `ended`，不會有快照） |
-| `role` | `{"type":"Stylist","name":"新秘"}`：自己的角色 |
+| `role` | `{"type":"Stylist","name":"新秘","view":"HandsFree"}`：自己的角色；`view` 為解析過預設值後的畫面（ADR-0025，M2a 追加） |
+| `eventDay` | M2a 追加：活動日期與時區 `{"date","timezone"}`，供 Draft 階段判斷「是否為活動日」與顯示日期（`screen-design.md` 4.5，ADR-0020）；Host 同樣帶 |
 
 ### 5.2 Master 快照（另含）
 
@@ -103,7 +104,7 @@
 | 欄位 | 說明 |
 | --- | --- |
 | `cues[]` | **只有指派給自己的 Cue**：`id, seq, title, effectiveStart, durationMin, isFixed, offsetMin, status, notePublic, roleNote`（只有自己的 `roleNote`） |
-| （無 `current`） | 目前進行中的 Cue 只有在指派給自己時才會出現在 `cues[]`（狀態 `InProgress`）；未指派的進行中 Cue 不揭露任何內容。新秘模式在未指派時本來就只顯示「準備中」；M2b 的攝影、音控視圖若需要「目前環節」，屆時由 PO 決定 |
+| （無 `current`） | 目前進行中的 Cue 只有在指派給自己時才會出現在 `cues[]`（狀態 `InProgress`）；未指派的進行中 Cue 不揭露任何內容。免手持畫面在未指派時本來就只顯示「準備中」；M2b 的攝影、音控視圖若需要「目前環節」，屆時由 PO 決定 |
 
 ### 5.4 彙總快照（Host）
 
