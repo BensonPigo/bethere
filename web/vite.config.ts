@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-// tech-stack.md T15/T18: single bundle, shell-only Service Worker, no manifest.
+// tech-stack.md 2.2「框架」「離線外殼」: single bundle, shell-only Service Worker, no manifest.
 export default defineConfig({
   plugins: [
     preact(),
