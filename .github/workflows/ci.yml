@@ -8,9 +8,6 @@ on:
     paths-ignore: ["docs/**", "**.md"]
   pull_request:
     paths-ignore: ["docs/**", "**.md"]
-  # macOS runs only here: weekly, and by hand when needed.
-  schedule:
-    - cron: "0 1 * * 1" # Mondays 09:00 Taipei
   workflow_dispatch:
 
 permissions:
@@ -26,10 +23,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux is production and Windows the development machine. macOS
-        # runners cost ten times as much, so they run only on the weekly
-        # schedule or a manual run.
-        os: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
+        # Linux is production; Windows is a development machine. The other
+        # development machine, macOS, costs ten times as much and runs in
+        # macos.yml.
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
