@@ -132,18 +132,20 @@ sequenceDiagram
 
 ## 5. 以復原碼換發 Master 連結
 
-對應：`access-control.md` 第 2 節；ADR-0003。
+對應：`access-control.md` 第 2 節；ADR-0003、ADR-0018。
 
 ```mermaid
 sequenceDiagram
     autonumber
+    actor O as 備援操作者
     actor M as 當天總召
     participant B as /recover 頁面
     participant S as bethere
     participant D as SQLite
 
-    M->>B: 開啟 /recover（不需 Token）
-    M->>B: 從紙本輸入復原碼
+    M->>O: Master 連結遺失或外流，聯絡備援操作者
+    O->>B: 開啟 /recover（不需 Token）
+    O->>B: 輸入復原碼
     B->>S: POST 換發 Master（復原碼只在本文）
     S->>S: 正規化（忽略空白、連字號與大小寫）後計算雜湊
     S->>D: 以復原碼雜湊查詢活動
@@ -152,6 +154,7 @@ sequenceDiagram
     else 符合
         S->>D: 交易：舊 Master Token 撤銷、建立新的、寫 ActionLog（actor = 復原碼）
         S-->>B: 新 Master 連結（no-store）
+        O->>M: 以 LINE 傳送新的 Master 連結
         Note over M: 外流情況下，到 V4 檢查並重發可疑的角色連結
     end
 ```
