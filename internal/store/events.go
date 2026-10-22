@@ -148,7 +148,18 @@ func guard(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, now time
 
 // guardAs is guard for an actor of the given kind; only the recovery
 // code's own uses ask for actorRecoveryCode (access-control.md section 2).
+//
+// Who acts is settled before the event is read: a cue or role id of
+// another event must fail as cross-event, never as that event having
+// ended, which a client would take as its own event ending (api.md
+// section 6).
 func guardAs(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind actorKind, now time.Time) (domain.Event, int64, error) {
+	if actor.kind != kind || actor.cred == nil {
+		return domain.Event{}, 0, ErrNoActor
+	}
+	if actor.eventID != eventID {
+		return domain.Event{}, 0, ErrCrossEvent
+	}
 	e, v, err := loadEvent(ctx, tx, eventID)
 	if err != nil {
 		return e, v, err
