@@ -17,10 +17,10 @@ gc compute instances add-metadata "$VM" --zone "$ZONE" \
 gc compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --command '
   set -e
   sudo google_metadata_script_runner startup
-  if [ ! -s /var/lib/bethere-e2e/e2e.db ]; then
+  if ! sudo test -s /var/lib/bethere-e2e/e2e.db; then
     sudo -u bethere env BETHERE_INIT=1 timeout 5 /opt/bethere/bethere serve -db /var/lib/bethere-e2e/e2e.db -addr 127.0.0.1:18082 || true
   fi
-  test -s /var/lib/bethere-e2e/e2e.db
+  sudo test -s /var/lib/bethere-e2e/e2e.db
   sudo systemctl restart caddy
   sudo systemctl restart bethere-e2e
   systemctl is-active bethere bethere-e2e caddy'

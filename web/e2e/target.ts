@@ -139,7 +139,7 @@ export async function setUp(count: number): Promise<State> {
       sudo systemctl stop bethere-e2e
       sudo rm -f ${VM_DB} ${VM_DB}-wal ${VM_DB}-shm
       sudo -u bethere env BETHERE_INIT=1 timeout 5 ${VM_BIN} serve -db ${VM_DB} -addr 127.0.0.1:18082 || true
-      test -s ${VM_DB}
+      sudo test -s ${VM_DB}
       sudo systemctl start bethere-e2e`);
     await waitUp(baseURL, true);
     const script = readFileSync(join(HERE, "seed.sh"), "utf8");
