@@ -10,6 +10,13 @@ DOMAIN="$(gc compute instances describe "$VM" --zone "$ZONE" \
   --format='value(metadata.items.bethere-domain)')"
 E2E_DOMAIN="${E2E_DOMAIN:-e2e.$DOMAIN}"
 
+# The startup script below expects backups to be set up; without them the real
+# service would stop starting on its next restart.
+if [ -z "$(gc compute instances describe "$VM" --zone "$ZONE" --format='value(metadata.items.litestream-version)')" ]; then
+  echo "refusing: run ops/gcp/backup-setup.sh first" >&2
+  exit 1
+fi
+
 gc compute instances add-metadata "$VM" --zone "$ZONE" \
   --metadata "bethere-e2e-domain=$E2E_DOMAIN" \
   --metadata-from-file startup-script="$(dirname "$0")/vm-startup.sh"

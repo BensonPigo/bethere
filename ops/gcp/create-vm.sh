@@ -21,7 +21,7 @@ gc compute instances create "$VM" --zone "$ZONE" \
   --service-account "$SA_EMAIL" --scopes cloud-platform \
   --maintenance-policy MIGRATE --restart-on-failure \
   --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
-  --metadata "bethere-version=$VERSION,caddy-version=$CADDY_VERSION,release-bucket=$RELEASE_BUCKET,bethere-domain=$DOMAIN" \
+  --metadata "bethere-version=$VERSION,caddy-version=$CADDY_VERSION,litestream-version=$LITESTREAM_VERSION,release-bucket=$RELEASE_BUCKET,backup-bucket=$BACKUP_BUCKET,bethere-domain=$DOMAIN" \
   --metadata-from-file startup-script="$(dirname "$0")/vm-startup.sh"
 
 echo "https://$DOMAIN/"

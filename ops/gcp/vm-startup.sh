@@ -34,6 +34,31 @@ install_bin() { # name version object
 
 case "$1" in
   bethere) v="$(md bethere-version)"; install_bin bethere "$v" "bethere/$v/bethere" ;;
+  # The real service only: Litestream, its config, and a restore when the
+  # database is missing (tech-stack.md section 3, "服務啟動"). A failed restore
+  # stops here; a restore that finds no backup leaves no file, and bethere
+  # then refuses to start rather than open an empty database (ADR-0012).
+  backup)
+    v="$(md litestream-version)"; install_bin litestream "$v" "litestream/$v/litestream"
+    bucket="$(md backup-bucket)"
+    cat > /etc/litestream.yml.new <<YML
+snapshot:
+  interval: 24h
+  retention: 72h
+dbs:
+  - path: /var/lib/bethere/bethere.db
+    replica:
+      url: gs://$bucket/bethere
+YML
+    mv -f /etc/litestream.yml.new /etc/litestream.yml
+    db=/var/lib/bethere/bethere.db
+    if [ ! -e "$db" ]; then
+      # Leftovers of an earlier crash or interrupted restore; the .tmp may
+      # hold a full copy of the data.
+      rm -f "$db-wal" "$db-shm" "$db-journal" "$db.tmp"
+      runuser -u bethere -- /opt/bethere/litestream restore -config /etc/litestream.yml -if-replica-exists -integrity-check quick "$db"
+      if [ -e "$db" ]; then chmod 600 "$db"; fi
+    fi ;;
   caddy)
     v="$(md caddy-version)"; install_bin caddy "$v" "caddy/$v/caddy"
     printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$(md bethere-domain)" > /etc/caddy/Caddyfile
@@ -55,9 +80,11 @@ After=network-online.target
 [Service]
 User=bethere
 ExecStartPre=+/opt/bethere/prepare.sh bethere
+ExecStartPre=+/opt/bethere/prepare.sh backup
 # The database is never created here (tech-stack.md 2.1「不自動建庫」): the first
-# deployment creates it once with ops/gcp/init-db.sh.
-ExecStart=/opt/bethere/bethere serve -db /var/lib/bethere/bethere.db -addr 127.0.0.1:8080
+# deployment creates it once with ops/gcp/init-db.sh. Litestream copies every
+# write to the backup bucket and stops when bethere stops.
+ExecStart=/opt/bethere/litestream replicate -config /etc/litestream.yml -exec "/opt/bethere/bethere serve -db /var/lib/bethere/bethere.db -addr 127.0.0.1:8080"
 Restart=on-failure
 RestartSec=5
 StartLimitIntervalSec=0

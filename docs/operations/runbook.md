@@ -1,14 +1,15 @@
 # 維運手冊 (Runbook)
 
 > 部署、回退、故障重建與活動前後的檢查。伺服器與主機的技術選擇見 `design/tech-stack.md` 第 3 節；理由見 ADR-0009、ADR-0012、ADR-0013。
-> 正式版才有 Litestream 與維護模式；目前原型尚未實作（RISK-4、RISK-9）。
+> 持續備份（Litestream）已寫進部署腳本；維護模式尚未實作（RISK-4、RISK-9）。
 
 ---
 
 ## 1. 部署與回退
 
 - 部署：`ops/gcp/release.sh` 上傳發行版 → `ops/gcp/deploy.sh <版本>` 改 metadata 並重啟服務。回退是同一個指令帶上一版。
-- 重建：`ops/gcp/create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台。
+- 重建：`ops/gcp/create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原。
+- 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
 - 活動前 7 天起凍結部署。
 
 ```mermaid

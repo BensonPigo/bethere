@@ -9,7 +9,9 @@ VM="${VM:-bethere-1}"
 SA_NAME="bethere-vm"
 SA_EMAIL="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
 RELEASE_BUCKET="${PROJECT}-releases"
+BACKUP_BUCKET="${PROJECT}-backups"
 CADDY_VERSION="2.11.7"
+LITESTREAM_VERSION="0.5.17"
 IAP_RANGE="35.235.240.0/20"
 
 gc() { gcloud --project "$PROJECT" --quiet "$@"; }
