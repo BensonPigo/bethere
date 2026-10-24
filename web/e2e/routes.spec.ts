@@ -200,7 +200,7 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷", async
   const links = event(2);
   const master = await open(browser, links, "總召");
   const media = await open(browser, links, "攝影");
-  await expect(media.locator(".glance-head")).toHaveText("攝影");
+  await expect(media.locator(".glance-head > span")).toHaveText("攝影");
 
   let link = "";
   await test.step("總召重發攝影的連結（US-M-7.1）", async () => {
@@ -222,7 +222,7 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷", async
 
   await test.step("新連結可用", async () => {
     const page = await open(browser, { ...links, 攝影: link.split("#t=")[1] }, "攝影");
-    await expect(page.locator(".glance-head")).toHaveText("攝影");
+    await expect(page.locator(".glance-head > span")).toHaveText("攝影");
   });
 
   await test.step("撤銷後新連結也失效（US-M-7.2）", async () => {
@@ -433,7 +433,7 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     link = await d.locator(".link-text").inputValue();
     await closeDialog(master);
     const phone = await open(browser, { ...links, 新人: link.split("#t=")[1] }, "新人");
-    await expect(phone.locator(".glance-head")).toHaveText("伴娘");
+    await expect(phone.locator(".glance-head > span")).toHaveText("伴娘");
   });
 
   await test.step("預覽新秘看到的畫面，不必另一支手機（US-M-14）", async () => {

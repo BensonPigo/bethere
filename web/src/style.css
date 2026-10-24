@@ -1,11 +1,40 @@
+/* Colours (screen-design.md section 2): dark by default for a dim
+   banquet hall; light for corridors and outdoor glare, chosen per device
+   (theme.ts). Saturated status fills with white text stay the same in both. */
 :root {
   --bg: #111418;
   --fg: #e8eaed;
   --muted: #9aa0a6;
   --card: #1c2027;
   --accent: #8ab4f8;
+  --on-accent: #0b1220;
   --bad: #f28b82;
+  --ok: #81c995;
+  --warn: #fdd663;
+  --line: #3a3f47;
+  --field: #555b63;
+  --btn2: #3c4043;
+  --hi: #1f3a5f;
+  --scrim: rgba(0, 0, 0, 0.88);
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --fg: #111418;
+  --muted: #4d5156;
+  --card: #f1f3f4;
+  --accent: #1a56db;
+  --on-accent: #ffffff;
+  --bad: #b3261e;
+  --ok: #137333;
+  --warn: #8a5a00;
+  --line: #dadce0;
+  --field: #80868b;
+  --btn2: #e3e5e8;
+  --hi: #d2e3fc;
+  --scrim: rgba(255, 255, 255, 0.94);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -37,7 +66,7 @@ button, .button {
   border: 0;
   border-radius: 10px;
   background: var(--accent);
-  color: #0b1220;
+  color: var(--on-accent);
   font: inherit;
   font-weight: 600;
   text-decoration: none;
@@ -45,7 +74,7 @@ button, .button {
 button:disabled { opacity: 0.4; }
 
 .print table { width: 100%; border-collapse: collapse; }
-.print th, .print td { border-bottom: 1px solid #444; padding: 8px; text-align: left; }
+.print th, .print td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
 .print .no-print { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
 .print .no-print a { color: var(--accent); }
 .print .note { font-size: 0.85em; opacity: 0.8; }

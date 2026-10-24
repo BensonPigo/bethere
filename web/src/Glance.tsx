@@ -3,6 +3,7 @@
 import type { Notice, RoleCue, RoleSnapshot, WriteRequest } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";
 import { hasPanel, JobPanel } from "./JobPanels";
+import { ThemeToggle } from "./theme";
 import { delayText, isEarlier, noticeText, noticedCues } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 import { countdownText, inProgressCue, stylistView } from "./roleView";
@@ -97,7 +98,10 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
   return (
     <div class="glance">
       {change && <div class={`change-banner ${isEarlier(change) ? "earlier" : "later"}`}>{noticeText(change, tz)}</div>}
-      <div class="glance-head">{snap.role.name}</div>
+      <div class="glance-head">
+        <span>{snap.role.name}</span>
+        <ThemeToggle />
+      </div>
       {view.kind !== "preDay" && snap.eventStatus === "Live" && (
         <div class="current-line">
           目前：{current ?? "準備中"}

@@ -17,7 +17,7 @@ html, body, #app { height: 100%; }
 .cue .time { font-variant-numeric: tabular-nums; color: var(--muted); }
 .cue .mark { color: var(--muted); font-size: 14px; white-space: nowrap; }
 .cue.completed { opacity: 0.5; }
-.cue.inprogress { background: #1f3a5f; font-weight: 700; }
+.cue.inprogress { background: var(--hi); font-weight: 700; }
 .cue.inprogress .time, .cue.inprogress .mark { color: var(--fg); }
 
 .panel { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
@@ -29,7 +29,7 @@ html, body, #app { height: 100%; }
 .current .next { margin-top: 8px; color: var(--muted); font-size: 18px; }
 
 button.big { flex: 1; min-height: 120px; font-size: 44px; font-weight: 800; border-radius: 16px; }
-button.undo { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #3c4043; color: var(--fg); }
+button.undo { min-height: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--btn2); color: var(--fg); }
 button.undo small { font-weight: 400; color: var(--muted); }
 .reason { color: var(--bad); font-weight: 600; }
 
@@ -50,10 +50,10 @@ button.undo small { font-weight: 400; color: var(--muted); }
 .stylist .target { font-size: 22px; margin-top: 12px; }
 .stylist .status-text { font-size: 20px; margin-top: 4px; opacity: 0.85; }
 .stylist .msg { font-size: 9vw; }
-.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; background: rgba(0, 0, 0, 0.88); color: #fff; font-size: 7vw; font-weight: 700; z-index: 10; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; background: var(--scrim); color: var(--fg); font-size: 7vw; font-weight: 700; z-index: 10; }
 
 /* Status strip of a draft (ADR-0020) and change notices (screen-design.md 4.4). */
-.draft-strip { flex: none; padding: 6px 16px; text-align: center; background: #3c4043; color: var(--fg); font-weight: 600; }
+.draft-strip { flex: none; padding: 6px 16px; text-align: center; background: var(--btn2); color: var(--fg); font-weight: 600; }
 .change-banner { padding: 12px 16px; text-align: center; font-size: 20px; font-weight: 700; border-radius: 10px; margin: 8px; }
 .change-banner.later { background: #174ea6; color: #fff; }
 .change-banner.earlier { background: #0d652d; color: #fff; }
@@ -90,16 +90,16 @@ button.overrun { min-height: 56px; background: #fdd663; color: #111; font-size: 
 .later { font-size: 18px; }
 .original { margin-left: 6px; font-size: 0.6em; font-weight: 600; white-space: nowrap; }
 .original.later { color: var(--accent); }
-.original.earlier { color: #81c995; }
+.original.earlier { color: var(--ok); }
 .preday { width: 100%; max-width: 560px; text-align: left; }
-.preday-row { display: grid; grid-template-columns: 64px 1fr; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid #333; font-size: 18px; }
+.preday-row { display: grid; grid-template-columns: 64px 1fr; gap: 4px 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 18px; }
 .preday-row .note { grid-column: 2; color: var(--muted); font-size: 15px; }
 
 /* The hosts' dashboard (US-H-1): one state, nothing to press. */
 .dashboard { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; padding: 24px; }
 .dashboard .state { font-size: 14vw; font-weight: 800; }
-.dashboard.ok .state { color: #81c995; }
-.dashboard.late .state { color: #fdd663; }
+.dashboard.ok .state { color: var(--ok); }
+.dashboard.late .state { color: var(--warn); }
 .dashboard .current { font-size: 6vw; background: none; }
 
 /* M2b: check-in (US-X-5), StageAV notes (US-X-6.6), skipped cues (US-M-6.5). */
@@ -119,14 +119,14 @@ button.checkin.done { background: #0d652d; color: #fff; }
 .roles-panel { background: var(--card); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
 .roles-panel .label, .role-picker .label { color: var(--muted); font-size: 15px; }
 button.role-row { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 8px; min-height: 48px; text-align: left; background: none; color: var(--fg); }
-.role-row .in { color: #81c995; font-weight: 700; }
+.role-row .in { color: var(--ok); font-weight: 700; }
 .role-row .out { color: var(--muted); }
 .role-row small { color: var(--muted); }
 .dialog .menu { display: flex; flex-direction: column; gap: 12px; }
 .dialog .menu button, .dialog .shift-actions button { min-height: 56px; font-size: 20px; }
 button.danger { background: #8c1d18; color: #fff; }
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 15px; color: var(--muted); }
-.field input, .field textarea, .pick input:not([type]), .link-text { min-height: 44px; font-size: 18px; padding: 6px 10px; border-radius: 8px; border: 1px solid #555; background: var(--bg); color: var(--fg); }
+.field input, .field textarea, .pick input:not([type]), .link-text { min-height: 44px; font-size: 18px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--field); background: var(--bg); color: var(--fg); }
 .field textarea { min-height: 72px; }
 .role-picker { display: flex; flex-direction: column; gap: 6px; }
 .pick { display: grid; grid-template-columns: 140px 1fr; gap: 8px; align-items: center; min-height: 48px; }
@@ -135,7 +135,7 @@ button.danger { background: #8c1d18; color: #fff; }
 .link-text { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 15px; }
 
 /* The preparation (M2c): the rundown editor, the import, new links and the role preview. */
-button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; color: var(--fg); }
+button.edit-rundown, button.role-add { min-height: 52px; background: var(--btn2); color: var(--fg); }
 .editor { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--bg); overflow: auto; }
 .editor-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .editor-head .shift-title { margin-right: auto; }
@@ -143,7 +143,7 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .editor-rows { display: flex; flex-direction: column; gap: 8px; }
 .editor-row { display: grid; grid-template-columns: 120px 100px minmax(140px, 1fr) 150px minmax(120px, 1fr) auto; gap: 6px; align-items: center; background: var(--card); border-radius: 10px; padding: 8px; }
 .editor-row.skipped { opacity: 0.6; }
-.editor-row input:not([type="checkbox"]) { min-height: 44px; font-size: 17px; padding: 4px 8px; border-radius: 8px; border: 1px solid #555; background: var(--bg); color: var(--fg); min-width: 0; }
+.editor-row input:not([type="checkbox"]) { min-height: 44px; font-size: 17px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--field); background: var(--bg); color: var(--fg); min-width: 0; }
 .editor-row .fixed { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .editor-row .row-actions, .editor-row .reason { grid-column: 1 / -1; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -152,14 +152,14 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .link-result { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
 .link-result .qr { align-self: center; background: #fff; padding: 8px; border-radius: 8px; image-rendering: pixelated; }
 .pick small { grid-column: 2; color: var(--muted); font-size: 14px; }
-.import-text { width: 100%; min-height: 160px; font-family: ui-monospace, Menlo, monospace; font-size: 14px; padding: 8px; border-radius: 8px; border: 1px solid #555; background: var(--card); color: var(--fg); }
+.import-text { width: 100%; min-height: 160px; font-family: ui-monospace, Menlo, monospace; font-size: 14px; padding: 8px; border-radius: 8px; border: 1px solid var(--field); background: var(--card); color: var(--fg); }
 .import-preview { border-collapse: collapse; font-size: 15px; }
-.import-preview td { padding: 4px 8px; border-bottom: 1px solid #444; vertical-align: top; }
+.import-preview td { padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .import-preview tr.bad td { color: var(--bad); }
 .missing-roles { display: flex; flex-direction: column; gap: 6px; }
 .missing-roles .pick { grid-template-columns: 140px 140px 1fr; }
 .role-preview { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; background: var(--bg); }
-.role-preview .preview-bar { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; background: var(--accent); color: #000; font-weight: 700; }
+.role-preview .preview-bar { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; background: var(--accent); color: var(--on-accent); font-weight: 700; }
 .role-preview .app { flex: 1; min-height: 0; }
 .editor-row.unsaved { outline: 2px solid var(--accent); }
 .unsaved-note { grid-column: 1 / -1; color: var(--accent); font-weight: 600; }
@@ -179,25 +179,25 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .editor-row .cell.fixed { white-space: normal; align-items: flex-start; gap: 2px; }
 
 /* The four jobs (api.md section 9): panels under the glance screen, the Master's dialog. */
-.current-line .delay.ok { color: #81c995; }
+.current-line .delay.ok { color: var(--ok); }
 .current-line .delay.late { color: var(--bad); font-weight: 700; }
 button.ack { display: block; width: 100%; min-height: 56px; margin-top: 12px; font-size: 22px; }
 button.ack.done { background: #1e4620; color: #fff; }
-.cue .title small.acked { display: block; font-size: 13px; color: #81c995; }
+.cue .title small.acked { display: block; font-size: 13px; color: var(--ok); }
 .job-panel { background: var(--card); border-radius: 12px; padding: 12px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
 .job-panel .label, .jobs-body .label { color: var(--muted); font-size: 15px; }
 .job-panel .empty, .jobs-body .empty { color: var(--muted); }
-.task, .guest { display: flex; align-items: center; gap: 8px; min-height: 52px; border-bottom: 1px solid #2c313a; }
+.task, .guest { display: flex; align-items: center; gap: 8px; min-height: 52px; border-bottom: 1px solid var(--line); }
 .task .task-title, .guest .guest-name { flex: 1; font-size: 18px; }
 .task small { display: block; color: var(--muted); font-size: 13px; }
-.task.mine { background: #1f3a5f; border-radius: 8px; padding: 0 8px; }
+.task.mine { background: var(--hi); border-radius: 8px; padding: 0 8px; }
 .task.other, .task.done { opacity: 0.6; }
 .task-actions { display: flex; gap: 6px; }
 .task button, .guest button { min-height: 44px; min-width: 64px; }
 .done-line { color: var(--muted); font-size: 14px; }
 button.call { min-height: 60px; font-size: 22px; background: #f9ab00; color: #111; }
 .call-state { color: var(--muted); font-size: 15px; }
-input.guest-search { font-size: 22px; min-height: 52px; padding: 0 12px; border-radius: 10px; border: 1px solid #3c4043; background: var(--bg); color: var(--fg); }
+input.guest-search { font-size: 22px; min-height: 52px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--field); background: var(--bg); color: var(--fg); }
 .guest .guest-table { font-size: 22px; font-weight: 700; white-space: nowrap; }
 .guest.arrived .guest-name { opacity: 0.6; }
 .guest .note { color: var(--muted); font-size: 14px; }
@@ -209,16 +209,16 @@ label.check small { color: var(--muted); font-size: 13px; }
 .jobs-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
 .jobs-body .row { display: flex; gap: 8px; }
 .jobs-body .row input { flex: 1; }
-.jobs-body textarea, .jobs-body input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid #3c4043; border-radius: 8px; padding: 8px; }
-.jobs .editor-head button.tab { background: #3c4043; color: var(--fg); }
-.jobs .editor-head button.tab.on { background: var(--accent); color: #0b1220; }
+.jobs-body textarea, .jobs-body input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--field); border-radius: 8px; padding: 8px; }
+.jobs .editor-head button.tab { background: var(--btn2); color: var(--fg); }
+.jobs .editor-head button.tab.on { background: var(--accent); color: var(--on-accent); }
 
 /* Which button is the answer: one filled primary per choice, the way out
    (取消, 關閉, 還沒) in grey, and a venue lead's 收到 outlined so it never
    looks like 我已就位 below it. */
-button.secondary { background: #3c4043; color: var(--fg); }
+button.secondary { background: var(--btn2); color: var(--fg); }
 button.ack:not(.done) { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
-.overlay.ask { background: #000; }
+.overlay.ask { background: var(--bg); }
 
 /* Longer text, a guest's English name or a future translation, wraps
    instead of being cut or pushing the page sideways. */
@@ -229,3 +229,10 @@ input, select { text-overflow: ellipsis; }
 .guest { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto; column-gap: 8px; padding: 4px 0; }
 .guest .note { grid-column: 1 / -1; }
 .guest .guest-table { white-space: normal; text-align: right; overflow-wrap: normal; }
+
+/* The theme toggle (theme.tsx): small, at the edge of the header. */
+button.theme-toggle { min-height: 44px; padding: 8px 12px; font-size: 15px; white-space: nowrap; }
+.glance-head, .panel-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.glance-head > span { margin-right: auto; }
+.panel-head .theme-toggle { margin-left: auto; }
+.stylist > .theme-toggle { position: absolute; right: 12px; bottom: 12px; z-index: 6; }

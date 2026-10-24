@@ -12,6 +12,7 @@ import { ImportDialog, RundownEditor } from "./RundownEditor";
 import type { NewLink } from "./session";
 import { OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
 import { OriginalTime } from "./OriginalTime";
+import { ThemeToggle } from "./theme";
 
 const ICON: Record<CueStatus, string> = { Completed: "✔", InProgress: "▶", Pending: "○", Skipped: "⊘" };
 const STATUS_TEXT: Record<CueStatus, string> = {
@@ -102,6 +103,7 @@ export function Master(props: Props) {
         <div class="panel-head">
           {snap.event.name}・現在 {formatHM(correctedNow, tz)}
           {nextPending && nextPending.offsetMin !== 0 && <span class="offset-all">・目前偏移 {signed(nextPending.offsetMin)} 分</span>}
+          <ThemeToggle />
         </div>
         <div class="current">
           {draft ? (

@@ -8,6 +8,7 @@ import { isEarlier, noticeText, noticedCues } from "./notice";
 import { countdownText, stylistView } from "./roleView";
 import { PreDayList } from "./Glance";
 import { OriginalTime } from "./OriginalTime";
+import { ThemeToggle } from "./theme";
 
 type Props = {
   snap: RoleSnapshot;
@@ -65,6 +66,7 @@ export function HandsFree({ snap, now, skew, change, offline, write, readOnly }:
 
   return (
     <div class={`stylist ${level}`}>
+      <ThemeToggle />
       {change && (
         <div class={`change-banner ${isEarlier(change) ? "earlier" : "later"}`}>
           {change.kind === "shift" && (change.deltaMin < 0 ? "▲ " : "▼ ")}
