@@ -38,7 +38,7 @@
 | `P0`、`P1`、`P2` | 功能優先層級，只用於範圍 | `requirements/scope.md` |
 | `Sev0`、`Sev1`、`Sev2` | 問題嚴重度 | `process/development-process.md` |
 | `V1`～`V5` | 產品原則 | `product/vision.md` |
-| `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`H` 新人、`X` 所有角色 | `requirements/stories/` |
+| `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`H` 新人、`X` 所有角色、`O` 維運（開發者或備援操作者） | `requirements/stories/` |
 | `US-<角色>-<n>.C<m>` | 故事的情境條件 | `requirements/stories/` |
 | `NFR-<n>` | 非功能需求與品質目標 | `requirements/scope.md` 第 4 節 |
 | `ADR-<NNNN>` | 決定（唯一的決定編號） | `adr/` |
@@ -65,7 +65,7 @@ ADR-0017 之前使用的代號，全部退役。同一字母在不同文件意�
 - **RISK-n**：風險清單。
 - **刪除**：已過時或已被其他項目涵蓋，附理由。
 
-另外兩組代號**不退役**，維持原意：里程碑 `M0`～`M3`（含 `M2a`、`M2b`），以及功能優先層級 `P0`～`P2`（`requirements/scope.md` 第 1 節）。
+另外兩組代號**不退役**，維持原意：里程碑 `M0`～`M3`（含 `M2a`、`M2b`、`M2c`、`M2d`、`M3a`、`M3b`），以及功能優先層級 `P0`～`P2`（`requirements/scope.md` 第 1 節）。
 
 下表的檔名是代號**原本**所在的位置，不隨步驟 3 的搬移更新：`requirements/clarification.md` 現在是 `archive/clarification.md`，`architecture/architecture-overview.md` 現在是 `architecture/overview.md`，`requirements/m1-acceptance.md` 現在是 `requirements/stories/m1.md`。
 
