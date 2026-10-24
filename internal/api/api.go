@@ -43,6 +43,16 @@ type Store interface {
 	EditCue(ctx context.Context, eventID, expectVersion, cueID int64, title string, notePublic *string, actor store.Actor, now time.Time) error
 	ReissueLink(ctx context.Context, eventID, roleID int64, tokenHash []byte, actor store.Actor, now time.Time) error
 	RevokeLink(ctx context.Context, eventID, roleID int64, actor store.Actor, now time.Time) error
+	// The preparation (M2c).
+	UpdateCue(ctx context.Context, eventID, expectVersion int64, u store.CueUpdate, actor store.Actor, now time.Time) error
+	MoveCue(ctx context.Context, eventID, expectVersion, cueID, afterCueID int64, actor store.Actor, now time.Time) error
+	DeleteCue(ctx context.Context, eventID, expectVersion, cueID int64, actor store.Actor, now time.Time) error
+	ReplaceRundown(ctx context.Context, eventID, expectVersion int64, rows []store.ImportRow, newRoles []store.NewRole,
+		actor store.Actor, now time.Time) error
+	CreateRole(ctx context.Context, eventID int64, nr store.NewRole, tokenHash []byte, actor store.Actor, now time.Time) (int64, error)
+	RenameRole(ctx context.Context, eventID, roleID int64, name string, actor store.Actor, now time.Time) error
+	DeleteRole(ctx context.Context, eventID, expectVersion, roleID int64, actor store.Actor, now time.Time) error
+	PreviewSnapshot(ctx context.Context, tokenHash []byte, roleID int64, now time.Time) (store.TokenOwner, store.SnapshotData, error)
 }
 
 const (
@@ -94,8 +104,18 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/cues/insert", a.write(capEditRundown, insertFields, a.insert))
 	mux.HandleFunc("POST /api/cues/roles", a.write(capEditRundown, assignFields, a.assign))
 	mux.HandleFunc("POST /api/cues/edit", a.write(capEditRundown, editFields, a.edit))
-	mux.HandleFunc("POST /api/roles/reissue", a.write(capLinks, linkFields, a.reissue))
+	mux.HandleFunc("POST /api/roles/reissue", a.write(capLinks, reissueFields, a.reissue))
 	mux.HandleFunc("POST /api/roles/revoke", a.write(capLinks, linkFields, a.revoke))
+	// The preparation (M2c).
+	mux.HandleFunc("POST /api/cues/update", a.write(capEditRundown, updateFields, a.updateCue))
+	mux.HandleFunc("POST /api/cues/move", a.write(capEditRundown, moveFields, a.moveCue))
+	mux.HandleFunc("POST /api/cues/delete", a.write(capEditRundown, deleteCueFields, a.deleteCue))
+	mux.HandleFunc("POST /api/rundown/import/preview", a.previewImport)
+	mux.HandleFunc("POST /api/rundown/import", a.write(capEditRundown, importFields, a.importRundown))
+	mux.HandleFunc("POST /api/roles/add", a.write(capLinks, addRoleFields, a.addRole))
+	mux.HandleFunc("POST /api/roles/rename", a.write(capLinks, renameFields, a.renameRole))
+	mux.HandleFunc("POST /api/roles/delete", a.write(capLinks, deleteRoleFields, a.deleteRole))
+	mux.HandleFunc("POST /api/roles/preview", a.previewRole)
 }
 
 // LastSeen returns when the link with this access_tokens.id last passed
@@ -125,8 +145,8 @@ const (
 	capShift // the shift and its preview
 	capCheckIn
 	capProxyCheckIn
-	capEditRundown // skip, insert, assign, edit
-	capLinks       // reissue, revoke
+	capEditRundown // skip, insert, assign, edit; M2c: update, move, delete, the import and its preview
+	capLinks       // reissue, revoke; M2c: add, rename, delete and preview a role
 )
 
 // allowed is the table of api.md section 4. It lists what is allowed;
@@ -204,9 +224,17 @@ func etag(body []byte, serverTime string) string {
 }
 
 // writeFn performs one write as owner with the client's version and body.
-// A reissue returns the new link's token, sent once with the snapshot;
-// every other write returns "".
-type writeFn func(ctx context.Context, owner store.TokenOwner, b body, now time.Time) (token string, err error)
+// A reissue or a new role returns the new link, sent once with the
+// snapshot; every other write returns the zero link.
+type writeFn func(ctx context.Context, owner store.TokenOwner, b body, now time.Time) (link, error)
+
+// link is a new link of a role: its token, its QR code when an origin was
+// given, and the role's id when the role is new (api.md section 3).
+type link struct {
+	token  string
+	qr     string
+	roleID int64
+}
 
 func (a *API) write(c capability, fields fieldSet, fn writeFn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -233,76 +261,83 @@ func (a *API) write(c capability, fields fieldSet, fn writeFn) http.HandlerFunc 
 			writeError(w, http.StatusBadRequest, "bad_request")
 			return
 		}
-		token, err := fn(r.Context(), owner, b, a.now())
+		l, err := fn(r.Context(), owner, b, a.now())
 		switch {
 		case err == nil:
-			a.respondSnapshot(w, r, hash, http.StatusOK, "", token)
+			a.respondSnapshot(w, r, hash, http.StatusOK, "", l)
 		case errors.Is(err, store.ErrVersionConflict):
-			a.respondSnapshot(w, r, hash, http.StatusConflict, "version_conflict", "")
+			a.respondSnapshot(w, r, hash, http.StatusConflict, "version_conflict", link{})
+		case errors.Is(err, errBadOrigin):
+			writeError(w, http.StatusBadRequest, "bad_request")
 		default:
 			a.writeFailed(w, r, err)
 		}
 	}
 }
 
-func (a *API) advance(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+func (a *API) advance(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	_, _, err := a.store.Advance(ctx, o.EventID, b.version, o.Actor, now)
-	return "", err
+	return link{}, err
 }
 
-func (a *API) undo(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+func (a *API) undo(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	_, _, err := a.store.UndoLastCueOp(ctx, o.EventID, b.version, o.Actor, now)
-	return "", err
+	return link{}, err
 }
 
 // checkIn is a role's own check-in: the role comes from the token alone
 // (access-control.md section 5, rule 3).
-func (a *API) checkIn(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
-	return "", a.store.SetCheckIn(ctx, o.EventID, o.RoleID, b.checkedIn, o.Actor, now)
+func (a *API) checkIn(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
+	return link{}, a.store.SetCheckIn(ctx, o.EventID, o.RoleID, b.checkedIn, o.Actor, now)
 }
 
 // proxyCheckIn is the Master checking a role in or out (US-M-1.8).
-func (a *API) proxyCheckIn(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
-	return "", a.store.SetCheckIn(ctx, o.EventID, b.roleID, b.checkedIn, o.Actor, now)
+func (a *API) proxyCheckIn(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
+	return link{}, a.store.SetCheckIn(ctx, o.EventID, b.roleID, b.checkedIn, o.Actor, now)
 }
 
-func (a *API) skip(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+func (a *API) skip(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	_, _, err := a.store.Skip(ctx, o.EventID, b.version, b.cueID, o.Actor, now)
-	return "", err
+	return link{}, err
 }
 
-func (a *API) insert(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+func (a *API) insert(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	_, err := a.store.InsertCue(ctx, o.EventID, b.version, store.NewCue{
 		AfterCueID: b.afterCueID, Start: b.start, DurationMin: b.durationMin,
 		Title: b.title, NotePublic: b.notePublic, Roles: b.roles,
 	}, o.Actor, now)
-	return "", err
+	return link{}, err
 }
 
-func (a *API) assign(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
-	return "", a.store.SetCueRoles(ctx, o.EventID, b.version, b.cueID, b.roles, o.Actor, now)
+func (a *API) assign(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
+	return link{}, a.store.SetCueRoles(ctx, o.EventID, b.version, b.cueID, b.roles, o.Actor, now)
 }
 
-func (a *API) edit(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
-	return "", a.store.EditCue(ctx, o.EventID, b.version, b.cueID, b.title, b.notePublic, o.Actor, now)
+func (a *API) edit(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
+	return link{}, a.store.EditCue(ctx, o.EventID, b.version, b.cueID, b.title, b.notePublic, o.Actor, now)
 }
 
-// reissue gives a role a new link; its token is in this response only
-// (US-M-7.1). If reading the snapshot afterwards fails, the token is lost
+// reissue gives a role a new link; its token, and its QR code when the
+// client sent its origin (M2c), are in this response only (US-M-7.1,
+// US-M-13.1). If reading the snapshot afterwards fails, the token is lost
 // and the Master reissues again; the old link is gone either way.
-func (a *API) reissue(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+func (a *API) reissue(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	token, err := auth.NewToken()
 	if err != nil {
-		return "", err
+		return link{}, err
+	}
+	qr, err := linkQR(b.origin, token)
+	if err != nil {
+		return link{}, err
 	}
 	if err := a.store.ReissueLink(ctx, o.EventID, b.roleID, auth.HashToken(token), o.Actor, now); err != nil {
-		return "", err
+		return link{}, err
 	}
-	return token, nil
+	return link{token: token, qr: qr}, nil
 }
 
-func (a *API) revoke(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
-	return "", a.store.RevokeLink(ctx, o.EventID, b.roleID, o.Actor, now)
+func (a *API) revoke(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
+	return link{}, a.store.RevokeLink(ctx, o.EventID, b.roleID, o.Actor, now)
 }
 
 // respondSnapshot reads the caller's snapshot again after a write or a
@@ -310,7 +345,7 @@ func (a *API) revoke(ctx context.Context, o store.TokenOwner, b body, now time.T
 // GET. Only an "ok" read is sent with the write's status; "invalid" or
 // "ended" is sent as that result instead, and a failed read as 500, so a
 // response never carries both an error and a result.
-func (a *API) respondSnapshot(w http.ResponseWriter, r *http.Request, hash []byte, status int, code, token string) {
+func (a *API) respondSnapshot(w http.ResponseWriter, r *http.Request, hash []byte, status int, code string, l link) {
 	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
 	defer cancel()
 	now := a.now()
@@ -330,8 +365,15 @@ func (a *API) respondSnapshot(w http.ResponseWriter, r *http.Request, hash []byt
 		a.internal(w, r, err)
 		return
 	}
-	if code == "" && token != "" {
-		writeJSON(w, status, reissueResponse{Result: "ok", Snapshot: snap, Token: token})
+	if code == "" && l.token != "" {
+		res := linkResponse{Result: "ok", Snapshot: snap, Token: l.token}
+		if l.roleID != 0 {
+			res.RoleID = &l.roleID
+		}
+		if l.qr != "" {
+			res.QR = &l.qr
+		}
+		writeJSON(w, status, res)
 		return
 	}
 	if code == "" {
@@ -373,6 +415,11 @@ var domainErrors = []struct {
 	{store.ErrInvalidCue, "invalid_cue"},
 	{store.ErrInvalidAssignment, "invalid_assignment"},
 	{store.ErrMasterRole, "master_role"},
+	{store.ErrInvalidRole, "invalid_role"},
+	{store.ErrDuplicateName, "duplicate_name"},
+	{store.ErrTooManyRoles, "too_many_roles"},
+	{store.ErrInvalidImport, "invalid_import"},
+	{store.ErrLockedOnEventDay, "locked_on_event_day"},
 }
 
 // writeFailed maps a failed write (api.md section 6). The writes of M1

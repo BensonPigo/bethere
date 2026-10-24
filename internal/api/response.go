@@ -18,12 +18,16 @@ type okResponse struct {
 	Snapshot any    `json:"snapshot"`
 }
 
-// reissueResponse is the one response that carries a new link's token
-// (US-M-7.1); the client keeps only the snapshot.
-type reissueResponse struct {
-	Result   string `json:"result"` // "ok"
-	Snapshot any    `json:"snapshot"`
-	Token    string `json:"token"`
+// linkResponse is the one response that carries a new link's token: a
+// reissue (US-M-7.1) or a new role (US-M-11.2), with its QR code when the
+// client sent its origin and the new role's id (M2c). The client keeps
+// only the snapshot.
+type linkResponse struct {
+	Result   string  `json:"result"` // "ok"
+	Snapshot any     `json:"snapshot"`
+	RoleID   *int64  `json:"roleId,omitempty"`
+	Token    string  `json:"token"`
+	QR       *string `json:"qr,omitempty"`
 }
 
 type errorResponse struct {

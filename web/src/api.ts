@@ -6,7 +6,8 @@ export type CueStatus = "Pending" | "InProgress" | "Completed" | "Skipped";
 // The screen a link opens, set per role (ADR-0025).
 export type View = "Console" | "HandsFree" | "Glance" | "Dashboard";
 
-export type RoleInfo = { type: string; name: string; view: View };
+// checksIn: whether the role checks in (M2c); absent in a snapshot saved by an older release.
+export type RoleInfo = { type: string; name: string; view: View; checksIn?: boolean };
 
 type SnapshotBase = {
   eventVersion: number;
@@ -39,6 +40,8 @@ export type MasterRole = {
   id: string | number;
   name: string;
   type: string;
+  view?: View; // M2c
+  checksIn?: boolean; // M2c
   checkedIn: boolean;
   lastSeenAt: string | null; // to the minute (api.md 5.2)
   hasLink: boolean;
@@ -123,13 +126,26 @@ export type ShiftPreview = {
 export type Assignment = { roleId: string | number; roleNote: string | null };
 
 export type NewCue = {
-  afterCueId: string | number;
+  afterCueId: string | number | null; // null: first, in draft only (M2c)
   start: string; // RFC 3339
   durationMin: number;
   title: string;
   notePublic: string | null;
   roles: Assignment[];
 };
+
+// The whole editable part of a draft cue (US-M-10.2).
+export type CueUpdate = {
+  cueId: string | number;
+  start: string; // RFC 3339
+  durationMin: number;
+  isFixed: boolean;
+  title: string;
+  notePublic: string | null;
+};
+
+// A role the Master adds: a name, a screen and whether it checks in (US-M-11.1).
+export type NewRole = { name: string; view: "HandsFree" | "Glance" | "Dashboard"; checksIn: boolean };
 
 export type WriteRequest =
   | { path: "/api/cues/advance" | "/api/cues/undo" }
@@ -141,7 +157,16 @@ export type WriteRequest =
   // No version: check-ins and links are not cues (ADR-0023).
   | { path: "/api/checkin"; checkedIn: boolean }
   | { path: "/api/roles/checkin"; roleId: string | number; checkedIn: boolean }
-  | { path: "/api/roles/reissue" | "/api/roles/revoke"; roleId: string | number };
+  | { path: "/api/roles/reissue"; roleId: string | number; origin?: string }
+  | { path: "/api/roles/revoke"; roleId: string | number }
+  // The preparation (M2c).
+  | { path: "/api/cues/update"; cue: CueUpdate }
+  | { path: "/api/cues/move"; cueId: string | number; afterCueId: string | number | null }
+  | { path: "/api/cues/delete"; cueId: string | number }
+  | { path: "/api/rundown/import"; text: string; newRoles: NewRole[] }
+  | { path: "/api/roles/add"; role: NewRole; origin: string }
+  | { path: "/api/roles/rename"; roleId: string | number; name: string }
+  | { path: "/api/roles/delete"; roleId: string | number };
 
 // writeBody is the JSON body of a write (api.md section 3).
 export function writeBody(w: WriteRequest, version: number): Record<string, unknown> {
@@ -164,8 +189,23 @@ export function writeBody(w: WriteRequest, version: number): Record<string, unkn
     case "/api/roles/checkin":
       return { roleId: w.roleId, checkedIn: w.checkedIn };
     case "/api/roles/reissue":
+      return w.origin ? { roleId: w.roleId, origin: w.origin } : { roleId: w.roleId };
     case "/api/roles/revoke":
       return { roleId: w.roleId };
+    case "/api/cues/update":
+      return { version, ...w.cue };
+    case "/api/cues/move":
+      return { version, cueId: w.cueId, afterCueId: w.afterCueId };
+    case "/api/cues/delete":
+      return { version, cueId: w.cueId };
+    case "/api/rundown/import":
+      return { version, text: w.text, newRoles: w.newRoles };
+    case "/api/roles/add":
+      return { ...w.role, origin: w.origin };
+    case "/api/roles/rename":
+      return { roleId: w.roleId, name: w.name };
+    case "/api/roles/delete":
+      return { version, roleId: w.roleId };
   }
 }
 
@@ -173,11 +213,14 @@ export function writeBody(w: WriteRequest, version: number): Record<string, unkn
 export type Outcome =
   | { kind: "invalid" }
   | { kind: "ended" }
-  // token: only in a reissue's response, never stored (US-M-7.1).
-  | { kind: "ok"; snapshot: Snapshot; token?: string; etag?: string }
+  // token, qr, roleId: only in a reissue's or a new role's response, never
+  // stored (US-M-7.1, US-M-11.2, US-M-13.2).
+  | { kind: "ok"; snapshot: Snapshot; token?: string; qr?: string; roleId?: string | number; etag?: string }
   // 304 to a conditional GET: keep the snapshot, only resync the clock (api.md 5.7).
   | { kind: "notModified"; serverTime: string }
-  | { kind: "preview"; preview: ShiftPreview }
+  // A shift, import or role preview; never a snapshot of the caller's own,
+  // so it is never stored (api.md section 3). The caller knows which.
+  | { kind: "preview"; preview: unknown }
   | { kind: "conflict"; snapshot: Snapshot | null }
   | { kind: "rejected"; error: string } // 422 domain rule
   | { kind: "failure" }; // anything else: offline-like, never wipes data
@@ -208,13 +251,15 @@ export function classifyResponse(status: number, contentType: string | null, bod
   if (status === 200) {
     if (json.result === "invalid") return { kind: "invalid" };
     if (json.result === "ended") return { kind: "ended" };
-    if (json.result === "ok" && isObject(json.preview)) {
-      return { kind: "preview", preview: json.preview as unknown as ShiftPreview };
-    }
+    if (json.result === "ok" && isObject(json.preview)) return { kind: "preview", preview: json.preview };
     if (json.result === "ok") {
       const snapshot = asSnapshot(json.snapshot);
       if (!snapshot) return { kind: "failure" };
-      return typeof json.token === "string" ? { kind: "ok", snapshot, token: json.token } : { kind: "ok", snapshot };
+      if (typeof json.token !== "string") return { kind: "ok", snapshot };
+      const o: Outcome = { kind: "ok", snapshot, token: json.token };
+      if (typeof json.qr === "string" && json.qr.startsWith("data:image/png;base64,")) o.qr = json.qr;
+      if (typeof json.roleId === "number" || typeof json.roleId === "string") o.roleId = json.roleId;
+      return o;
     }
     return { kind: "failure" };
   }
@@ -283,3 +328,32 @@ export const postWrite = (token: string, w: WriteRequest, version: number) =>
 
 export const postShiftPreview = (token: string, shift: ShiftRequest) =>
   request("POST", "/api/cues/shift/preview", token, shift);
+
+// The pasted import checked without writing (US-M-12.2).
+export type ImportRow = {
+  line: number;
+  seq: number;
+  title: string;
+  start: string; // HH:MM
+  durationMin: number;
+  isFixed: boolean;
+  roles: string[];
+  roleNote: string | null;
+  notePublic: string | null;
+  errors: string[];
+};
+
+export type ImportPreview = {
+  fileError: string | null;
+  rows: ImportRow[];
+  missingRoles: string[];
+  tooManyRoles: boolean;
+  replaces: number;
+};
+
+export const postImportPreview = (token: string, text: string) =>
+  request("POST", "/api/rundown/import/preview", token, { text });
+
+// Another role's own snapshot, shown to the Master only (US-M-14).
+export const postRolePreview = (token: string, roleId: string | number) =>
+  request("POST", "/api/roles/preview", token, { roleId });

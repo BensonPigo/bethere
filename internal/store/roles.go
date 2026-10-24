@@ -144,6 +144,7 @@ type TokenOwner struct {
 	RoleType domain.RoleType
 	RoleName string
 	View     domain.View // resolved: the stored screen or the type's default
+	ChecksIn bool        // resolved: the type checks in and the Master did not choose "no check-in" (M2c)
 	Actor    Actor
 }
 
@@ -169,13 +170,14 @@ func (s *Store) LookupToken(ctx context.Context, tokenHash []byte, now time.Time
 // is and never as ErrInvalidToken (tech-stack.md 2.1「逾時與錯誤」).
 func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time) (TokenOwner, domain.Event, int64, error) {
 	var (
-		o    TokenOwner
-		view sql.NullString
+		o         TokenOwner
+		view      sql.NullString
+		noCheckIn bool
 	)
-	err := tx.QueryRowContext(ctx, `SELECT t.id, r.id, r.event_id, r.type, r.name, r.view
+	err := tx.QueryRowContext(ctx, `SELECT t.id, r.id, r.event_id, r.type, r.name, r.view, r.checks_in IS NOT NULL
 		FROM access_tokens t JOIN roles r ON r.id = t.role_id
 		WHERE t.token_hash = ? AND t.revoked_at IS NULL`, tokenHash).
-		Scan(&o.TokenID, &o.RoleID, &o.EventID, &o.RoleType, &o.RoleName, &view)
+		Scan(&o.TokenID, &o.RoleID, &o.EventID, &o.RoleType, &o.RoleName, &view, &noCheckIn)
 	if errors.Is(err, sql.ErrNoRows) {
 		// database/sql reports a context cancelled before the row was read
 		// as the context's error, not ErrNoRows; checking ctx as well keeps
@@ -189,6 +191,7 @@ func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Ti
 		return TokenOwner{}, domain.Event{}, 0, err
 	}
 	o.View = resolveView(o.RoleType, view)
+	o.ChecksIn = o.RoleType.ChecksIn(noCheckIn)
 	e, v, err := loadEvent(ctx, tx, o.EventID)
 	if err != nil {
 		return TokenOwner{}, domain.Event{}, 0, err

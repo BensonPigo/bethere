@@ -90,12 +90,16 @@ func (s *Store) ImportRundown(ctx context.Context, eventID int64, rows []ImportR
 		if err != nil {
 			return err
 		}
-		cues, assigned, err := checkRundown(e, rows, roles)
+		v, err := checkRundown(e, rows, roles)
 		if err != nil {
 			return err
 		}
-		for i, c := range cues {
-			row := rows[i]
+		ids := map[string]int64{}
+		for _, r := range roles {
+			ids[r.Name] = r.ID
+		}
+		for i, c := range v.cues {
+			row := v.rows[i]
 			res, err := tx.ExecContext(ctx, `INSERT INTO cues (event_id, seq, title, scheduled_start, duration_min, is_fixed, note_public)
 				VALUES (?, ?, ?, ?, ?, ?, ?)`,
 				eventID, c.Seq, c.Title, toNS(c.ScheduledStart), c.DurationMin, c.IsFixed, nullText(row.Note))
@@ -106,14 +110,14 @@ func (s *Store) ImportRundown(ctx context.Context, eventID int64, rows []ImportR
 			if err != nil {
 				return err
 			}
-			for _, roleID := range assigned[i] {
+			for _, name := range row.Roles {
 				if _, err := tx.ExecContext(ctx, `INSERT INTO cue_roles (cue_id, role_id, role_note) VALUES (?, ?, ?)`,
-					cueID, roleID, nullText(row.RoleNote)); err != nil {
+					cueID, ids[name], nullText(row.RoleNote)); err != nil {
 					return err
 				}
 			}
 		}
-		if err := logAction(ctx, tx, eventID, actor, "import-rundown", map[string]any{"cues": len(cues)}, now); err != nil {
+		if err := logAction(ctx, tx, eventID, actor, "import-rundown", map[string]any{"cues": len(v.cues)}, now); err != nil {
 			return err
 		}
 		_, err = bumpVersion(ctx, tx, eventID)
@@ -121,88 +125,134 @@ func (s *Store) ImportRundown(ctx context.Context, eventID int64, rows []ImportR
 	})
 }
 
-// checkRundown validates every row against the event and its roles and
-// returns the cues to insert with the role ids of each, or a
-// *RundownError naming every invalid row.
-func checkRundown(e domain.Event, rows []ImportRow, roles []RoleInfo) ([]domain.Cue, [][]int64, error) {
-	byName := map[string][]int64{}
-	for _, r := range roles {
-		byName[r.Name] = append(byName[r.Name], r.ID)
+// checkRundown is the command's import: every role must exist already
+// (US-M-0.2), and an invalid row fails the whole file as a *RundownError.
+func checkRundown(e domain.Event, rows []ImportRow, roles []RoleInfo) (validated, error) {
+	v := validateRows(e, rows, roles, false)
+	var problems []RowProblem
+	for i, ps := range v.problems {
+		for _, p := range ps {
+			problems = append(problems, RowProblem{Line: rows[i].Line, Reason: p})
+		}
 	}
-	var (
-		problems []RowProblem
-		seqLine  = map[int]int{}
-		cues     = make([]domain.Cue, len(rows))
-		assigned = make([][]int64, len(rows))
-	)
 	if len(rows) == 0 {
-		return nil, nil, &RundownError{Problems: []RowProblem{{Line: 1, Reason: "the file has no cue rows"}}}
+		problems = append(problems, RowProblem{Line: 1, Reason: "沒有任何環節列"})
 	}
+	if len(problems) > 0 {
+		slices.SortStableFunc(problems, func(a, b RowProblem) int { return a.Line - b.Line })
+		return validated{}, &RundownError{Problems: problems}
+	}
+	return v, nil
+}
+
+// validated is a checked rundown: the problems of each row in the order
+// given, and the cues to write with their rows, ordered by seq.
+type validated struct {
+	problems [][]string
+	missing  []string // role names no role of the event has, when allowed
+	cues     []domain.Cue
+	rows     []ImportRow
+}
+
+// validateRows is the one set of rules of both imports (api.md section 3
+// 「貼上匯入」): the limits of a cue added by the Master, unique seqs, and
+// role names matched against every role of the event, the Master
+// included. A name of the Master or Host is a bad row, since they are
+// never assigned cues; a name no role has is a bad row for the command,
+// and a role to create for the pasted import (allowMissing) if it is a
+// valid role name. Messages are for the Master to read.
+func validateRows(e domain.Event, rows []ImportRow, roles []RoleInfo, allowMissing bool) validated {
+	byName := map[string][]RoleInfo{}
+	for _, r := range roles {
+		byName[r.Name] = append(byName[r.Name], r)
+	}
+	v := validated{problems: make([][]string, len(rows))}
+	seqLine := map[int]int{}
+	missing := map[string]bool{}
+	cues := make([]domain.Cue, len(rows))
 	for i, row := range rows {
 		bad := func(format string, args ...any) {
-			problems = append(problems, RowProblem{Line: row.Line, Reason: fmt.Sprintf(format, args...)})
+			v.problems[i] = append(v.problems[i], fmt.Sprintf(format, args...))
 		}
-		// A row the caller could not read is already refused; its fields
+		// A row the reader could not read is already refused; its fields
 		// are not checked again, so one mistake is listed once. Checks
-		// across rows and against the database run for every row.
+		// across rows and against the roles run for every row.
 		if len(row.Problems) > 0 {
 			for _, p := range row.Problems {
 				bad("%s", p)
 			}
 		} else {
 			if row.Seq < 1 {
-				bad("seq must be a positive integer")
+				bad("seq 必須是正整數")
 			}
-			if strings.TrimSpace(row.Title) == "" {
-				bad("title is required")
+			if _, ok := domain.CleanTitle(row.Title); !ok {
+				bad("title 必填，最多 %d 字", domain.MaxTitleRunes)
 			}
 			if row.DurationMin < 0 || row.DurationMin > MaxCueDurationMin {
-				bad("duration_min must be an integer from 0 to %d", MaxCueDurationMin)
+				bad("duration_min 必須是 0 到 %d 的整數", MaxCueDurationMin)
 			}
 			if row.StartHour < 0 || row.StartHour > 23 || row.StartMinute < 0 || row.StartMinute > 59 {
-				bad("start must be HH:MM (00:00 to 23:59)")
+				bad("start 必須是 HH:MM（00:00 到 23:59）")
+			}
+			for _, note := range []struct{ name, text string }{{"role_note", row.RoleNote}, {"note", row.Note}} {
+				if t := note.text; !domain.ValidNote(&t) {
+					bad("%s 最多 %d 字", note.name, domain.MaxNoteRunes)
+				}
 			}
 		}
 		if row.Seq >= 1 {
 			if first, dup := seqLine[row.Seq]; dup {
-				bad("seq %d repeats line %d", row.Seq, first)
+				bad("seq %d 與第 %d 列重複", row.Seq, first)
 			} else {
 				seqLine[row.Seq] = row.Line
 			}
 		}
 		seen := map[string]bool{}
 		for _, name := range row.Roles {
-			switch ids := byName[name]; {
+			switch found := byName[name]; {
 			case name == "":
-				bad("roles has an empty role name")
+				bad("roles 有空白的角色名稱")
 			case seen[name]:
-				bad("role %q is listed twice", name)
-			case len(ids) == 0:
-				bad("role %q does not exist", name)
-			case len(ids) > 1:
-				bad("role name %q is used by %d roles", name, len(ids))
+				bad("角色「%s」列了兩次", name)
+			case len(found) > 1:
+				bad("有 %d 個角色都叫「%s」", len(found), name)
+			case len(found) == 1 && !found[0].Type.HasOwnCues():
+				bad("角色「%s」不能被指派環節（總召看全部、新人只看儀表板）", name)
+			case len(found) == 1:
+			case !allowMissing:
+				bad("角色「%s」不存在", name)
 			default:
-				assigned[i] = append(assigned[i], ids[0])
+				if _, ok := domain.CleanRoleName(name); !ok {
+					bad("角色名稱「%s」不合法：最多 %d 字，不能含分號或看不見的字元", name, domain.MaxRoleNameRunes)
+				} else if !missing[name] {
+					missing[name] = true
+					v.missing = append(v.missing, name)
+				}
 			}
 			seen[name] = true
 		}
 		cues[i] = domain.Cue{
 			Seq:   row.Seq,
-			Title: row.Title,
+			Title: strings.TrimSpace(row.Title),
 			ScheduledStart: time.Date(e.Date.Year, e.Date.Month, e.Date.Day,
 				row.StartHour, row.StartMinute, 0, 0, e.Location),
 			DurationMin: row.DurationMin,
 			IsFixed:     row.Fixed,
 		}
 		if !domain.InRange(cues[i].ScheduledStart) {
-			bad("start is outside the supported years")
+			bad("start 超出支援的年份")
 		}
 	}
-	if len(problems) > 0 {
-		slices.SortStableFunc(problems, func(a, b RowProblem) int { return a.Line - b.Line })
-		return nil, nil, &RundownError{Problems: problems}
+	order := make([]int, len(rows))
+	for i := range order {
+		order[i] = i
 	}
-	return cues, assigned, nil
+	slices.SortStableFunc(order, func(a, b int) int { return rows[a].Seq - rows[b].Seq })
+	for _, i := range order {
+		v.cues = append(v.cues, cues[i])
+		v.rows = append(v.rows, rows[i])
+	}
+	return v
 }
 
 func nullText(s string) any {

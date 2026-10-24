@@ -16,15 +16,17 @@ type Props = {
   change: Notice | null;
   offline: boolean;
   write: (w: WriteRequest) => Promise<boolean>;
+  // The Master's preview of this role: shown, never pressed (US-M-14.3).
+  readOnly?: boolean;
 };
 
-export function HandsFree({ snap, now, skew, change, offline, write }: Props) {
+export function HandsFree({ snap, now, skew, change, offline, write, readOnly }: Props) {
   const view = stylistView(snap, now, skew);
   const wake = useWakeLock();
   const tz = snap.eventDay?.timezone || DEFAULT_TZ;
   // US-ST-2.2: the countdown flashes when the change is about the cue it counts to.
   const flash = view.kind === "countdown" && noticedCues(change).has(String(view.target.id));
-  const ask = useCheckInQuestion(snap, offline);
+  const ask = useCheckInQuestion(snap, offline || !!readOnly);
 
   let body;
   let level = "calm";
@@ -94,7 +96,7 @@ export function HandsFree({ snap, now, skew, change, offline, write }: Props) {
           <small>{wake.supported ? "按任一個都會保持螢幕常亮" : "此瀏覽器不支援螢幕常亮，請把手機的自動鎖定調長"}</small>
         </div>
       ) : (
-        !wake.held && (
+        !readOnly && !wake.held && (
           <div class="overlay" onClick={wake.request} role="button">
             {wake.supported ? "點一下，保持螢幕常亮" : "此瀏覽器不支援螢幕常亮，請把手機的自動鎖定調長；點一下關閉此提示"}
           </div>
@@ -136,7 +138,8 @@ function useCheckInQuestion(snap: RoleSnapshot, offline: boolean) {
       /* asked again next time */
     }
   };
-  return { open: !asked && !offline && !(snap.myCheckIn ?? false), done };
+  // A role the Master set to "no check-in" is never asked (M2c).
+  return { open: !asked && !offline && snap.role.checksIn !== false && !(snap.myCheckIn ?? false), done };
 }
 
 // US-ST-1.6: request on tap; re-show the overlay whenever the lock is not held.

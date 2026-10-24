@@ -639,7 +639,7 @@ func TestSnapshotKeySets(t *testing.T) {
 	m := r.snapshot(t)
 	wantKeys(t, "Master snapshot", m, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "event", "cues",
 		"activeCueId", "undo", "roles", "conflicts", "overrunMin", "outOfOrder")
-	wantKeys(t, "role", m["role"].(map[string]any), "type", "name", "view")
+	wantKeys(t, "role", m["role"].(map[string]any), "type", "name", "view", "checksIn")
 	wantKeys(t, "eventDay", m["eventDay"].(map[string]any), "date", "timezone")
 	wantKeys(t, "event", m["event"].(map[string]any), "name", "date", "timezone")
 	wantKeys(t, "undo", m["undo"].(map[string]any), "available", "description")
@@ -655,7 +655,7 @@ func TestSnapshotKeySets(t *testing.T) {
 		t.Errorf("roles = %v", roles)
 	}
 	for _, ro := range roles {
-		wantKeys(t, "Master role list item", ro.(map[string]any), "id", "name", "type", "checkedIn", "lastSeenAt", "hasLink")
+		wantKeys(t, "Master role list item", ro.(map[string]any), "id", "name", "type", "view", "checksIn", "checkedIn", "lastSeenAt", "hasLink")
 	}
 
 	s := e.get(e.stylist)
@@ -663,7 +663,7 @@ func TestSnapshotKeySets(t *testing.T) {
 	ss := s.snapshot(t)
 	wantKeys(t, "Stylist snapshot", ss, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "cues", "notice",
 		"myCheckIn", "currentTitle")
-	wantKeys(t, "role", ss["role"].(map[string]any), "type", "name", "view")
+	wantKeys(t, "role", ss["role"].(map[string]any), "type", "name", "view", "checksIn")
 	for _, c := range cues(t, ss) {
 		wantKeys(t, "Stylist cue", c, "id", "seq", "title", "effectiveStart", "durationMin", "isFixed", "offsetMin",
 			"status", "notePublic", "roleNote")

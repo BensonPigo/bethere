@@ -6,24 +6,31 @@ import { useState } from "preact/hooks";
 import { CUE_ROLE_TYPES } from "./api";
 import type { Assignment, MasterCue, MasterRole, MasterSnapshot, WriteRequest } from "./api";
 import { agoText, formatHM, zonedToISO } from "./format";
+import { LinkResult } from "./Prep";
+import type { NewLink } from "./session";
 
 type Write = (w: WriteRequest) => Promise<boolean>;
 
 const CONFIRM_LINK = "舊連結將立即失效，對方需要新連結。確定嗎？";
 
-export function RolesPanel(props: { snap: MasterSnapshot; now: number; open: (r: MasterRole) => void }) {
+// checksIn: from the snapshot (M2c), or the type for one saved by an older release.
+export const roleChecksIn = (r: MasterRole) => r.checksIn ?? CUE_ROLE_TYPES.includes(r.type);
+
+export function RolesPanel(props: { snap: MasterSnapshot; now: number; open: (r: MasterRole) => void; add: () => void }) {
   const roles = props.snap.roles.filter((r) => r.type !== "Master");
-  if (roles.length === 0) return null;
   return (
     <div class="roles-panel">
       <div class="label">就位狀態</div>
       {roles.map((r) => (
         <button class="role-row" key={String(r.id)} onClick={() => props.open(r)}>
-          <span class={r.checkedIn ? "in" : "out"}>{r.checkedIn ? "● 已就位" : CUE_ROLE_TYPES.includes(r.type) ? "○ 未就位" : "　"}</span>
+          <span class={r.checkedIn ? "in" : "out"}>{r.checkedIn ? "● 已就位" : roleChecksIn(r) ? "○ 未就位" : "　"}</span>
           <span class="name">{r.name}</span>
-          <small>{r.hasLink ? agoText(r.lastSeenAt, props.now) : "連結已撤銷"}</small>
+          <small>{r.hasLink ? agoText(r.lastSeenAt, props.now) : "連結未發或已撤銷"}</small>
         </button>
       ))}
+      <button class="role-add" onClick={props.add}>
+        ＋ 新增角色
+      </button>
     </div>
   );
 }
@@ -31,44 +38,35 @@ export function RolesPanel(props: { snap: MasterSnapshot; now: number; open: (r:
 type RoleMenuProps = {
   role: MasterRole;
   lock: boolean;
+  // Deleting a role: in draft, before the event day (ADR-0032).
+  deleteReason: string | null;
   write: Write;
-  reissue: (roleId: string | number) => Promise<string | null>;
+  reissue: (roleId: string | number) => Promise<NewLink | null>;
+  preview: (r: MasterRole) => void;
   close: () => void;
 };
 
-export function RoleMenu({ role, lock, write, reissue, close }: RoleMenuProps) {
-  const [link, setLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const canCheckIn = CUE_ROLE_TYPES.includes(role.type);
+export function RoleMenu({ role, lock, deleteReason, write, reissue, preview, close }: RoleMenuProps) {
+  const [link, setLink] = useState<NewLink | null>(null);
+  const canCheckIn = roleChecksIn(role);
 
+  // A role without a link (made by an import) gets its first one the same way.
   const doReissue = async () => {
-    if (!window.confirm(CONFIRM_LINK)) return;
-    const token = await reissue(role.id);
-    // Shown as text with a copy button, never as a link that could be
-    // opened on this device (api.md section 3).
-    if (token) setLink(`${location.origin}/#t=${token}`);
+    if (role.hasLink && !window.confirm(CONFIRM_LINK)) return;
+    // Shown as text with a copy button and its QR code, never as a link
+    // that could be opened on this device (api.md section 3).
+    setLink(await reissue(role.id));
   };
-  const copy = async () => {
-    if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
+  const rename = () => {
+    const name = window.prompt("新的名稱", role.name);
+    if (name !== null && name.trim() !== "" && name !== role.name) void write({ path: "/api/roles/rename", roleId: role.id, name });
   };
 
   return (
     <div class="shift-panel dialog" role="dialog">
       <div class="shift-title">{role.name}</div>
       {link ? (
-        <>
-          <div>新連結（只顯示這一次，請用 LINE 傳給對方）：</div>
-          <input class="link-text" readOnly value={link} onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
-          <button class="confirm" onClick={() => void copy()}>
-            {copied ? "已複製 ✔" : "複製"}
-          </button>
-        </>
+        <LinkResult link={link} />
       ) : (
         <div class="menu">
           {canCheckIn && (
@@ -77,7 +75,7 @@ export function RoleMenu({ role, lock, write, reissue, close }: RoleMenuProps) {
             </button>
           )}
           <button disabled={lock} onClick={() => void doReissue()}>
-            重發連結
+            {role.hasLink ? "重發連結" : "產生連結"}
           </button>
           <button
             class="danger"
@@ -88,6 +86,22 @@ export function RoleMenu({ role, lock, write, reissue, close }: RoleMenuProps) {
           >
             撤銷連結
           </button>
+          <button onClick={() => preview(role)}>預覽此角色的畫面</button>
+          <button disabled={lock} onClick={rename}>
+            改名
+          </button>
+          <button
+            class="danger"
+            disabled={lock || deleteReason !== null}
+            onClick={() => {
+              if (window.confirm(`刪除「${role.name}」？連結立即失效，指派與打卡一併刪除。`)) {
+                void write({ path: "/api/roles/delete", roleId: role.id }).then((ok) => ok && close());
+              }
+            }}
+          >
+            刪除角色
+          </button>
+          {deleteReason && <small class="reason">{deleteReason}</small>}
         </div>
       )}
       <div class="shift-actions">
@@ -218,7 +232,7 @@ function RolePicker(props: {
 
 type InsertProps = {
   snap: MasterSnapshot;
-  after: MasterCue;
+  after: MasterCue | null; // null: first, in draft only (M2c)
   tz: string;
   lock: boolean;
   write: Write;
@@ -227,7 +241,11 @@ type InsertProps = {
 
 // US-M-8.1: the time is the one it will really start at; no offset.
 export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProps) {
-  const [time, setTime] = useState(() => formatHM(Date.parse(after.effectiveStart) + after.durationMin * 60000, tz));
+  const [time, setTime] = useState(() => {
+    if (after) return formatHM(Date.parse(after.effectiveStart) + after.durationMin * 60000, tz);
+    const first = snap.cues[0];
+    return first ? formatHM(Date.parse(first.effectiveStart) - 30 * 60000, tz) : "09:00";
+  });
   const [duration, setDuration] = useState("10");
   const [title, setTitle] = useState("");
   const [roles, setRoles] = useState<Assignment[]>([]);
@@ -237,7 +255,7 @@ export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProp
 
   return (
     <div class="shift-panel dialog" role="dialog">
-      <div class="shift-title">在「{after.title}」之後新增環節</div>
+      <div class="shift-title">{after ? `在「${after.title}」之後新增環節` : "新增第一個環節"}</div>
       <label class="field">
         開始時間
         <input type="time" value={time} onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)} />
@@ -260,7 +278,7 @@ export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProp
             start &&
             void write({
               path: "/api/cues/insert",
-              cue: { afterCueId: after.id, start, durationMin: minutes, title, notePublic: null, roles },
+              cue: { afterCueId: after ? after.id : null, start, durationMin: minutes, title, notePublic: null, roles },
             }).then((ok) => ok && close())
           }
         >

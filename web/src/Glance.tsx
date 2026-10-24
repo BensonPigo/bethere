@@ -14,9 +14,11 @@ type Props = {
   offline: boolean;
   busy: boolean;
   write: (w: WriteRequest) => Promise<boolean>;
+  // The Master's preview of this role: shown, never pressed (US-M-14.3).
+  readOnly?: boolean;
 };
 
-export function Glance({ snap, now, skew, change, offline, busy, write }: Props) {
+export function Glance({ snap, now, skew, change, offline, busy, write, readOnly }: Props) {
   const view = stylistView(snap, now, skew);
   const tz = snap.eventDay?.timezone || DEFAULT_TZ;
   const marked = noticedCues(change);
@@ -80,7 +82,9 @@ export function Glance({ snap, now, skew, change, offline, busy, write }: Props)
         <div class="current-line">目前：{current ?? "準備中"}</div>
       )}
       <div class="glance-main">{main}</div>
-      <CheckInBar checkedIn={snap.myCheckIn ?? false} offline={offline} busy={busy} write={write} />
+      {snap.role.checksIn !== false && (
+        <CheckInBar checkedIn={snap.myCheckIn ?? false} offline={offline} busy={busy || !!readOnly} write={write} />
+      )}
     </div>
   );
 }

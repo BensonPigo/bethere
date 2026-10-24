@@ -69,9 +69,11 @@ type CueRole struct {
 
 // RoleInfo is a role of the event; never its token or token hash.
 type RoleInfo struct {
-	ID   int64
-	Name string
-	Type domain.RoleType
+	ID       int64
+	Name     string
+	Type     domain.RoleType
+	View     domain.View // resolved like TokenOwner.View
+	ChecksIn bool        // resolved like TokenOwner.ChecksIn (M2c)
 	// ActiveTokenID is the id of the role's active link, 0 when it has
 	// none: the key of its lastSeenAt (api.md section 7 item 5).
 	ActiveTokenID int64
@@ -100,7 +102,14 @@ func (s *Store) Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (
 	if afterTokenResolved != nil {
 		afterTokenResolved()
 	}
+	return loadSnapshotData(ctx, tx, owner, e, v)
+}
+
+// loadSnapshotData reads everything of the event a snapshot is built
+// from, for owner, inside the caller's read transaction.
+func loadSnapshotData(ctx context.Context, tx *sql.Tx, owner TokenOwner, e domain.Event, v int64) (SnapshotData, error) {
 	d := SnapshotData{Owner: owner, Event: e, Version: v}
+	var err error
 	if d.Cues, err = loadSnapshotCues(ctx, tx, e.ID); err != nil {
 		return SnapshotData{}, err
 	}
@@ -117,6 +126,43 @@ func (s *Store) Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (
 		return SnapshotData{}, err
 	}
 	return d, nil
+}
+
+// PreviewSnapshot reads, in one read transaction, the caller's owner (the
+// token resolved exactly as Snapshot does) and the data of roleID's
+// snapshot as that role would get it (US-M-14). The role is looked up in
+// the caller's event only. Its owner carries no token and no credential:
+// TokenID is 0 and Actor is the zero value, so nothing can act or be
+// marked seen as it (api.md section 3「角色預覽」).
+func (s *Store) PreviewSnapshot(ctx context.Context, tokenHash []byte, roleID int64, now time.Time) (TokenOwner, SnapshotData, error) {
+	tx, err := s.r.BeginTx(ctx, nil)
+	if err != nil {
+		return TokenOwner{}, SnapshotData{}, err
+	}
+	defer tx.Rollback()
+	caller, e, v, err := resolveToken(ctx, tx, tokenHash, now)
+	if err != nil {
+		return TokenOwner{}, SnapshotData{}, err
+	}
+	target := TokenOwner{RoleID: roleID, EventID: e.ID}
+	var (
+		view      sql.NullString
+		noCheckIn bool
+	)
+	err = tx.QueryRowContext(ctx, `SELECT type, name, view, checks_in IS NOT NULL FROM roles WHERE id = ? AND event_id = ?`,
+		roleID, e.ID).Scan(&target.RoleType, &target.RoleName, &view, &noCheckIn)
+	if errors.Is(err, sql.ErrNoRows) {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return caller, SnapshotData{}, ctxErr
+		}
+		return caller, SnapshotData{}, ErrRoleNotFound
+	}
+	if err != nil {
+		return caller, SnapshotData{}, err
+	}
+	target.View, target.ChecksIn = resolveView(target.RoleType, view), target.RoleType.ChecksIn(noCheckIn)
+	d, err := loadSnapshotData(ctx, tx, target, e, v)
+	return caller, d, err
 }
 
 func loadSnapshotCues(ctx context.Context, tx *sql.Tx, eventID int64) ([]SnapshotCue, error) {
@@ -181,7 +227,7 @@ func loadSnapshotCues(ctx context.Context, tx *sql.Tx, eventID int64) ([]Snapsho
 }
 
 func loadRoles(ctx context.Context, q querier, eventID int64) ([]RoleInfo, error) {
-	rows, err := q.QueryContext(ctx, `SELECT r.id, r.name, r.type,
+	rows, err := q.QueryContext(ctx, `SELECT r.id, r.name, r.type, r.view, r.checks_in IS NOT NULL,
 			COALESCE((SELECT t.id FROM access_tokens t WHERE t.role_id = r.id AND t.revoked_at IS NULL), 0),
 			EXISTS (SELECT 1 FROM check_ins c WHERE c.role_id = r.id AND c.undone_at IS NULL)
 		FROM roles r WHERE r.event_id = ? ORDER BY r.display_order, r.id`, eventID)
@@ -191,10 +237,15 @@ func loadRoles(ctx context.Context, q querier, eventID int64) ([]RoleInfo, error
 	defer rows.Close()
 	var roles []RoleInfo
 	for rows.Next() {
-		var r RoleInfo
-		if err := rows.Scan(&r.ID, &r.Name, &r.Type, &r.ActiveTokenID, &r.CheckedIn); err != nil {
+		var (
+			r         RoleInfo
+			view      sql.NullString
+			noCheckIn bool
+		)
+		if err := rows.Scan(&r.ID, &r.Name, &r.Type, &view, &noCheckIn, &r.ActiveTokenID, &r.CheckedIn); err != nil {
 			return nil, err
 		}
+		r.View, r.ChecksIn = resolveView(r.Type, view), r.Type.ChecksIn(noCheckIn)
 		roles = append(roles, r)
 	}
 	return roles, rows.Err()

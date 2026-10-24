@@ -50,6 +50,13 @@ export function today(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
+// tomorrow is the date of the events whose day has not begun: the
+// preparation route replaces the rundown and deletes a role, which are
+// locked from the event day on (ADR-0032).
+export function tomorrow(now = new Date()): string {
+  return today(new Date(now.getTime() + 24 * 3600 * 1000));
+}
+
 // The test rundown: the first cue started 10 minutes ago, the rest ahead,
 // 95 minutes in all. Late in the evening the cues after now are moved
 // closer together so they all stay on today; the next cue is always at
@@ -82,9 +89,14 @@ function parseLinks(out: string, count: number): Links[] {
   return events as Links[];
 }
 
-const seedArgs = (bin: string, db: string, count: number) => [
-  bin, db, today(), String(count), Buffer.from(rundownCSV()).toString("base64"),
+// seedArgs creates events first..first+count-1 on date.
+const seedArgs = (bin: string, db: string, count: number, date = today(), first = 1) => [
+  bin, db, date, String(count), Buffer.from(rundownCSV()).toString("base64"), String(first),
 ];
+
+// setUp seeds `today` events on today and `later` events on tomorrow, in
+// that order of index.
+export type Counts = { today: number; later: number };
 
 // ---------------------------------------------------------------- local
 
@@ -131,7 +143,7 @@ function vmBaseURL(): string {
 
 // ---------------------------------------------------------------- setup, stop, start
 
-export async function setUp(count: number): Promise<State> {
+export async function setUp({ today: count, later }: Counts): Promise<State> {
   if (target === "vm") {
     const baseURL = vmBaseURL();
     // A fresh test database on every run: the test service only (ops/gcp/e2e-setup.sh).
@@ -143,8 +155,10 @@ export async function setUp(count: number): Promise<State> {
       sudo systemctl start bethere-e2e`);
     await waitUp(baseURL, true);
     const script = readFileSync(join(HERE, "seed.sh"), "utf8");
-    const out = vm(`sudo -u bethere bash -s -- ${seedArgs(VM_BIN, VM_DB, count).join(" ")}`, script);
-    return { baseURL, events: parseLinks(out, count) };
+    const out =
+      vm(`sudo -u bethere bash -s -- ${seedArgs(VM_BIN, VM_DB, count).join(" ")}`, script) +
+      vm(`sudo -u bethere bash -s -- ${seedArgs(VM_BIN, VM_DB, later, tomorrow(), count + 1).join(" ")}`, script);
+    return { baseURL, events: parseLinks(out, count + later) };
   }
   // Another server on the port would answer for a database this run never seeded.
   if (await fetch(`http://127.0.0.1:${LOCAL_PORT}/healthz`).then(() => true, () => false)) {
@@ -158,8 +172,10 @@ export async function setUp(count: number): Promise<State> {
   local.pid = localServe(local, true);
   const baseURL = `http://127.0.0.1:${LOCAL_PORT}`;
   await waitUp(baseURL, true);
-  const out = execFileSync(join(HERE, "seed.sh"), seedArgs(bin, join(dir, "e2e.db"), count), { encoding: "utf8" });
-  return { baseURL, events: parseLinks(out, count), local };
+  const seed = (args: string[]) => execFileSync(join(HERE, "seed.sh"), args, { encoding: "utf8" });
+  const out =
+    seed(seedArgs(bin, join(dir, "e2e.db"), count)) + seed(seedArgs(bin, join(dir, "e2e.db"), later, tomorrow(), count + 1));
+  return { baseURL, events: parseLinks(out, count + later), local };
 }
 
 export async function tearDown() {

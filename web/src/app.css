@@ -133,3 +133,31 @@ button.danger { background: #8c1d18; color: #fff; }
 .pick label { display: flex; align-items: center; gap: 8px; font-size: 18px; }
 .pick input[type="checkbox"] { width: 28px; height: 28px; }
 .link-text { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 15px; }
+
+/* The preparation (M2c): the rundown editor, the import, new links and the role preview. */
+button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; color: var(--fg); }
+.editor { position: fixed; inset: 0; z-index: 15; display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--bg); overflow: auto; }
+.editor-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.editor-head .shift-title { margin-right: auto; }
+.editor-head button { min-height: 48px; }
+.editor-rows { display: flex; flex-direction: column; gap: 8px; }
+.editor-row { display: grid; grid-template-columns: 110px 80px minmax(140px, 1fr) auto minmax(120px, 1fr) auto; gap: 6px; align-items: center; background: var(--card); border-radius: 10px; padding: 8px; }
+.editor-row.skipped { opacity: 0.6; }
+.editor-row input:not([type="checkbox"]) { min-height: 44px; font-size: 17px; padding: 4px 8px; border-radius: 8px; border: 1px solid #555; background: var(--bg); color: var(--fg); min-width: 0; }
+.editor-row .fixed { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.editor-row .row-actions, .editor-row .reason { grid-column: 1 / -1; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.row-actions button { min-height: 44px; }
+@media (max-width: 800px) { .editor-row { grid-template-columns: 1fr 1fr; } .editor-row .title, .editor-row .note { grid-column: 1 / -1; } }
+.link-result { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.link-result .qr { align-self: center; background: #fff; padding: 8px; border-radius: 8px; image-rendering: pixelated; }
+.pick small { grid-column: 2; color: var(--muted); font-size: 14px; }
+.import-text { width: 100%; min-height: 160px; font-family: ui-monospace, Menlo, monospace; font-size: 14px; padding: 8px; border-radius: 8px; border: 1px solid #555; background: var(--card); color: var(--fg); }
+.import-preview { border-collapse: collapse; font-size: 15px; }
+.import-preview td { padding: 4px 8px; border-bottom: 1px solid #444; vertical-align: top; }
+.import-preview tr.bad td { color: var(--bad); }
+.missing-roles { display: flex; flex-direction: column; gap: 6px; }
+.missing-roles .pick { grid-template-columns: 140px 140px 1fr; }
+.role-preview { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; background: var(--bg); }
+.role-preview .preview-bar { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; background: var(--accent); color: #000; font-weight: 700; }
+.role-preview .app { flex: 1; min-height: 0; }

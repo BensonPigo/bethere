@@ -3,6 +3,7 @@ import { classifyNotModified, classifyResponse, shouldWipeLocalData, writeBody }
 import type { RoleCue, RoleSnapshot } from "./api";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
+import { dayStarted } from "./Prep";
 import { agoText, dateInZone, formatHM, zonedToISO } from "./format";
 import { isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -339,5 +340,42 @@ describe("M2b: notices and helpers", () => {
     expect(agoText("2027-06-06T01:05:00Z", now)).toBe("剛剛");
     expect(agoText("2027-06-06T01:00:00Z", now)).toBe("5 分鐘前");
     expect(agoText("2027-06-05T23:00:00Z", now)).toBe("2 小時前");
+  });
+});
+
+describe("M2c: preparation (api.md section 3)", () => {
+  it("a role preview is never taken for the caller's own snapshot (US-M-14.3)", () => {
+    const o = classifyResponse(200, JSON_CT, { result: "ok", preview: snap({}) });
+    expect(o.kind).toBe("preview");
+    expect("snapshot" in o).toBe(false);
+    expect(shouldWipeLocalData(o)).toBe(false);
+  });
+  it("a new link carries its token, QR code and role id; nothing else is a QR code", () => {
+    const qr = "data:image/png;base64,iVBORw0KGgo=";
+    const o = classifyResponse(200, JSON_CT, { ...okBody, token: "t".repeat(22), qr, roleId: 7 });
+    expect(o).toMatchObject({ kind: "ok", token: "t".repeat(22), qr, roleId: 7 });
+    const bad = classifyResponse(200, JSON_CT, { ...okBody, token: "t".repeat(22), qr: "javascript:alert(1)" });
+    expect(bad.kind === "ok" && bad.qr).toBeFalsy();
+    const plain = classifyResponse(200, JSON_CT, { ...okBody, qr });
+    expect(plain.kind === "ok" && plain.qr).toBeFalsy();
+  });
+  it("writes the M2c bodies", () => {
+    const cue = { cueId: 3, start: "2027-06-06T02:00:00Z", durationMin: 10, isFixed: true, title: "a", notePublic: null };
+    expect(writeBody({ path: "/api/cues/update", cue }, 4)).toEqual({ version: 4, ...cue });
+    expect(writeBody({ path: "/api/cues/move", cueId: 3, afterCueId: null }, 4)).toEqual({ version: 4, cueId: 3, afterCueId: null });
+    expect(writeBody({ path: "/api/cues/delete", cueId: 3 }, 4)).toEqual({ version: 4, cueId: 3 });
+    expect(writeBody({ path: "/api/rundown/import", text: "x", newRoles: [] }, 4)).toEqual({ version: 4, text: "x", newRoles: [] });
+    // Roles are not cues: adding and renaming carry no version (ADR-0023).
+    expect(writeBody({ path: "/api/roles/add", role: { name: "伴娘", view: "Glance", checksIn: true }, origin: "https://a.example" }, 4))
+      .toEqual({ name: "伴娘", view: "Glance", checksIn: true, origin: "https://a.example" });
+    expect(writeBody({ path: "/api/roles/rename", roleId: 2, name: "b" }, 4)).toEqual({ roleId: 2, name: "b" });
+    expect(writeBody({ path: "/api/roles/delete", roleId: 2 }, 4)).toEqual({ version: 4, roleId: 2 });
+    expect(writeBody({ path: "/api/roles/reissue", roleId: 2, origin: "https://a.example" }, 4)).toEqual({ roleId: 2, origin: "https://a.example" });
+    expect(writeBody({ path: "/api/roles/reissue", roleId: 2 }, 4)).toEqual({ roleId: 2 });
+  });
+  it("locks the destructive edits from the event day on (ADR-0032)", () => {
+    expect(dayStarted("2027-06-06", "2027-06-05")).toBe(false);
+    expect(dayStarted("2027-06-06", "2027-06-06")).toBe(true);
+    expect(dayStarted("2027-06-06", "2027-06-07")).toBe(true);
   });
 });

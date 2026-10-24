@@ -49,15 +49,47 @@ func Parse(r io.Reader) ([]store.ImportRow, error) {
 		return nil, err
 	}
 	if len(data) > MaxFileBytes {
-		return nil, fmt.Errorf("file is larger than %d bytes", MaxFileBytes)
+		return nil, fmt.Errorf("檔案超過 %d 位元組", MaxFileBytes)
 	}
-	data = bytes.TrimPrefix(data, bom)
+	return parse(bytes.TrimPrefix(data, bom), ',')
+}
 
+// Pasted text (M2c, US-M-12): the same columns, pasted from a spreadsheet.
+const (
+	MaxTextBytes = 100 << 10 // the decoded UTF-8 text (api.md section 3)
+	MaxTextRows  = 200
+)
+
+// ParseText reads a rundown pasted into the editor: separated by tabs
+// when its first line has one (copied from a spreadsheet), by commas
+// otherwise (api.md section 3「貼上匯入」).
+func ParseText(text string) ([]store.ImportRow, error) {
+	if len(text) > MaxTextBytes {
+		return nil, fmt.Errorf("貼上的內容超過 %d KB", MaxTextBytes>>10)
+	}
+	data := bytes.TrimPrefix([]byte(text), bom)
+	comma := ','
+	first, _, _ := bytes.Cut(data, []byte("\n"))
+	if bytes.ContainsRune(first, '\t') {
+		comma = '\t'
+	}
+	rows, err := parse(data, comma)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) > MaxTextRows {
+		return nil, fmt.Errorf("最多 %d 列環節", MaxTextRows)
+	}
+	return rows, nil
+}
+
+func parse(data []byte, comma rune) ([]store.ImportRow, error) {
 	cr := csv.NewReader(bytes.NewReader(data))
+	cr.Comma = comma
 	cr.FieldsPerRecord = -1 // row length is checked per row below
 	header, err := cr.Read()
 	if errors.Is(err, io.EOF) {
-		return nil, errors.New("file is empty; the first row must name the columns")
+		return nil, errors.New("內容是空的；第一列必須是欄位名稱")
 	}
 	if err != nil {
 		return nil, err
@@ -66,19 +98,19 @@ func Parse(r io.Reader) ([]store.ImportRow, error) {
 	for i, name := range header {
 		name = strings.TrimSpace(name)
 		if !utf8.ValidString(name) {
-			return nil, errors.New("header: not UTF-8; save the file as UTF-8")
+			return nil, errors.New("標題列不是 UTF-8；請存成 UTF-8")
 		}
 		if !known(name) {
-			return nil, fmt.Errorf("header: unknown column %q (columns are %s)", name, strings.Join(columns, ","))
+			return nil, fmt.Errorf("標題列：不認得的欄位 %q（欄位為 %s）", name, strings.Join(columns, ","))
 		}
 		if _, dup := col[name]; dup {
-			return nil, fmt.Errorf("header: column %q appears twice", name)
+			return nil, fmt.Errorf("標題列：欄位 %q 出現兩次", name)
 		}
 		col[name] = i
 	}
 	for _, name := range columns {
 		if _, ok := col[name]; required[name] && !ok {
-			return nil, fmt.Errorf("header: required column %q is missing", name)
+			return nil, fmt.Errorf("標題列：缺少必要欄位 %q", name)
 		}
 	}
 
@@ -110,12 +142,12 @@ func parseRow(line int, rec []string, col map[string]int, width int) store.Impor
 	row := store.ImportRow{Line: line}
 	bad := func(format string, args ...any) { row.Problems = append(row.Problems, fmt.Sprintf(format, args...)) }
 	if len(rec) != width {
-		bad("has %d fields, the header has %d", len(rec), width)
+		bad("有 %d 欄，標題列有 %d 欄", len(rec), width)
 		return row
 	}
 	for _, f := range rec {
 		if !utf8.ValidString(f) {
-			bad("not UTF-8; save the file as UTF-8")
+			bad("不是 UTF-8；請存成 UTF-8")
 			return row
 		}
 	}
@@ -127,20 +159,20 @@ func parseRow(line int, rec []string, col map[string]int, width int) store.Impor
 	}
 
 	if n, ok := integer(field("seq")); !ok || n < 1 {
-		bad("seq %q: must be a positive integer", field("seq"))
+		bad("seq %q：必須是正整數", field("seq"))
 	} else {
 		row.Seq = n
 	}
 	if row.Title = field("title"); row.Title == "" {
-		bad("title: required")
+		bad("title：必填")
 	}
 	if h, m, ok := clock(field("start")); !ok {
-		bad("start %q: must be HH:MM, 24-hour (for example 09:05)", field("start"))
+		bad("start %q：必須是 24 小時制的 HH:MM（例如 09:05）", field("start"))
 	} else {
 		row.StartHour, row.StartMinute = h, m
 	}
 	if n, ok := integer(field("duration_min")); !ok || n > store.MaxCueDurationMin {
-		bad("duration_min %q: must be an integer from 0 to %d", field("duration_min"), store.MaxCueDurationMin)
+		bad("duration_min %q：必須是 0 到 %d 的整數", field("duration_min"), store.MaxCueDurationMin)
 	} else {
 		row.DurationMin = n
 	}
@@ -149,7 +181,7 @@ func parseRow(line int, rec []string, col map[string]int, width int) store.Impor
 	case "Y":
 		row.Fixed = true
 	default:
-		bad("fixed %q: must be Y or blank", f)
+		bad("fixed %q：只能是 Y 或空白", f)
 	}
 	if roles := field("roles"); roles != "" {
 		for _, name := range strings.Split(roles, ";") {

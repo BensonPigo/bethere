@@ -16,12 +16,12 @@ func (b body) shiftRequest() domain.ShiftRequest {
 
 // shift applies a time shift (data-model.md 4.2) with the same rules as
 // its preview.
-func (a *API) shift(ctx context.Context, o store.TokenOwner, b body, now time.Time) (string, error) {
+func (a *API) shift(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	_, _, err := a.store.ApplyCueOp(ctx, o.EventID, b.version, o.Actor, now, func(cues []domain.Cue) (domain.Op, error) {
 		plan, err := domain.PlanShift(cues, b.shiftRequest(), now)
 		return plan.Op, err
 	})
-	return "", err
+	return link{}, err
 }
 
 // previewResponse is the shift preview (US-M-2.1); it writes nothing.
