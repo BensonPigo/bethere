@@ -314,13 +314,29 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
 
   await test.step("改環節標題，新秘自己看到（US-M-10.2、US-M-10.C2 的功能部分）", async () => {
     await master.getByRole("button", { name: "編輯流程表" }).click();
-    const row = editorRow(master, 0);
+    let row = editorRow(master, 0);
     await expect(row.locator("input.title")).toHaveValue("新娘化妝");
+    await row.locator("input.time").evaluate((el: HTMLInputElement) => {
+      el.value = "09:10";
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await expect(row.getByRole("button", { name: "儲存" })).toBeEnabled();
+    await row.getByRole("button", { name: "儲存" }).click();
+    await master.waitForTimeout(1200);
+    await expect(stylist.locator(".preday-row", { hasText: "新娘化妝" }).locator(".time")).toHaveText("09:10", { timeout: PROPAGATE_MS });
+    row = editorRow(master, 0); // the row starts over from the new version
     await row.locator("input.title").fill("新娘化妝（加長）");
     await row.locator("input.duration").fill("45");
+    // iPad Safari's time wheel reports the new value with a change event
+    // only, not input (US-M-10.C2 field test); set it the same way.
+    await row.locator("input.time").evaluate((el: HTMLInputElement) => {
+      el.value = "09:20";
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     await row.getByRole("button", { name: "儲存" }).click();
     await master.waitForTimeout(1200);
     await timed("編輯 → 新秘", () => expect(stylist.locator(".preday")).toContainText("新娘化妝（加長）", { timeout: PROPAGATE_MS }));
+    await expect(stylist.locator(".preday-row", { hasText: "新娘化妝（加長）" }).locator(".time")).toHaveText("09:20");
   });
 
   await test.step("上移與刪除環節（US-M-10.3、10.4）", async () => {

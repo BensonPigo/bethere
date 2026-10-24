@@ -161,3 +161,7 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .role-preview { position: fixed; inset: 0; z-index: 30; display: flex; flex-direction: column; background: var(--bg); }
 .role-preview .preview-bar { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; background: var(--accent); color: #000; font-weight: 700; }
 .role-preview .app { flex: 1; min-height: 0; }
+.editor-row.unsaved { outline: 2px solid var(--accent); }
+.unsaved-note { grid-column: 1 / -1; color: var(--accent); font-weight: 600; }
+/* A refusal or failure stays readable over the editor and dialogs. */
+.app > .notice { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 40; max-width: 90vw; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }

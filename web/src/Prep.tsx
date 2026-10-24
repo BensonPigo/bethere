@@ -190,8 +190,17 @@ function EditorRow({ snap, cue, prev, next, beforePrev, warn, tz, disabled, writ
     note !== (cue.notePublic ?? "");
   const move = (afterCueId: string | number | null) => void write({ path: "/api/cues/move", cueId: cue.id, afterCueId });
   return (
-    <div class={`editor-row ${cue.status.toLowerCase()}`} data-cue={String(cue.id)}>
-      <input class="time" type="time" aria-label="開始時間" value={time} disabled={disabled} onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)} />
+    <div class={`editor-row ${cue.status.toLowerCase()} ${changed ? "unsaved" : ""}`} data-cue={String(cue.id)}>
+      {/* iPad Safari's time wheel reports with a change event only (US-M-10.C2 field test). */}
+      <input
+        class="time"
+        type="time"
+        aria-label="開始時間"
+        value={time}
+        disabled={disabled}
+        onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
+        onChange={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
+      />
       <input class="duration" type="number" aria-label="長度（分）" min={0} max={1440} value={duration} disabled={disabled} onInput={(e) => setDuration((e.currentTarget as HTMLInputElement).value)} />
       <input class="title" aria-label="標題" value={title} maxLength={100} disabled={disabled} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} />
       <label class="fixed">
@@ -231,6 +240,7 @@ function EditorRow({ snap, cue, prev, next, beforePrev, warn, tz, disabled, writ
           刪除
         </button>
       </div>
+      {changed && <div class="unsaved-note">尚未儲存{valid ? "，請按「儲存」" : "：時間、長度或標題不正確"}</div>}
       {warn && prev && <div class="reason">⚠ 時間早於前一個環節 {formatHM(prev.effectiveStart, tz)}</div>}
     </div>
   );
