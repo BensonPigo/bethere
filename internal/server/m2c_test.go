@@ -599,10 +599,10 @@ func TestUS_M_14_PreviewIsTheRolesOwnSnapshot(t *testing.T) {
 	var noLink int64
 	e.db().QueryRow(`SELECT id FROM roles WHERE name = '無連結'`).Scan(&noLink)
 	e.post(pathPreviewRole, e.master, map[string]any{"roleId": noLink}).wantResult(t, "ok")
-	// A type not opened yet has no snapshot: 404, not 500.
-	e.addRoleWithToken(domain.Runner)
+	// A type no release knows has no snapshot: 404, not 500.
+	e.addRoleWithToken(domain.RoleType("Planner"))
 	var runner int64
-	e.db().QueryRow(`SELECT id FROM roles WHERE type = 'Runner'`).Scan(&runner)
+	e.db().QueryRow(`SELECT id FROM roles WHERE type = 'Planner'`).Scan(&runner)
 	e.post(pathPreviewRole, e.master, map[string]any{"roleId": runner}).wantError(t, http.StatusNotFound, "not_found")
 }
 

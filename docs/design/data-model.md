@@ -112,6 +112,53 @@ erDiagram
 
 一個 Role 目前是否就位 = 存在未取消的 CheckIn。
 
+### CueAck（回覆收到）
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| cueId, roleId | ID | 複合主鍵；Cue 或角色刪除時一起刪除 |
+| at | timestamp | 第一次回覆的時間 |
+
+只有 VenueLead 寫入；取消回覆、或該角色被移除這個 Cue 的指派時，刪除該列（`api.md` 9.3）。
+
+### Task（任務）
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| id | ID | |
+| eventId | ID | |
+| title | text | 1～100 字 |
+| createdByRoleId | ID? | 建立者；角色刪除時為空 |
+| createdAt | timestamp | |
+| claimedByRoleId | ID? | 認領者；`open` 時為空，角色刪除時為空 |
+| state | enum | `open`、`claimed`、`done` |
+| updatedAt | timestamp | 最近一次狀態改變 |
+
+id 永不重用（AUTOINCREMENT）。規則見 `api.md` 9.4。
+
+### Guest（賓客）
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| id | ID | |
+| eventId | ID | |
+| seq | int | 匯入順序 |
+| name | text | 1～50 字 |
+| tableLabel | text | 桌號，1～20 字 |
+| note | text? | 最多 100 字 |
+| arrivedAt | timestamp? | 報到時間；取消報到時清空 |
+
+只有姓名、桌號與備註，隨活動刪除（NFR-5）；id 永不重用。規則見 `api.md` 9.5。
+
+### ChecklistItem（檢核項目）
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| id | ID | |
+| eventId | ID | |
+| seq | int | 順序 |
+| title | text | 1～100 字 |
+| doneAt | timestamp? | |
+| doneByRoleId | ID? | 完成者；角色刪除時為空 |
+
+id 永不重用。規則見 `api.md` 9.6。
+
 ### 平移紀錄
 不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。
 
@@ -223,7 +270,10 @@ sequenceDiagram
 | --- | --- | --- |
 | Master | 全部 | 推進、略過、平移、復原、代打卡、重發非 Master 的 Token、編輯 Rundown（Live 時限縮，見 `access-control.md` 第 4 節） |
 | Stylist / Media / StageAV | 自己有 CueRole 的 Cue + 該 Cue 的 `roleNote` | 自己的就位打卡 |
-| 其餘角色（暫停，ADR-0033） | 同上 | 各自動作（恢復時再定義） |
+| VenueLead | 同上 | 打卡、對自己的 Cue 回覆收到 |
+| Runner | 同上 + 未完成的任務 | 打卡、認領、放回、完成任務 |
+| Reception | 同上 + 全部賓客 + 自己建立的任務 | 打卡、賓客報到、建立任務（呼叫機動組） |
+| Cashier | 同上 + 檢核表 | 打卡、勾選檢核項目 |
 
 ### 4.5 領域服務
 
@@ -350,7 +400,5 @@ Live 階段的規則（ADR-0021）：
 
 | 實體 | 用途 | 備註 |
 | --- | --- | --- |
-| Ack | 領班「已收到」雙向確認 | `cueId, roleId, ackedAt` |
-| Task | 機動組任務池與認領 | `title, status, claimedByRoleId` |
 | AssetRef | 音控檔名對照 | 可先放在 `CueRole.roleNote`，需要時再拆 |
 | SupportRequest | 求助訊息（只路由給 Master 與 Runner） | 伺服器端過濾的對象（ADR-0007） |

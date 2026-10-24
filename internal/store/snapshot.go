@@ -31,6 +31,14 @@ type SnapshotData struct {
 	// Assigns are the latest inserts and assignment changes that showed a
 	// cue to new roles, newest first, for the "new cue" notice (ADR-0021).
 	Assigns []AssignRecord
+	// The four jobs (api.md section 9): acks by cue then role, tasks newest
+	// first, guests and checklist items in order. Guests, tasks and the
+	// checklist are read only for the owner types whose snapshot can hold
+	// them, to keep the poll small; the API still decides what is shown.
+	Acks      map[int64]map[int64]time.Time
+	Tasks     []Task
+	Guests    []Guest
+	Checklist []ChecklistItem
 }
 
 // AssignRecord is one logged insert or assignment change: when, which cue,
@@ -124,6 +132,25 @@ func loadSnapshotData(ctx context.Context, tx *sql.Tx, owner TokenOwner, e domai
 	}
 	if d.Assigns, err = loadAssigns(ctx, tx, e.ID); err != nil {
 		return SnapshotData{}, err
+	}
+	if d.Acks, err = loadAcks(ctx, tx, e.ID); err != nil {
+		return SnapshotData{}, err
+	}
+	t := owner.RoleType
+	if t == domain.Master || t == domain.Runner || t == domain.Reception {
+		if d.Tasks, err = loadTasks(ctx, tx, e.ID); err != nil {
+			return SnapshotData{}, err
+		}
+	}
+	if t == domain.Master || t == domain.Reception {
+		if d.Guests, err = loadGuests(ctx, tx, e.ID); err != nil {
+			return SnapshotData{}, err
+		}
+	}
+	if t == domain.Master || t == domain.Cashier {
+		if d.Checklist, err = loadChecklist(ctx, tx, e.ID); err != nil {
+			return SnapshotData{}, err
+		}
 	}
 	return d, nil
 }

@@ -112,9 +112,8 @@ func TestFormatTimeIsUTCWithMilliseconds(t *testing.T) {
 
 func TestCapabilityTableDeniesByDefault(t *testing.T) {
 	for _, c := range []capability{capReadSnapshot, capAdvance, capUndo, capShift, capCheckIn, capProxyCheckIn,
-		capEditRundown, capLinks, capability(99)} {
-		for _, typ := range []domain.RoleType{"", "master", "MASTER", "Admin",
-			domain.VenueLead, domain.Reception, domain.Cashier, domain.Runner} {
+		capEditRundown, capLinks, capAck, capAddTask, capSetTask, capManageJobs, capArrive, capCheckItem, capability(99)} {
+		for _, typ := range []domain.RoleType{"", "master", "MASTER", "Admin", "venuelead", "Planner"} {
 			if allowed(c, typ) {
 				t.Errorf("allowed(%d, %q)", c, typ)
 			}

@@ -49,19 +49,21 @@ const (
 	logRoleDelete = "role.delete"
 )
 
-// NewRole is a role the Master adds: a name, a screen and whether it
-// checks in. Its type follows from the screen (domain.TypeForView).
+// NewRole is a role the Master adds: a name, a screen, whether it checks
+// in and its job. Its type follows from the job and the screen
+// (domain.TypeForJob); an imported role has no job.
 type NewRole struct {
 	Name     string
 	View     domain.View
 	ChecksIn bool
+	Job      domain.Job
 }
 
 // check cleans the name and resolves the type; imported roles are shown
 // cues, so they may not use the dashboard (api.md section 3).
 func (nr NewRole) check(cueScreenOnly bool) (string, domain.RoleType, error) {
 	name, ok := domain.CleanRoleName(nr.Name)
-	typ, okView := domain.TypeForView(nr.View)
+	typ, okView := domain.TypeForJob(nr.Job, nr.View)
 	if !ok || !okView || (typ == domain.Host && (nr.ChecksIn || cueScreenOnly)) {
 		return "", "", ErrInvalidRole
 	}

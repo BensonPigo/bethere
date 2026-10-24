@@ -46,6 +46,25 @@ func TypeForView(v View) (RoleType, bool) {
 	return "", false
 }
 
+// Job is what the Master picks for a new role besides its screen
+// (api.md 9.2): "general" lets the screen decide the type; a job is the
+// type itself.
+type Job string
+
+const JobGeneral Job = "general"
+
+// TypeForJob is the role type of a new role with job j and view v. A job
+// other than general takes a cue screen only.
+func TypeForJob(j Job, v View) (RoleType, bool) {
+	switch t := RoleType(j); {
+	case j == JobGeneral || j == "":
+		return TypeForView(v)
+	case t == VenueLead || t == Runner || t == Reception || t == Cashier:
+		return t, v == HandsFree || v == Glance
+	}
+	return "", false
+}
+
 // ChecksIn reports whether a role checks in: only the types with cues of
 // their own, unless the Master chose "no check-in" (noCheckIn).
 func (t RoleType) ChecksIn(noCheckIn bool) bool {
@@ -58,4 +77,21 @@ func (t RoleType) ChecksIn(noCheckIn bool) bool {
 func (e Event) DayStarted(now time.Time) bool {
 	dayStart := time.Date(e.Date.Year, e.Date.Month, e.Date.Day, 0, 0, 0, 0, e.Location)
 	return !now.Before(dayStart)
+}
+
+// CleanLabel trims a short text of the four jobs (a guest's name, table
+// or note, api.md 9.5) and reports whether it is 1–max characters with no
+// control characters or invisible format characters, like a role name.
+func CleanLabel(s string, max int) (string, bool) {
+	s = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(s)
+	if !utf8.ValidString(s) || n < 1 || n > max {
+		return s, false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return s, false
+		}
+	}
+	return s, true
 }

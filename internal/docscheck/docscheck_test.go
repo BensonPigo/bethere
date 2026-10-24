@@ -131,7 +131,7 @@ func TestMarkdownReferencesExist(t *testing.T) {
 
 // storyID matches a story or acceptance-criterion ID in code, written either
 // as in the docs ("US-M-3.6", "US-X-8.C1") or as in test names ("US_M_3_6").
-var storyID = regexp.MustCompile(`US[-_](M|ST|H|X|O)[-_]([0-9]+)(?:[._-](C?[0-9]+))?`)
+var storyID = regexp.MustCompile(`US[-_](M|ST|H|X|VL|RN|RC|CA|O)[-_]([0-9]+)(?:[._-](C?[0-9]+))?`)
 
 // TestStoryIDsExist checks that every story ID cited in code is defined in
 // docs/requirements/stories.md, so a test never points at a removed criterion.

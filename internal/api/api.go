@@ -53,6 +53,15 @@ type Store interface {
 	RenameRole(ctx context.Context, eventID, roleID int64, name string, actor store.Actor, now time.Time) error
 	DeleteRole(ctx context.Context, eventID, expectVersion, roleID int64, actor store.Actor, now time.Time) error
 	PreviewSnapshot(ctx context.Context, tokenHash []byte, roleID int64, now time.Time) (store.TokenOwner, store.SnapshotData, error)
+	// The four jobs (api.md section 9).
+	SetAck(ctx context.Context, eventID, cueID, roleID int64, acked bool, actor store.Actor, now time.Time) error
+	AddTask(ctx context.Context, eventID int64, title string, actor store.Actor, now time.Time) (int64, error)
+	SetTaskState(ctx context.Context, eventID, taskID int64, state string, asMaster bool, actor store.Actor, now time.Time) error
+	DeleteTask(ctx context.Context, eventID, taskID int64, actor store.Actor, now time.Time) error
+	ReplaceGuests(ctx context.Context, eventID int64, rows []store.GuestRow, actor store.Actor, now time.Time) error
+	SetArrived(ctx context.Context, eventID, guestID int64, arrived bool, actor store.Actor, now time.Time) error
+	ReplaceChecklist(ctx context.Context, eventID int64, titles []string, actor store.Actor, now time.Time) error
+	CheckItem(ctx context.Context, eventID, itemID int64, done bool, actor store.Actor, now time.Time) error
 }
 
 const (
@@ -116,6 +125,15 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/roles/rename", a.write(capLinks, renameFields, a.renameRole))
 	mux.HandleFunc("POST /api/roles/delete", a.write(capLinks, deleteRoleFields, a.deleteRole))
 	mux.HandleFunc("POST /api/roles/preview", a.previewRole)
+	// The four jobs (api.md section 9).
+	mux.HandleFunc("POST /api/cues/ack", a.write(capAck, ackFields, a.ack))
+	mux.HandleFunc("POST /api/tasks/add", a.write(capAddTask, addTaskFields, a.addTask))
+	mux.HandleFunc("POST /api/tasks/set", a.write(capSetTask, setTaskFields, a.setTask))
+	mux.HandleFunc("POST /api/tasks/delete", a.write(capManageJobs, deleteTaskFields, a.deleteTask))
+	mux.HandleFunc("POST /api/guests/import", a.write(capManageJobs, guestImportFields, a.importGuests))
+	mux.HandleFunc("POST /api/guests/arrive", a.write(capArrive, arriveFields, a.arrive))
+	mux.HandleFunc("POST /api/checklist/items", a.write(capManageJobs, checklistFields, a.replaceChecklist))
+	mux.HandleFunc("POST /api/checklist/check", a.write(capCheckItem, checkItemFields, a.checkItem))
 }
 
 // LastSeen returns when the link with this access_tokens.id last passed
@@ -147,6 +165,14 @@ const (
 	capProxyCheckIn
 	capEditRundown // skip, insert, assign, edit; M2c: update, move, delete, the import and its preview
 	capLinks       // reissue, revoke; M2c: add, rename, delete and preview a role
+	// The four jobs (api.md section 9): each listed type by type, never
+	// derived from HasOwnCues.
+	capAck        // a venue lead's ack
+	capAddTask    // the Master's task, or the reception calling a runner
+	capSetTask    // claim, release, finish; the Master any state
+	capManageJobs // delete a task, import guests, set the checklist
+	capArrive     // a guest's arrival
+	capCheckItem  // a checklist item
 )
 
 // allowed is the table of api.md section 4. It lists what is allowed;
@@ -158,8 +184,16 @@ func allowed(c capability, t domain.RoleType) bool {
 		return t == domain.Master || t.HasOwnCues() || t == domain.Host
 	case capCheckIn:
 		return t.HasOwnCues()
-	case capAdvance, capUndo, capShift, capProxyCheckIn, capEditRundown, capLinks:
+	case capAdvance, capUndo, capShift, capProxyCheckIn, capEditRundown, capLinks, capManageJobs:
 		return t == domain.Master
+	case capAck:
+		return t == domain.VenueLead
+	case capAddTask, capArrive:
+		return t == domain.Master || t == domain.Reception
+	case capSetTask:
+		return t == domain.Master || t == domain.Runner
+	case capCheckItem:
+		return t == domain.Master || t == domain.Cashier
 	}
 	return false
 }
@@ -420,6 +454,14 @@ var domainErrors = []struct {
 	{store.ErrTooManyRoles, "too_many_roles"},
 	{store.ErrInvalidImport, "invalid_import"},
 	{store.ErrLockedOnEventDay, "locked_on_event_day"},
+	{store.ErrNotAssigned, "not_assigned"},
+	{store.ErrTaskTaken, "task_taken"},
+	{store.ErrInvalidTaskState, "invalid_task_state"},
+	{store.ErrTooManyTasks, "too_many_tasks"},
+	{store.ErrInvalidTask, "invalid_task"},
+	{store.ErrGuestsArrived, "guests_arrived"},
+	{store.ErrInvalidChecklist, "invalid_checklist"},
+	{store.ErrChecklistStarted, "checklist_started"},
 }
 
 // writeFailed maps a failed write (api.md section 6). The writes of M1
@@ -444,7 +486,7 @@ func (a *API) writeFailed(w http.ResponseWriter, r *http.Request, err error) {
 	// A cue id from the request that is not in the caller's event, another
 	// event's included: the same 404 as one that does not exist, without a
 	// result (api.md section 6). store.ErrNotFound stays a 500.
-	if errors.Is(err, domain.ErrCueNotFound) || errors.Is(err, store.ErrRoleNotFound) {
+	if errors.Is(err, domain.ErrCueNotFound) || errors.Is(err, store.ErrRoleNotFound) || errors.Is(err, store.ErrItemNotFound) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}

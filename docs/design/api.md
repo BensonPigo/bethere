@@ -86,9 +86,9 @@
   - 活動階段：這些寫入在 Draft 與 Live 都可以，因為活動日當天第一次推進前活動仍是 Draft（ADR-0020），總召可能需要在開始前臨時取消或加環節（US-M-6.3）。`POST /api/cues/undo` 因此在 Draft 也可用（Draft 階段唯一的 Cue 操作是略過）；推進與平移的階段規則不變。
 - **略過**：目標須為 Pending（否則 `not_pending`）。
 - **新增**：`start` 為 UTC 時間，須落在活動日 00:00（活動時區）到 `endsAt` 之間；`durationMin` 0～1440；`title` 1～100 字（去除前後空白後）；`notePublic`、`roleNote` 最多 500 字；不合格回 `invalid_cue`。插入位置之後的 Cue 都必須是 Pending 或 Skipped，也就是不能插在進行中或已完成的 Cue 前面（否則 `invalid_position`）。`afterCueId` 必填，所以新 Cue 不會成為第一個。
-- **指派**：目標 Cue 須為 Pending（`not_pending`）；`roles` 最多 50 個、`roleId` 不可重複（400）；只能指派 Stylist、Media、StageAV（Master 本來就看全部、Host 不看 Cue；否則 `invalid_assignment`）。新增時的 `roles` 同樣適用。
+- **指派**：目標 Cue 須為 Pending（`not_pending`）；`roles` 最多 50 個、`roleId` 不可重複（400）；只能指派有自己 Cue 的七種類型（Stylist、Media、StageAV 與四種工作；Master 本來就看全部、Host 不看 Cue；否則 `invalid_assignment`）。新增時的 `roles` 同樣適用。
 - **編輯**：只改標題與公開備註，限制同新增；任何狀態的 Cue 都可以。不改 `scheduledStart`、長度、固定（`access-control.md` 第 4 節）。
-- **就位打卡**：設定值而不是切換，重複送出相同的值不產生新紀錄（US-X-5.4）。本人打卡的角色只取自 Token；代打卡的目標須為 Stylist、Media、StageAV（否則 `not_checkin_role`），寫入 `byRoleId` = Master。
+- **就位打卡**：設定值而不是切換，重複送出相同的值不產生新紀錄（US-X-5.4）。本人打卡的角色只取自 Token；代打卡的目標須為有自己 Cue 的七種類型（否則 `not_checkin_role`），寫入 `byRoleId` = Master。
 - **歸屬先於一切檢查**：store 函式接收呼叫者的活動 id，以「id 且屬於該活動」查詢目標 Cue 或角色；查不到時回 404，**排在** `master_role`、`invalid_assignment`、`not_checkin_role`、`not_pending`、`invalid_position` 等任何依目標類型或狀態的檢查之前，否則別的活動的 id 會因回應不同而洩漏它的類型或狀態。
 - **目標的 Token 不影響驗證結果**：撤銷、重發、代打卡、指派查詢的是**目標角色**，目標沒有有效 Token、Token 已撤銷都不是錯誤，絕不回 `store.ErrInvalidToken`、`store.ErrEventEnded` 或 `domain.ErrEnded`；`invalid` 與 `ended` 只描述**呼叫者自己**的 Token 與活動（第 2.1 節）。同理，新增 Cue 的 `start` 晚於 `endsAt` 回 `invalid_cue`，不得沿用 `domain.ErrEnded`。
 - **撤銷與重發**：目標為 Master 時回 `master_role`（Master 只能以復原碼換發）；目標可以是 Host。重發在單一交易內撤銷舊 Token、建立新 Token；新 Token 的明文**只出現在這一次回應**，客戶端以 `location.origin + "/#t=" + token` 組成連結顯示，不存入本機快照或任何儲存。撤銷沒有有效 Token 的角色時照常成功（冪等，現有 `store.RevokeToken` 回 `ErrNotFound` 的行為要改）。兩台總召裝置同時重發同一角色時，後到的覆蓋前一個，先拿到的連結已失效（接受；畫面上的「連結最近使用時間」看得出新連結有沒有人開）。客戶端只把回應中的 `snapshot` 存入本機快照，`token` 只以文字加「複製」按鈕顯示，**不做成可點的連結**（總召在同一分頁點開會讓裝置變成該角色）。撤銷與重發的操作紀錄另記操作者使用的 `access_tokens.id`（不是雜湊），以復原碼換發 Master 連結後，才分得出哪些重發是外流的舊連結做的（`access-control.md` 3.4）。重發已寫入、但重新讀取快照失敗時回 500（第 7 節第 4 條），新 Token 的明文因此遺失；舊連結已失效，總召再按一次重發即可。
@@ -112,7 +112,7 @@
 - **新增角色**：
   - `name` 去除前後空白後 1～50 字，不得含 `;`（CSV 以它分隔角色）、控制字元或零寬字元（否則 `invalid_role`），與同一活動的其他角色（含 Master）不可同名（`duplicate_name`）；一場活動最多 50 個角色（含 Master，`too_many_roles`）。改名的名稱規則相同。
   - **類型由伺服器依 `view` 決定**，總召不指定權限（ADR-0031）：`HandsFree` → Stylist、`Glance` → Media、`Dashboard` → Host。`Dashboard` 帶 `checksIn: true` 回 `invalid_role`。StageAV 只能以指令建立（快速瞄畫面以等寬字顯示備註的差異，見 `screen-design.md` 第 4 節）。
-  - **`checksIn`** 存在欄位 `roles.checks_in`（可為空，ADR-0019；遷移 0003）：`NULL` 表示依類型（Stylist、Media、StageAV 打卡，Host 不打卡；既有角色與 `add-role` 建立的角色都是 `NULL`），`0` 表示不打卡；只寫入 `NULL` 或 `0`（`checksIn: true` 存成 `NULL`），遷移 0003 為 `ALTER TABLE roles ADD COLUMN checks_in INTEGER CHECK (checks_in IS NULL OR checks_in = 0)`，不帶 `bethere:foreign_keys=off`，只新增（ADR-0019）；解析時 Master、Host 一律不打卡，不理會這個欄位。打卡在同一交易內讀取這個欄位。退回到不認得這個欄位的舊版本時，`checksIn: false` 的角色又可以打卡（接受）。`checksIn: false` 的角色：本人打卡與代打卡都回 `not_checkin_role`，Master 快照的 `checkedIn` 為 `false`；仍然可以被指派 Cue。
+  - **`checksIn`** 存在欄位 `roles.checks_in`（可為空，ADR-0019；遷移 0003）：`NULL` 表示依類型（有自己 Cue 的七種類型打卡，Host 不打卡；既有角色與 `add-role` 建立的角色都是 `NULL`），`0` 表示不打卡；只寫入 `NULL` 或 `0`（`checksIn: true` 存成 `NULL`），遷移 0003 為 `ALTER TABLE roles ADD COLUMN checks_in INTEGER CHECK (checks_in IS NULL OR checks_in = 0)`，不帶 `bethere:foreign_keys=off`，只新增（ADR-0019）；解析時 Master、Host 一律不打卡，不理會這個欄位。打卡在同一交易內讀取這個欄位。退回到不認得這個欄位的舊版本時，`checksIn: false` 的角色又可以打卡（接受）。`checksIn: false` 的角色：本人打卡與代打卡都回 `not_checkin_role`，Master 快照的 `checkedIn` 為 `false`；仍然可以被指派 Cue。
   - 新增在單一交易內建立角色與 Token，回應附 `token` 與 `qr`，明文只出現這一次（同重發）。Token 在寫入前產生，QR Code 也在**寫入前**產生，產生失敗就不寫入、回 500；QR 函式庫的錯誤不得包含編碼內容（記錄的 err 裡不能有 Token）。新增已寫入、但重新讀取快照失敗而回 500 時，Token 明文遺失，總召在角色清單按「產生連結」即可（同重發）。Master 角色不能經此建立（`view` 不接受 `Console`）。
 - **QR Code**：`origin` 是客戶端的 `location.origin`，最多 200 字元，以 `url.Parse` 解析後必須：scheme 為小寫的 `https`（`http` 只限主機為 `localhost` 或 `127.0.0.1`）；`User`、`Path`、`RawQuery`、`Fragment`、`Opaque` 全部為空；主機只含 `[a-z0-9.-]`；連接埠若有則為 1～65535；重新序列化後與輸入完全相同。`origin` 欄位一旦出現就必須通過檢查，空字串同樣 400，只有重發可以完全不帶。不符一律 400（擋下 `https://正式網域@evil.example` 這類讓 QR 指向別處、把 Token 交給攻擊者的值）；QR Code 的內容為 `origin + "/#t=" + token`，與畫面上的文字連結完全相同。以鎖定版本的函式庫在記憶體產生 PNG，以 data URI 回傳，不寫入磁碟、日誌或資料庫；客戶端只顯示，不存入本機快照或任何儲存（US-M-13.2）。`origin` 只用於這一次回應。
 - **刪除角色**：只限 Draft；Master 回 `master_role`。同一交易內刪除角色列，其 Token、指派、打卡隨外鍵一併刪除，持有該連結的裝置下一次輪詢收到 `invalid`（查無 Token）。
@@ -128,19 +128,25 @@
 
 角色類型**只取自** Token 所屬角色（`TokenOwner.RoleType`），不信任請求內容。**未列出的組合一律拒絕**（403）。
 
-| 端點 | Master | Stylist | Media | StageAV | Host | 其他類型 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/snapshot` | Master 快照 | 角色快照 | 角色快照 | 角色快照 | 彙總快照 | 403 |
-| `POST /api/cues/advance` | ✔ | 403 | 403 | 403 | 403 | 403 |
-| `POST /api/cues/undo` | ✔ | 403 | 403 | 403 | 403 | 403 |
-| `POST /api/cues/shift/preview` | ✔ | 403 | 403 | 403 | 403 | 403 |
-| `POST /api/cues/shift` | ✔ | 403 | 403 | 403 | 403 | 403 |
-| `POST /api/cues/skip`、`insert`、`roles`、`edit` | ✔ | 403 | 403 | 403 | 403 | 403 |
-| `POST /api/checkin` | 403 | ✔ | ✔ | ✔ | 403 | 403 |
-| `POST /api/roles/checkin`、`reissue`、`revoke` | ✔ | 403 | 403 | 403 | 403 | 403 |
-| `POST /api/cues/update`、`move`、`delete`，`/api/rundown/import`、`import/preview`，`/api/roles/add`、`rename`、`delete`、`preview` | ✔ | 403 | 403 | 403 | 403 | 403 |
+| 端點 | Master | Stylist | Media | StageAV | VenueLead、Runner、Reception、Cashier | Host | 其他類型 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `GET /api/snapshot` | Master 快照 | 角色快照 | 角色快照 | 角色快照 | 角色快照 | 彙總快照 | 403 |
+| `POST /api/cues/advance` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/undo` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/shift/preview` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/shift` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/skip`、`insert`、`roles`、`edit` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/checkin` | 403 | ✔ | ✔ | ✔ | ✔ | 403 | 403 |
+| `POST /api/roles/checkin`、`reissue`、`revoke` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/update`、`move`、`delete`，`/api/rundown/import`、`import/preview`，`/api/roles/add`、`rename`、`delete`、`preview` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/cues/ack` | 403 | 403 | 403 | 403 | VenueLead ✔，其他 403 | 403 | 403 |
+| `POST /api/tasks/add` | ✔ | 403 | 403 | 403 | Reception ✔，其他 403 | 403 | 403 |
+| `POST /api/tasks/set` | ✔ | 403 | 403 | 403 | Runner ✔，其他 403 | 403 | 403 |
+| `POST /api/tasks/delete`、`/api/guests/import`、`/api/checklist/items` | ✔ | 403 | 403 | 403 | 403 | 403 | 403 |
+| `POST /api/guests/arrive` | ✔ | 403 | 403 | 403 | Reception ✔，其他 403 | 403 | 403 |
+| `POST /api/checklist/check` | ✔ | 403 | 403 | 403 | Cashier ✔，其他 403 | 403 | 403 |
 
-- **開放的類型**：`bethere add-role` 接受 Stylist 與 Host（未定義的類型不能落入寬鬆的預設權限）。暫停的角色類型（VenueLead、Reception、Cashier、Runner，ADR-0033）不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
+- **開放的類型**：Master、Stylist、Media、StageAV、Host 與四種工作（第 9 節）。資料庫中出現任何其他類型時，每個端點都回 403，不落入任何預設分支。
 - 權限檢查在 API 層。store 只確認操作者的憑證仍有效且屬於同一活動，**不檢查角色類型**（`access-control.md` 第 5 節第 6 條），所以每個寫入端點都必須先通過本表。
 
 ## 5. 快照
@@ -168,7 +174,7 @@
 | `conflicts[]` | 固定環節衝突：`{"cueId","fixedCueId","overrunMin"}`（`data-model.md` 4.2） |
 | `overrunMin` | 超時分鐘（`data-model.md` 4.3，ADR-0022）；活動未開始時為 0 |
 
-### 5.3 角色快照（Stylist、Media、StageAV）
+### 5.3 角色快照（Stylist、Media、StageAV 與四種工作）
 
 | 欄位 | 說明 |
 | --- | --- |
@@ -227,7 +233,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 新增的插入位置在進行中或已完成的 Cue 前面 | 422 `invalid_position` |
 | 新增或編輯的時間、長度、標題、備註不合格 | 422 `invalid_cue` |
 | 指派給 Master、Host 或其他不開放的類型 | 422 `invalid_assignment` |
-| 代打卡的目標不是 Stylist、Media、StageAV | 422 `not_checkin_role` |
+| 代打卡的目標不是有自己 Cue 的七種類型 | 422 `not_checkin_role` |
 | 撤銷或重發的目標是 Master | 422 `master_role` |
 | 刪除或預覽的目標是 Master | 422 `master_role` |
 | Live 時的結構性修改（`cues/update`、`move`、`delete`、匯入、刪除角色） | 422 `not_draft` |
@@ -289,7 +295,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
     - Live 時 `cues/update`、`move`、`delete`、匯入、預覽匯入、刪除角色都回 `not_draft`，資料不變。
     - 帶別的活動的 Cue id、角色 id（含別的活動的 Master、別的**已結束**活動的角色）回 404 且不帶 `result`，不回 `master_role`、`not_draft`、`invalid_position`。
     - 刪除、改名、預覽 Token 已撤銷的角色回 200，總召不會收到 `invalid`；刪除角色後，該角色原本的 Token 回 `invalid`。
-    - 預覽：回應沒有 `snapshot` 鍵；`preview` 與目標角色自己的快照（`serverTime` 除外）相同，Stylist、Media、StageAV、Host 各一；預覽後目標的 `lastSeenAt` 不變、操作紀錄筆數不變；前端：`preview` 不進本機儲存。
+    - 預覽：回應沒有 `snapshot` 鍵；`preview` 與目標角色自己的快照（`serverTime` 除外）相同，七種有自己 Cue 的類型與 Host 各一；預覽後目標的 `lastSeenAt` 不變、操作紀錄筆數不變；前端：`preview` 不進本機儲存。
     - 新增角色與帶 `origin` 的重發：`token`、`qr` 只出現在這一次回應；QR Code 解碼後等於 `origin + "/#t=" + token`；`origin` 帶路徑、查詢、片段、`javascript:` 或超過 200 字元回 400；操作紀錄不含 Token、雜湊或 `origin`；前端：`token` 與 `qr` 不進本機儲存。
     - 匯入：任一列錯誤、`newRoles` 多一個或少一個時整份不寫入，現有 Cue 與角色不變；成功時舊 Cue 全部消失；匯入後原本可復原的略過變成 `undo` 為 `null`，`POST /api/cues/undo` 回 `undo_stale`。
     - `checksIn: false` 的角色本人打卡、被代打卡都回 `not_checkin_role`。
@@ -302,3 +308,90 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
     - 改名別的活動的角色 id、並帶上與該活動某角色相同的名稱，回 404 而不是 `duplicate_name`。
     - 預覽從未發過連結的角色（匯入時建立的）回 200；預覽不開放類型的角色回 404。
     - `origin` 為 `https://a@b.example`、含反斜線、大寫 scheme、`http://` 加公開主機時回 400。
+
+## 9. 現場工作：主持、領班、機動組、迎賓、禮金
+
+四種「工作」各是一個角色類型（ADR-0035）：`VenueLead`（領班）、`Runner`（機動組）、`Reception`（迎賓）、`Cashier`（禮金）。它們和 Stylist、Media、StageAV 一樣**有自己的 Cue**：可被指派、讀自己的 Cue、可打卡、畫面是快速瞄或免手持（預設快速瞄）、角色快照的形狀相同（5.3）。每種多一項工作，只出現在快速瞄畫面。主持不是新類型，是一般的快速瞄角色，靠 9.1 的延誤看新人那邊的進度。
+
+這些寫入**不帶也不改** `eventVersion`（與打卡相同，ADR-0023）：彼此不衝突，同一筆資料後到的覆蓋先到的。回應附呼叫者自己的新快照。都寫入操作紀錄，`type` 不以 `cue.` 開頭，不是「復原上一步」的步驟。
+
+### 9.1 延誤（所有角色快照）
+
+角色快照新增 `delayMin`，算法與 5.4 相同；Draft 時為 0。快速瞄畫面在「目前」那一行旁顯示「一切順利」或「延誤 N 分」（未滿 5 分為一切順利，ADR-0026）。
+
+### 9.2 新增角色時選工作
+
+`POST /api/roles/add` 新增選填欄位 `job`：`"general"`（預設）、`"VenueLead"`、`"Runner"`、`"Reception"`、`"Cashier"`。`general` 依 `view` 決定類型（`HandsFree` → Stylist、`Glance` → Media、`Dashboard` → Host）；其他值的類型就是 `job`，`view` 只能是 `HandsFree` 或 `Glance`，否則 422 `invalid_role`。`bethere add-role` 也接受這四種類型。匯入時缺少的角色一律建為 Media（不變）。
+
+### 9.3 回覆收到（VenueLead）
+
+| 方法與路徑 | 權限 | 本文 | 成功回應 |
+| --- | --- | --- | --- |
+| `POST /api/cues/ack` | VenueLead | `{"cueId":n,"acked":bool}` | `ok` + 自己的角色快照 |
+
+- Cue 不在呼叫者的活動裡 → 404；在活動裡但沒有指派給呼叫者 → 422 `not_assigned`（指派與否只在確認同一活動之後才判斷）。Cue 的狀態不限。
+- 儲存在 `cue_acks`（`data-model.md` CueAck）：`acked: true` 寫入或保留第一次的時間，`false` 刪除；與現狀相同時不寫入。
+- 快照：角色快照的 `cues[]` 每個 Cue 新增 `ackedAt`（只有自己的；不是 VenueLead 時一律 `null`）；Master 快照 `cues[].roles[]` 新增 `ackedAt`。
+- 移除指派（`cues/roles`、刪除 Cue、匯入取代）時，同一交易內刪除該角色對該 Cue 的回覆，再指派回來也不會出現舊的回覆。
+
+### 9.4 任務池（Runner、Reception）
+
+| 方法與路徑 | 權限 | 本文 | 成功回應 |
+| --- | --- | --- | --- |
+| `POST /api/tasks/add` | Master、Reception | `{"title":"…"}` | `ok` + 自己的快照 |
+| `POST /api/tasks/set` | Master、Runner | `{"taskId":n,"state":"open"或"claimed"或"done"}` | `ok` + 自己的快照 |
+| `POST /api/tasks/delete` | Master | `{"taskId":n}` | `ok` + 新的 Master 快照 |
+
+- 標題 1～100 字（規則同 Cue 標題）；每場最多 200 個任務，超過回 422 `too_many_tasks`。
+- 刪除任務時，被刪任務的完整欄位寫入操作紀錄（ADR-0032）。
+- 狀態轉換：Runner 只能把 `open` 改成 `claimed`（認領者為自己）、把**自己認領的**改回 `open` 或改成 `done`；別人已認領的回 422 `task_taken`，其他不允許的轉換回 422 `invalid_task_state`。Master 可以把任何任務改成任何狀態；改成 `open` 時清除認領者，改成 `claimed` 回 422 `invalid_task_state`（Master 不替人認領）。
+- 快照的 `tasks`：每項 `{"id","title","createdBy","createdAt","claimedBy","state"}`，`createdBy`、`claimedBy` 是角色名稱（角色已刪除時為 `null`），依建立時間由新到舊。
+  - Master：全部任務。
+  - Runner：所有 `open` 與 `claimed` 的任務，加上自己完成的最近 20 個。
+  - Reception：自己建立的任務。
+  - 其他角色：`tasks` 為 `null`。
+
+### 9.5 賓客名單（Reception）
+
+| 方法與路徑 | 權限 | 本文 | 成功回應 |
+| --- | --- | --- | --- |
+| `POST /api/guests/import` | Master | `{"text":"…"}` | `ok` + 新的 Master 快照 |
+| `POST /api/guests/arrive` | Master、Reception | `{"guestId":n,"arrived":bool}` | `ok` + 自己的快照 |
+
+- 匯入取代整份名單。每行一位：`姓名`、`桌號`、`備註`，以 Tab（從試算表複製）或逗號分隔，備註可省略；第一列若是 `姓名` 開頭就當標題列略過；空行略過。姓名 1～50 字、桌號 1～20 字、備註最多 100 字，規則同角色名稱（不含控制字元與看不見的格式字元）；最多 1000 位、本文上限 256 KB。任一列不合格就整份不寫入，回 422 `invalid_import`。已有任何賓客報到時不能取代，回 422 `guests_arrived`；從活動日 00:00（活動時區）起不能取代，回 422 `locked_on_event_day`（ADR-0032）。
+- 只蒐集姓名、桌號與備註；隨活動一起刪除（NFR-5）。被取代的名單完整寫入操作紀錄（內部資料表，不進任何快照，隨活動刪除），需要時由開發者救回。
+- 快照的 `guests`：Master 與 Reception 為全部賓客 `{"id","name","table","note","arrived"}`，依匯入順序；其他角色為 `null`。搜尋在客戶端進行。
+- 本機快照含賓客名單時，活動日已過 2 天就在開啟頁面時刪除，不論活動是 Draft 或 Live（NFR-5）。
+
+### 9.6 檢核表（Cashier）
+
+| 方法與路徑 | 權限 | 本文 | 成功回應 |
+| --- | --- | --- | --- |
+| `POST /api/checklist/items` | Master | `{"text":"…"}` | `ok` + 新的 Master 快照 |
+| `POST /api/checklist/check` | Master、Cashier | `{"itemId":n,"done":bool}` | `ok` + 自己的快照 |
+
+- 項目取代整份，每行一項，空行略過；每項 1～100 字，最多 30 項。已有任何項目完成時不能取代，回 422 `checklist_started`；從活動日 00:00 起不能取代，回 422 `locked_on_event_day`。被取代的項目完整寫入操作紀錄。
+- 快照的 `checklist`：Master 與 Cashier 為全部項目 `{"id","title","done","doneBy"}`，`doneBy` 為完成者的角色名稱；其他角色為 `null`。
+
+### 9.7 快照的新鍵
+
+- 角色快照（5.3，七種有自己 Cue 的類型共用同一個鍵集合）新增 `delayMin`、`tasks`、`guests`、`checklist`；`cues[]` 新增 `ackedAt`。
+- Master 快照（5.2）新增 `tasks`、`guests`、`checklist`（一律是陣列）；`cues[].roles[]` 新增 `ackedAt`。
+- Host 快照不變，不含任何任務、賓客或檢核表資料。
+
+### 9.8 錯誤（追加到第 6 節）
+
+| 來源錯誤 | 回應 |
+| --- | --- |
+| 回覆的 Cue 沒有指派給呼叫者 | 422 `not_assigned` |
+| 任務已被別人認領 | 422 `task_taken` |
+| 不允許的任務狀態轉換 | 422 `invalid_task_state` |
+| 任務已達 200 個 | 422 `too_many_tasks` |
+| 任務標題不合格 | 422 `invalid_task` |
+| 賓客名單不合格 | 422 `invalid_import` |
+| 已有賓客報到時取代名單 | 422 `guests_arrived` |
+| 檢核表項目不合格 | 422 `invalid_checklist` |
+| 已有項目完成時取代檢核表 | 422 `checklist_started` |
+| 任務、賓客、檢核項目的 id 不在呼叫者的活動裡 | 404 `not_found` |
+
+**歸屬先於一切檢查**（同第 3 節）：`cueId`、`taskId`、`guestId`、`itemId` 只在呼叫者的活動中查詢，查不到回 404，排在 `not_assigned`、`task_taken`、`invalid_task_state`、`guests_arrived`、`checklist_started` 之前；別的已結束活動的 id 同樣回 404。任務、賓客、檢核項目的 id 以 AUTOINCREMENT 產生，取代整份後也不會重用，離線裝置送出的舊 id 只會得到 404。
