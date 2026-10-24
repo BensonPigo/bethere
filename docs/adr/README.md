@@ -47,3 +47,5 @@
 | [0027](0027-small-field-tests-and-one-full-rehearsal.md) | 里程碑改用小型實測，完整彩排只做一次 | 已接受 |
 | [0028](0028-show-original-time-of-shifted-cues.md) | 被平移的環節旁顯示原時間，不顯示偏移量 | 已接受 |
 | [0029](0029-e2e-routes-on-a-vm-test-service.md) | 端對端測試路線在 VM 的測試服務上，由 PO 手動執行 | 已接受 |
+| [0030](0030-split-m3-into-data-ops-and-field-readiness.md) | M3 拆成資料與維運（M3a）、現場準備（M3b） | 已接受 |
+| [0031](0031-pre-event-setup-and-more-roles-before-m3a.md) | M3a 之前先做婚前準備（M2c）與更多角色（M2d），第一版處理賓客 | 已接受 |
