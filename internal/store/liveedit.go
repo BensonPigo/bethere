@@ -32,7 +32,8 @@ type Assignment struct {
 }
 
 // NewCue is a cue the Master adds: it starts at Start as typed, with no
-// offset (ADR-0021), after the cue AfterCueID.
+// offset (ADR-0021), after the cue AfterCueID. AfterCueID 0 puts it first,
+// in draft only (M2c, api.md section 3).
 type NewCue struct {
 	AfterCueID  int64
 	Start       time.Time
@@ -56,19 +57,27 @@ func (s *Store) InsertCue(ctx context.Context, eventID, expectVersion int64, nc 
 			return err
 		}
 		// Every id belongs to this event before anything about it is checked.
-		i := slices.IndexFunc(cues, func(c domain.Cue) bool { return c.ID == nc.AfterCueID })
-		if i < 0 {
-			return domain.ErrCueNotFound
+		i := -1 // first
+		if nc.AfterCueID != 0 {
+			if i = slices.IndexFunc(cues, func(c domain.Cue) bool { return c.ID == nc.AfterCueID }); i < 0 {
+				return domain.ErrCueNotFound
+			}
 		}
 		if err := checkAssignments(ctx, tx, eventID, nc.Roles); err != nil {
 			return err
+		}
+		if i < 0 && e.Status != domain.Draft {
+			return ErrInvalidPosition
 		}
 		title, ok := domain.CleanTitle(nc.Title)
 		if !ok || !domain.ValidNote(nc.NotePublic) || nc.DurationMin < 0 || nc.DurationMin > domain.MaxDurationMin ||
 			!e.ValidCueStart(nc.Start) {
 			return ErrInvalidCue
 		}
-		after := cues[i]
+		afterSeq := 0
+		if i >= 0 {
+			afterSeq = cues[i].Seq
+		}
 		for _, c := range cues[i+1:] {
 			if c.Status != domain.Pending && c.Status != domain.Skipped {
 				return ErrInvalidPosition
@@ -77,14 +86,14 @@ func (s *Store) InsertCue(ctx context.Context, eventID, expectVersion int64, nc 
 		// Two steps, so the UNIQUE (event_id, seq) never sees two equal
 		// seqs halfway through the update.
 		if _, err := tx.ExecContext(ctx, `UPDATE cues SET seq = -(seq + 1) WHERE event_id = ? AND seq > ?`,
-			eventID, after.Seq); err != nil {
+			eventID, afterSeq); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE cues SET seq = -seq WHERE event_id = ? AND seq < 0`, eventID); err != nil {
 			return err
 		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO cues (event_id, seq, title, scheduled_start, duration_min, note_public)
-			VALUES (?, ?, ?, ?, ?, ?)`, eventID, after.Seq+1, title, toNS(nc.Start), nc.DurationMin, nullNote(nc.NotePublic))
+			VALUES (?, ?, ?, ?, ?, ?)`, eventID, afterSeq+1, title, toNS(nc.Start), nc.DurationMin, nullNote(nc.NotePublic))
 		if err != nil {
 			return err
 		}

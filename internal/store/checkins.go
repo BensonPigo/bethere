@@ -15,7 +15,8 @@ var (
 	// are not told apart (api.md section 6).
 	ErrRoleNotFound = errors.New("role not found in this event")
 	// ErrNotCheckInRole means the role cannot check in: only the types with
-	// cues of their own can (access-control.md section 4).
+	// cues of their own can (access-control.md section 4), and not when the
+	// Master chose "no check-in" for it (M2c).
 	ErrNotCheckInRole = errors.New("this role type does not check in")
 )
 
@@ -46,7 +47,12 @@ func (s *Store) SetCheckIn(ctx context.Context, eventID, roleID int64, checkedIn
 		if err != nil {
 			return err
 		}
-		if !typ.HasOwnCues() {
+		var noCheckIn bool
+		if err := tx.QueryRowContext(ctx, `SELECT checks_in IS NOT NULL FROM roles WHERE id = ?`, roleID).
+			Scan(&noCheckIn); err != nil {
+			return err
+		}
+		if !typ.ChecksIn(noCheckIn) {
 			return ErrNotCheckInRole
 		}
 		var current bool

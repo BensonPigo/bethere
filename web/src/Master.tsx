@@ -1,8 +1,12 @@
 // Master console (screen-design.md section 3; US-M-1 to US-M-8).
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { CueStatus, MasterCue, MasterRole, MasterSnapshot, ShiftPreview, ShiftRequest, WriteRequest } from "./api";
+import type {
+  CueStatus, ImportPreview, MasterCue, MasterRole, MasterSnapshot, NewRole, ShiftPreview, ShiftRequest, Snapshot, WriteRequest,
+} from "./api";
 import { dateInZone, formatHM } from "./format";
 import { CueDialog, InsertDialog, RoleMenu, RolesPanel } from "./MasterDialogs";
+import { AddRoleDialog, dayStarted, ImportDialog, RolePreview, RundownEditor } from "./Prep";
+import type { NewLink } from "./session";
 import { OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 
@@ -20,20 +24,35 @@ type Props = {
   offline: boolean;
   busy: boolean;
   write: (w: WriteRequest) => Promise<boolean>;
-  reissue: (roleId: string | number) => Promise<string | null>;
+  reissue: (roleId: string | number) => Promise<NewLink | null>;
   preview: (req: ShiftRequest) => Promise<ShiftPreview | string>;
+  // The preparation (M2c).
+  addRole: (r: NewRole) => Promise<NewLink | null>;
+  importPreview: (text: string) => Promise<ImportPreview | string>;
+  rolePreview: (roleId: string | number) => Promise<Snapshot | string>;
+  skew: number;
+  now: number;
 };
 
-// What the console has open over the panels: one dialog at a time.
-type Open = { kind: "role"; id: string | number } | { kind: "cue"; id: string | number } | { kind: "insert"; after: string | number };
+// What the console has open over the panels: one dialog at a time, over
+// the rundown editor when it is open.
+type Open =
+  | { kind: "role"; id: string | number }
+  | { kind: "cue"; id: string | number }
+  | { kind: "insert"; after: string | number | null }
+  | { kind: "import" }
+  | { kind: "addRole" }
+  | { kind: "preview"; snap: Snapshot; name: string };
 
-export function Master({ snap, correctedNow, offline, busy, write, reissue, preview }: Props) {
+export function Master(props: Props) {
+  const { snap, correctedNow, offline, busy, write, reissue, preview } = props;
   const tz = snap.event.timezone || "Asia/Taipei";
   const active = snap.cues.find((c) => c.status === "InProgress") ?? null;
   const nextPending = snap.cues.find((c) => c.status === "Pending") ?? null;
   const focusId = (active ?? nextPending)?.id ?? null;
   const [shiftDelta, setShiftDelta] = useState<number | null>(null);
   const [open, setOpen] = useState<Open | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -44,7 +63,8 @@ export function Master({ snap, correctedNow, offline, busy, write, reissue, prev
     if (row) list.scrollTo({ top: row.offsetTop - list.clientHeight * 0.25, behavior: "smooth" });
   }, [focusId]);
 
-  const isEventDay = dateInZone(correctedNow, tz) === snap.event.date.slice(0, 10);
+  const today = dateInZone(correctedNow, tz);
+  const isEventDay = today === snap.event.date.slice(0, 10);
   const draft = snap.eventStatus === "Draft";
   const lock = offline || busy;
   const conflicted = new Set(snap.conflicts.map((c) => String(c.cueId)));
@@ -137,11 +157,54 @@ export function Master({ snap, correctedNow, offline, busy, write, reissue, prev
           {snap.undo.available && <small>{snap.undo.description}</small>}
         </button>
 
-        <RolesPanel snap={snap} now={correctedNow} open={(r) => setOpen({ kind: "role", id: r.id })} />
+        {draft && (
+          <button class="edit-rundown" onClick={() => setEditing(true)}>
+            編輯流程表
+          </button>
+        )}
+
+        <RolesPanel
+          snap={snap}
+          now={correctedNow}
+          open={(r) => setOpen({ kind: "role", id: r.id })}
+          add={() => setOpen({ kind: "addRole" })}
+        />
       </div>
 
+      {editing && (
+        <RundownEditor
+          snap={snap}
+          tz={tz}
+          today={today}
+          lock={lock}
+          write={write}
+          openCue={(c) => setOpen({ kind: "cue", id: c.id })}
+          insertAfter={(c) => setOpen({ kind: "insert", after: c ? c.id : null })}
+          openImport={() => setOpen({ kind: "import" })}
+          close={() => setEditing(false)}
+        />
+      )}
       {open?.kind === "role" && roleById(open.id) && (
-        <RoleMenu role={roleById(open.id)!} lock={lock} write={write} reissue={reissue} close={() => setOpen(null)} />
+        <RoleMenu
+          role={roleById(open.id)!}
+          lock={lock}
+          deleteReason={!draft ? "活動已開始，不能刪除角色" : dayStarted(snap.event.date, today) ? "活動日當天不能刪除角色，可撤銷連結" : null}
+          write={write}
+          reissue={reissue}
+          preview={async (r) => {
+            const s = await props.rolePreview(r.id);
+            if (typeof s === "string") window.alert(s);
+            else setOpen({ kind: "preview", snap: s, name: r.name });
+          }}
+          close={() => setOpen(null)}
+        />
+      )}
+      {open?.kind === "addRole" && <AddRoleDialog lock={lock} addRole={props.addRole} close={() => setOpen(null)} />}
+      {open?.kind === "import" && (
+        <ImportDialog snap={snap} lock={lock} importPreview={props.importPreview} write={write} close={() => setOpen(null)} />
+      )}
+      {open?.kind === "preview" && (
+        <RolePreview snap={open.snap} name={open.name} now={props.now} skew={props.skew} close={() => setOpen(null)} />
       )}
       {open?.kind === "cue" && cueById(open.id) && (
         <CueDialog
@@ -155,8 +218,15 @@ export function Master({ snap, correctedNow, offline, busy, write, reissue, prev
           close={() => setOpen(null)}
         />
       )}
-      {open?.kind === "insert" && cueById(open.after) && (
-        <InsertDialog snap={snap} after={cueById(open.after)!} tz={tz} lock={lock} write={write} close={() => setOpen(null)} />
+      {open?.kind === "insert" && (open.after === null || cueById(open.after)) && (
+        <InsertDialog
+          snap={snap}
+          after={open.after === null ? null : cueById(open.after)}
+          tz={tz}
+          lock={lock}
+          write={write}
+          close={() => setOpen(null)}
+        />
       )}
 
       {shiftDelta !== null && shiftDelta !== 0 && nextPending && (

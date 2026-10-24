@@ -15,9 +15,10 @@ import (
 // (tech-stack.md 2.2「型別」); adding a field here is a contract change.
 
 type roleView struct {
-	Type domain.RoleType `json:"type"`
-	Name string          `json:"name"`
-	View domain.View     `json:"view"` // the screen to open (ADR-0025)
+	Type     domain.RoleType `json:"type"`
+	Name     string          `json:"name"`
+	View     domain.View     `json:"view"`     // the screen to open (ADR-0025)
+	ChecksIn bool            `json:"checksIn"` // whether it checks in (M2c)
 }
 
 // eventDayView lets a draft count down on the event day, offline too
@@ -101,6 +102,8 @@ type roleListItem struct {
 	ID         int64           `json:"id"`
 	Name       string          `json:"name"`
 	Type       domain.RoleType `json:"type"`
+	View       domain.View     `json:"view"`     // M2c
+	ChecksIn   bool            `json:"checksIn"` // M2c
 	CheckedIn  bool            `json:"checkedIn"`
 	LastSeenAt *string         `json:"lastSeenAt"` // to the minute, so it changes the ETag at most once a minute
 	HasLink    bool            `json:"hasLink"`
@@ -210,7 +213,7 @@ func currentTitle(d store.SnapshotData) *string {
 }
 
 func ownRole(d store.SnapshotData) roleView {
-	return roleView{Type: d.Owner.RoleType, Name: d.Owner.RoleName, View: d.Owner.View}
+	return roleView{Type: d.Owner.RoleType, Name: d.Owner.RoleName, View: d.Owner.View, ChecksIn: d.Owner.ChecksIn}
 }
 
 func eventDay(e domain.Event) eventDayView {
@@ -289,7 +292,8 @@ func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int6
 		s.Cues = append(s.Cues, mc)
 	}
 	for _, r := range d.Roles {
-		item := roleListItem{ID: r.ID, Name: r.Name, Type: r.Type, CheckedIn: r.CheckedIn, HasLink: r.ActiveTokenID != 0}
+		item := roleListItem{ID: r.ID, Name: r.Name, Type: r.Type, View: r.View, ChecksIn: r.ChecksIn,
+			CheckedIn: r.CheckedIn, HasLink: r.ActiveTokenID != 0}
 		if t, ok := lastSeen(r.ActiveTokenID); ok {
 			item.LastSeenAt = optTime(t.Truncate(time.Minute))
 		}
@@ -304,8 +308,10 @@ func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int6
 	if d.Event.Status == domain.Live {
 		s.OverrunMin = domain.OverrunMin(cues, now)
 	}
-	// In draft the only cue operation is a skip, which can be undone too (US-M-6.4).
-	if d.LastOp != nil {
+	// In draft the only cue operation is a skip, which can be undone too
+	// (US-M-6.4). An operation whose cues were deleted or replaced since
+	// (M2c) can no longer be undone and offers no button (api.md 5.2).
+	if d.LastOp != nil && undoable(cues, *d.LastOp) {
 		desc := describeUndo(*d.LastOp, titles)
 		s.Undo = undoView{Available: true, Description: &desc}
 	}
@@ -412,6 +418,13 @@ func shiftNotice(shifts []store.ShiftRecord, mine map[int64]domain.Cue) *datedNo
 		}
 	}
 	return nil
+}
+
+// undoable runs the undo on the current cues without writing: the same
+// check UndoLastCueOp makes, so the button is offered only when it works.
+func undoable(cues []domain.Cue, op domain.Op) bool {
+	_, err := domain.Undo(cues, op)
+	return err == nil
 }
 
 // describeUndo is the server-made text of the undo button (US-M-4.2), e.g.

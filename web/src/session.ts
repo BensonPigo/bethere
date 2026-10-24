@@ -1,7 +1,7 @@
 // Polling, clock skew, local snapshot and write handling for one token.
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { fetchSnapshot, postShiftPreview, postWrite, shouldWipeLocalData } from "./api";
-import type { Notice, Outcome, ShiftPreview, ShiftRequest, Snapshot, WriteRequest } from "./api";
+import { fetchSnapshot, postImportPreview, postRolePreview, postShiftPreview, postWrite, shouldWipeLocalData } from "./api";
+import type { ImportPreview, NewRole, Notice, Outcome, ShiftPreview, ShiftRequest, Snapshot, WriteRequest } from "./api";
 import { freshNotice } from "./notice";
 import { addSkewSample, currentSkew } from "./clock";
 import { deleteSnapshot, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
@@ -27,7 +27,15 @@ const REJECTED: Record<string, string> = {
   invalid_assignment: "只能指派給新秘、攝影或音控",
   not_checkin_role: "這個角色不需要就位打卡",
   master_role: "總召連結只能用復原碼換發",
+  invalid_role: "角色名稱或畫面不正確（1～50 字，不能含分號）",
+  duplicate_name: "已經有同名的角色",
+  too_many_roles: "角色已達 50 個上限",
+  invalid_import: "匯入內容有誤，請重新預覽",
+  locked_on_event_day: "活動日當天不能整份取代流程表或刪除角色",
 };
+
+// A new link: shown once as text with its QR code, never stored (US-M-7.1, US-M-13).
+export type NewLink = { token: string; qr: string | null; roleId: string | number | null };
 
 // How long a change notice stays up (screen-design.md 4.4).
 export const NOTICE_MS = 6000;
@@ -174,14 +182,43 @@ export function useSession(token: string | null) {
 
   const write = useCallback(async (w: WriteRequest) => (await send(w)) !== null, [send]);
 
-  // reissue returns the new link's token, which exists only in this
-  // response and is never stored (US-M-7.1).
+  // reissue and addRole return the new link, which exists only in this
+  // response and is never stored (US-M-7.1, US-M-11.2); the origin asks
+  // for its QR code (US-M-13).
+  const linkOf = (o: Outcome | null): NewLink | null =>
+    o?.kind === "ok" && o.token ? { token: o.token, qr: o.qr ?? null, roleId: o.roleId ?? null } : null;
   const reissue = useCallback(
-    async (roleId: string | number): Promise<string | null> => {
-      const o = await send({ path: "/api/roles/reissue", roleId });
-      return o?.kind === "ok" && o.token ? o.token : null;
-    },
+    async (roleId: string | number) => linkOf(await send({ path: "/api/roles/reissue", roleId, origin: location.origin })),
     [send],
+  );
+  const addRole = useCallback(
+    async (role: NewRole) => linkOf(await send({ path: "/api/roles/add", role, origin: location.origin })),
+    [send],
+  );
+
+  // The import and role previews: read-only like the shift preview. A role
+  // preview is another role's snapshot: shown, never stored (US-M-14.3).
+  const importPreview = useCallback(
+    async (text: string): Promise<ImportPreview | string> => {
+      if (!token) return "操作失敗，請稍後再試";
+      const o = await postImportPreview(token, text);
+      if (o.kind === "preview") return o.preview as ImportPreview;
+      if (o.kind === "rejected") return REJECTED[o.error] ?? "無法預覽，請稍後再試";
+      if (shouldWipeLocalData(o)) apply(o, Date.now());
+      return "無法預覽，請稍後再試";
+    },
+    [token, apply],
+  );
+  const rolePreview = useCallback(
+    async (roleId: string | number): Promise<Snapshot | string> => {
+      if (!token) return "操作失敗，請稍後再試";
+      const o = await postRolePreview(token, roleId);
+      if (o.kind === "preview") return o.preview as Snapshot;
+      if (o.kind === "rejected") return REJECTED[o.error] ?? "無法預覽，請稍後再試";
+      if (shouldWipeLocalData(o)) apply(o, Date.now());
+      return "無法預覽，請稍後再試";
+    },
+    [token, apply],
   );
 
   // The shift preview (US-M-2.1): read-only, so it neither locks the buttons
@@ -190,7 +227,7 @@ export function useSession(token: string | null) {
     async (req: ShiftRequest): Promise<ShiftPreview | string> => {
       if (!token) return "操作失敗，請稍後再試";
       const o = await postShiftPreview(token, req);
-      if (o.kind === "preview") return o.preview;
+      if (o.kind === "preview") return o.preview as ShiftPreview;
       if (o.kind === "rejected") return REJECTED[o.error] ?? "無法試算，請稍後再試";
       if (shouldWipeLocalData(o)) apply(o, Date.now());
       return "無法試算，請稍後再試";
@@ -199,5 +236,5 @@ export function useSession(token: string | null) {
   );
 
   const offline = now - (lastOk ?? openedAt.current) > OFFLINE_AFTER_MS;
-  return { phase, snap, skew, now, offline, lastOk, notice, busy, write, reissue, preview, change };
+  return { phase, snap, skew, now, offline, lastOk, notice, busy, write, reissue, addRole, preview, importPreview, rolePreview, change };
 }

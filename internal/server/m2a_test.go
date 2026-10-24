@@ -218,7 +218,7 @@ func TestUS_H_1_HostDashboardHoldsOnlyTheDelayAndCurrentTitle(t *testing.T) {
 	host := e.addRoleWithToken(domain.Host)
 	d := e.snap(host)
 	wantKeys(t, "Host snapshot", d, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "delayMin", "currentTitle")
-	wantKeys(t, "role", d["role"].(map[string]any), "type", "name", "view")
+	wantKeys(t, "role", d["role"].(map[string]any), "type", "name", "view", "checksIn")
 	if d["role"].(map[string]any)["view"] != "Dashboard" || d["delayMin"] != 0.0 || d["currentTitle"] != nil {
 		t.Errorf("draft dashboard = %v", d)
 	}

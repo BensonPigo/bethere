@@ -210,6 +210,7 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷", async
     await expect(text).toHaveValue(/#t=[A-Za-z0-9_-]{22}$/);
     link = await text.inputValue();
     await expect(master.getByRole("dialog").locator("a")).toHaveCount(0); // text, never a link to tap
+    await expect(master.getByRole("dialog").locator("img.qr")).toBeVisible(); // US-M-13.1
     await closeDialog(master);
   });
 
@@ -227,7 +228,7 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷", async
   await test.step("撤銷後新連結也失效（US-M-7.2）", async () => {
     await master.locator(".role-row", { hasText: "攝影" }).click();
     await master.getByRole("button", { name: "撤銷連結" }).click();
-    await expect(master.locator(".role-row", { hasText: "攝影" })).toContainText("連結已撤銷", { timeout: PROPAGATE_MS });
+    await expect(master.locator(".role-row", { hasText: "攝影" })).toContainText("連結未發或已撤銷", { timeout: PROPAGATE_MS });
     const page = contexts[contexts.length - 1].pages()[0];
     await expect(page.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS });
   });
@@ -290,6 +291,96 @@ test("新人儀表板：開始前、一切順利、延誤、復原", async ({ br
   );
   await undo(master);
   await expect(host.locator(".dashboard .state")).toHaveText("一切順利", { timeout: PROPAGATE_MS });
+});
+
+// ---------------------------------------------------------------- 婚前準備
+
+// The tab-separated rundown a spreadsheet copies (US-M-12.1); 主持 is a role
+// the event does not have yet (US-M-12.6).
+const PASTED = [
+  ["seq", "title", "start", "duration_min", "fixed", "roles", "role_note", "note"],
+  ["1", "新娘化妝", "09:00", "60", "", "新秘", "新娘房", ""],
+  ["2", "證婚", "10:30", "20", "Y", "主持;攝影", "台上", ""],
+  ["3", "送客", "13:00", "30", "", "攝影", "", ""],
+].map((r) => r.join("\t")).join("\n");
+
+const editorRow = (master: Page, i: number) => master.locator(".editor-row").nth(i);
+
+test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上匯入、刪除角色", async ({ browser }) => {
+  const links = event(6); // the event of tomorrow: its day has not begun
+  const master = await open(browser, links, "總召");
+  const stylist = await open(browser, links, "新秘");
+  await expect(stylist.locator(".preday")).toContainText("新娘化妝");
+
+  await test.step("改環節標題，新秘自己看到（US-M-10.2、US-M-10.C2 的功能部分）", async () => {
+    await master.getByRole("button", { name: "編輯流程表" }).click();
+    const row = editorRow(master, 0);
+    await expect(row.locator("input.title")).toHaveValue("新娘化妝");
+    await row.locator("input.title").fill("新娘化妝（加長）");
+    await row.locator("input.duration").fill("45");
+    await row.getByRole("button", { name: "儲存" }).click();
+    await master.waitForTimeout(1200);
+    await timed("編輯 → 新秘", () => expect(stylist.locator(".preday")).toContainText("新娘化妝（加長）", { timeout: PROPAGATE_MS }));
+  });
+
+  await test.step("上移與刪除環節（US-M-10.3、10.4）", async () => {
+    await editorRow(master, 3).getByRole("button", { name: "上移" }).click(); // 敬酒 above 一進預備
+    await master.waitForTimeout(1200);
+    await expect(editorRow(master, 2).locator("input.title")).toHaveValue("敬酒");
+    await editorRow(master, 2).getByRole("button", { name: "刪除" }).click();
+    await master.waitForTimeout(1200);
+    await expect(master.locator(".editor-row")).toHaveCount(4);
+    await master.locator(".editor").getByRole("button", { name: "關閉" }).click();
+  });
+
+  let link = "";
+  await test.step("新增角色「伴娘」，連結附 QR Code，手機打開就是伴娘（US-M-11.1、11.2、US-M-13）", async () => {
+    await master.getByRole("button", { name: "＋ 新增角色" }).click();
+    const d = master.getByRole("dialog");
+    await d.getByLabel("名稱").fill("伴娘");
+    await d.getByRole("radio", { name: /快速瞄/ }).check();
+    await d.getByRole("button", { name: "新增並產生連結" }).click();
+    await expect(d.locator("img.qr")).toBeVisible();
+    link = await d.locator(".link-text").inputValue();
+    await closeDialog(master);
+    const phone = await open(browser, { ...links, 新人: link.split("#t=")[1] }, "新人");
+    await expect(phone.locator(".glance-head")).toHaveText("伴娘");
+  });
+
+  await test.step("預覽新秘看到的畫面，不必另一支手機（US-M-14）", async () => {
+    await master.locator(".role-row", { hasText: "新秘" }).click();
+    await master.getByRole("button", { name: "預覽此角色的畫面" }).click();
+    const preview = master.locator(".role-preview");
+    await expect(preview.locator(".preview-bar")).toContainText("預覽：新秘 看到的畫面");
+    await expect(preview.locator(".preday")).toContainText("新娘化妝（加長）");
+    await preview.getByRole("button", { name: "結束預覽" }).click();
+    await expect(preview).toBeHidden();
+  });
+
+  await test.step("貼上整份流程表，缺少的角色一起建立（US-M-12）", async () => {
+    await master.getByRole("button", { name: "編輯流程表" }).click();
+    await master.getByRole("button", { name: "貼上匯入" }).click();
+    await master.locator(".import-text").fill(PASTED);
+    await master.getByRole("button", { name: "預覽", exact: true }).click();
+    await expect(master.locator(".missing-roles")).toContainText("主持");
+    await expect(master.locator(".import-preview tr")).toHaveCount(3);
+    await master.getByRole("button", { name: "建立 1 個角色並匯入" }).click();
+    await expect(master.locator(".import-text")).toBeHidden();
+    await expect(master.locator(".editor-row")).toHaveCount(3);
+    await expect(editorRow(master, 1).locator("input.title")).toHaveValue("證婚");
+    await master.locator(".editor").getByRole("button", { name: "關閉" }).click();
+    await expect(master.locator(".role-row", { hasText: "主持" })).toContainText("連結未發或已撤銷");
+  });
+
+  await test.step("刪除角色「伴娘」，她的手機看到連結已失效（US-M-11.5）", async () => {
+    await master.locator(".role-row", { hasText: "伴娘" }).click();
+    await master.getByRole("button", { name: "刪除角色" }).click();
+    await expect(master.locator(".role-row", { hasText: "伴娘" })).toHaveCount(0);
+    const phone = contexts[contexts.length - 1].pages()[0];
+    await timed("刪除角色 → 手機", () =>
+      expect(phone.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------- 伺服器重啟（最後）

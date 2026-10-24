@@ -72,7 +72,7 @@
 | `POST /api/cues/update` | Token | Master | `{"version":n,"cueId":n,"start":"<RFC 3339>","durationMin":n,"isFixed":bool,"title":"…","notePublic":"…"或null}` | `ok` + 新的 Master 快照；只限 Draft（M2c，US-M-10.2） |
 | `POST /api/cues/move` | Token | Master | `{"version":n,"cueId":n,"afterCueId":n或null}` | `ok` + 新的 Master 快照；`null` 表示移到第一個；只限 Draft（M2c，US-M-10.3） |
 | `POST /api/cues/delete` | Token | Master | `{"version":n,"cueId":n}` | `ok` + 新的 Master 快照；只限 Draft（M2c，US-M-10.4） |
-| `POST /api/rundown/import/preview` | Token | Master | `{"text":"…"}` | `{"result":"ok","preview":{"rows":[…],"missingRoles":["…"],"replaces":n}}`；不寫入；只限 Draft（M2c，US-M-12.2） |
+| `POST /api/rundown/import/preview` | Token | Master | `{"text":"…"}` | `{"result":"ok","preview":{"fileError":"…"或null,"rows":[…],"missingRoles":["…"],"tooManyRoles":bool,"replaces":n}}`；不寫入；只限 Draft（M2c，US-M-12.2） |
 | `POST /api/rundown/import` | Token | Master | `{"version":n,"text":"…","newRoles":[{"name":"…","view":"HandsFree"或"Glance","checksIn":bool}…]}` | `ok` + 新的 Master 快照；取代整份；只限 Draft（M2c，US-M-12.3、12.4、12.6） |
 | `POST /api/roles/add` | Token | Master | `{"name":"…","view":"HandsFree"或"Glance"或"Dashboard","checksIn":bool,"origin":"https://…"}` | `{"result":"ok","snapshot":{…},"roleId":n,"token":"<22 字元>","qr":"data:image/png;base64,…"}`（M2c，US-M-11.1、11.2、US-M-13） |
 | `POST /api/roles/rename` | Token | Master | `{"roleId":n,"name":"…"}` | `ok` + 新的 Master 快照（M2c，US-M-11.4） |
@@ -108,7 +108,7 @@
 - **復原上一步與 M2c 的修改**：M2c 的修改不是步驟，但可能讓上一個 Cue 操作無法復原（例如被略過的 Cue 已刪除、或整份已被匯入取代）；此時 `POST /api/cues/undo` 回 `undo_stale`（`domain.Undo` 找不到 Cue 就回 `ErrUndoStale`，既有行為）。Master 快照的 `undo` 改為：上一個 Cue 操作已無法復原時，與「沒有可復原的操作」相同，回 `{"available":false,"description":null}`（鍵集合不變），不顯示一個按了必定失敗的按鈕；判斷方式是對目前的 Cue 試跑 `domain.Undo`，回 `ErrUndoStale` 即為無法復原。
 - **貼上匯入**：
   - `text` 為整份流程表文字，欄位與 `bethere import-rundown` 的 CSV 相同（`stories/m1.md` US-M-0.2，含標題列）；第一列含 Tab 時以 Tab 分隔（從試算表複製），否則以逗號分隔。最多 200 列資料、100 KB；超過回 `invalid_import`。驗證與 `import-rundown` 共用同一個解析與驗證函式；這個函式補上與新增 Cue 相同的限制（標題 1～100 字、`notePublic` 與 `roleNote` 最多 500 字），讓匯入的 Cue 在編輯器原樣儲存不會失敗。寫入時依 CSV 的 `seq` 排序，重新編號為 1..n。
-  - 預覽回 `rows[]`：`{"line","seq","title","start","durationMin","isFixed","roles":["…"],"roleNote","notePublic","errors":["…"]}`，`errors` 為人看得懂的中文原因；`missingRoles[]` 為文字中提到、但活動裡沒有的角色名稱（依出現順序、不重複）；`replaces` 為目前的 Cue 數量（畫面據此提示「現有的 N 個環節與指派將被取代」）。有任何一列錯誤時畫面不能確認。
+  - 預覽回 `rows[]`：`{"line","seq","title","start","durationMin","isFixed","roles":["…"],"roleNote","notePublic","errors":["…"]}`，`errors` 為人看得懂的中文原因；`missingRoles[]` 為文字中提到、但活動裡沒有的角色名稱（依出現順序、不重複）；`replaces` 為目前的 Cue 數量（畫面據此提示「現有的 N 個環節與指派將被取代」）。有任何一列錯誤時畫面不能確認。整份文字讀不懂時（缺少必要欄位、不認得的欄位、超過 100 KB 或 200 列），`fileError` 為原因、`rows` 為空陣列。
   - **角色比對**（安全審查 P1）：以該活動的**所有**角色（含 Master）比對名稱。對到 Master、Host 或不開放的類型就是錯誤列（與指派規則相同）；**只有完全對不到的名稱**才列入 `missingRoles`。缺少的名稱也要通過新增角色的名稱規則（不合格時該列標為錯誤）；建立後會超過 50 個角色時，預覽另回 `"tooManyRoles":true`，畫面不能確認。
   - 匯入在單一交易內：確認 `newRoles` 的名稱集合**恰好等於**此刻的 `missingRoles`（不多不少，否則 `invalid_import`，因為兩次請求之間別人可能已新增角色）→ `newRoles` 的名稱不可重複（400）、每一筆經過與 `roles/add` 相同的名稱檢查函式與上限檢查（`invalid_role`、`too_many_roles`）→ 建立 `newRoles`（不產生 Token，US-M-12.6）→ 刪除現有全部 Cue 與指派 → 寫入新的 Cue 與指派 → 一筆 `rundown.import` 紀錄 → `eventVersion` + 1。任一步失敗整份不寫入。`newRoles` 的 `view` 只能是 `HandsFree` 或 `Glance`（匯入的角色會被指派 Cue，平安儀表板不看 Cue）。
   - `bethere import-rundown` 維持「活動中尚無 Cue 才能匯入」（US-M-0.2a），不提供取代。

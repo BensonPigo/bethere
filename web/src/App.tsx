@@ -72,6 +72,11 @@ export function App() {
         write={s.write}
         reissue={s.reissue}
         preview={s.preview}
+        addRole={s.addRole}
+        importPreview={s.importPreview}
+        rolePreview={s.rolePreview}
+        now={s.now}
+        skew={s.skew}
       />
     );
   } else if (isHostSnapshot(snap)) {
