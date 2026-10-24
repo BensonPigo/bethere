@@ -10,7 +10,7 @@ import { readTheme, saveTheme } from "./theme";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
-import { delayText, freshNotice, isEarlier, monthDay, noticedCues, noticeText, originalTime, signed, suggestedShift } from "./notice";
+import { delayText, freshNotice, heldFixed, isEarlier, monthDay, noticedCues, noticeText, originalTime, signed, suggestedShift } from "./notice";
 import type { AssignNotice, ShiftNotice } from "./api";
 
 const MIN = 60000;
@@ -502,5 +502,26 @@ describe("the colour theme (screen-design.md section 2)", () => {
     expect(readTheme(s)).toBe("light");
     saveTheme(s, "dark");
     expect(readTheme(s)).toBe("dark");
+  });
+});
+
+describe("the shift preview's fixed cues (US-M-2.1; data-model.md 4.2)", () => {
+  const c = (over: Partial<MasterCue>): MasterCue => ({
+    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-06T03:00:00Z", effectiveStart: "2027-06-06T03:00:00Z",
+    durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", actualStart: null, actualEnd: null,
+    notePublic: null, roles: [], ...over,
+  });
+  it("lists the fixed cues a shift from here passes over, as the server leaves them", () => {
+    const cues = [
+      c({ id: 1, seq: 1, isFixed: true, status: "Completed" }),
+      c({ id: 2, seq: 2 }),
+      c({ id: 3, seq: 3, isFixed: true }),
+      c({ id: 4, seq: 4, isFixed: true, status: "Skipped" }),
+      c({ id: 5, seq: 5 }),
+      c({ id: 6, seq: 6, isFixed: true }),
+    ];
+    expect(heldFixed(cues, cues[1]).map((x) => x.id)).toEqual([3, 6]);
+    expect(heldFixed(cues, cues[4]).map((x) => x.id)).toEqual([6]);
+    expect(heldFixed(cues, cues[5]).map((x) => x.id)).toEqual([6]);
   });
 });

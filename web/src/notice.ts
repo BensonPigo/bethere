@@ -1,5 +1,5 @@
 // Change notices (screen-design.md 4.4, ADR-0021): shown once per device.
-import type { Notice, ShiftNotice } from "./api";
+import type { MasterCue, Notice, ShiftNotice } from "./api";
 import { formatHM } from "./format";
 
 const SUFFIX = ":notice";
@@ -45,6 +45,12 @@ export function delayText(delayMin: number): { ok: boolean; text: string } {
 // The prefilled shift for an overrun: up to the next multiple of 5 (US-M-5.3).
 export function suggestedShift(overrunMin: number): number {
   return overrunMin <= 0 ? 0 : Math.ceil(overrunMin / 5) * 5;
+}
+
+// heldFixed: the fixed cues a shift from `from` passes over. The server
+// never moves them (domain PlanShift), so the preview shows them as staying.
+export function heldFixed(cues: MasterCue[], from: MasterCue): MasterCue[] {
+  return cues.filter((c) => c.seq >= from.seq && c.status === "Pending" && c.isFixed).sort((a, b) => a.seq - b.seq);
 }
 
 // noticedCues are the ids a notice is about, for highlighting them.
