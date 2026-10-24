@@ -1,8 +1,6 @@
 # API 規格 (API)
 
-> 狀態：PO 核准（2026-10-21）；已經安全審查（2026-10-21），無 P0／P1，發現均已處理；審查紀錄見 git 歷史。
-> M2b 追加（第 3～8 節標示「M2b」的部分）：PO 核准（2026-10-22）；實作前安全審查（2026-10-22）無 P0，3 項 P1 與 P2 均已寫入本文件；完成後由 `verifier` 再驗一次。
-> M2c 追加（標示「M2c」的部分）：PO 核准（2026-10-24）；實作前安全審查（2026-10-24）無 P0，3 項 P1 與 P2 均已寫入本文件（第 3 項依 ADR-0032）；實作後驗證（2026-10-24）無 P0，2 項 P1 與 P2 已修正並補測試。
+> 狀態：M1～M2c 的端點都已實作並經 PO 核准與安全審查；審查紀錄見 git 歷史。
 > 範圍：`requirements/stories/m1.md`、`m2a.md`、`m2b.md`、`m2c.md`；之後的里程碑在本文件追加端點。
 > 依據：`access-control.md`（身分、驗證結果、權限表）、`sync-and-offline.md`（輪詢與快照）、`data-model.md`（狀態轉換）、`tech-stack.md` 2.1（逾時與錯誤、Token 與復原碼、lastSeenAt、日誌、安全標頭）。
 
@@ -143,7 +141,7 @@
 | `POST /api/roles/checkin`、`reissue`、`revoke` | ✔ | 403 | 403 | 403 | 403 | 403 |
 | M2c：`POST /api/cues/update`、`move`、`delete`，`/api/rundown/import`、`import/preview`，`/api/roles/add`、`rename`、`delete`、`preview` | ✔ | 403 | 403 | 403 | 403 | 403 |
 
-- **M2a 開放 Master、Stylist 與 Host**：`bethere add-role` 接受 Stylist 與 Host，Media、StageAV 於 M2b 開放（未定義的類型不能落入寬鬆的預設權限）；開放前，資料庫中的 Media、StageAV 同樣適用下一句。P1 角色類型（VenueLead、Reception、Cashier、Runner）在 P0 不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
+- **M2a 開放 Master、Stylist 與 Host**：`bethere add-role` 接受 Stylist 與 Host，Media、StageAV 於 M2b 開放（未定義的類型不能落入寬鬆的預設權限）；開放前，資料庫中的 Media、StageAV 同樣適用下一句。暫停的角色類型（VenueLead、Reception、Cashier、Runner，ADR-0033）不能建立。資料庫中出現任何未開放的類型時，每個端點都回 403，不落入任何預設分支。
 - 權限檢查在 API 層。store 只確認操作者的憑證仍有效且屬於同一活動，**不檢查角色類型**（`access-control.md` 第 5 節第 6 條），所以每個寫入端點都必須先通過本表。
 
 ## 5. 快照
@@ -187,7 +185,6 @@
 | `delayMin` | 延誤分鐘：下一個待辦 Cue 的 `offsetMin` + 超時分鐘（`data-model.md` 4.3，ADR-0026）；活動未開始時為 0 |
 | `currentTitle` | 進行中 Cue 的標題（不論指派給誰），沒有時為 null；Host 唯一看得到的 Cue 資訊 |
 
-就位率於 M2 追加。
 
 ### 5.5 一律不出現
 
@@ -267,7 +264,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 ## 8. 安全邊界相關的限制
 
 - **維護模式**（`tech-stack.md` 2.1「維護模式」）在 M3 實作；在那之前**正式環境不放入真實活動資料**（`process/development-process.md`）。
-- 第 2、4、6 節屬於「Token 權限與資料外洩」邊界：實作完成後由 `verifier` 依第 4 節權限表的**每一格**、第 6 節的**每一列**與第 5 節的鍵集合驗證。
+- 第 2、4、6 節屬於「Token 權限與資料外洩」邊界：實作完成後由獨立審查依第 4 節權限表的**每一格**、第 6 節的**每一列**與第 5 節的鍵集合驗證。
 - 必要的測試（安全審查要求）：
   - 資料庫中直接插入未開放的角色類型，每個端點都回 403。
   - Token 的雜湊規則以固定的測試向量釘住，指令與伺服器共用；另有一個測試把指令產生的連結送進 HTTP 處理器，預期 `ok`（雜湊規則不一致會讓所有裝置同時被清除）。
