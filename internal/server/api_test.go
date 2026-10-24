@@ -16,56 +16,6 @@ import (
 	"github.com/BensonPigo/bethere/internal/store"
 )
 
-const (
-	pathSnapshot = "/api/snapshot"
-	pathAdvance  = "/api/cues/advance"
-	pathUndo     = "/api/cues/undo"
-	pathShift    = "/api/cues/shift"
-	pathPreview  = "/api/cues/shift/preview"
-)
-
-// start makes the event live without moving any cue, as M1's separate
-// start did; the API now starts it with the first advance (ADR-0020).
-func (e *env) start() {
-	e.t.Helper()
-	owner, err := e.st.LookupToken(bg, auth.HashToken(e.master), e.clock())
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	if _, err := e.st.StartEvent(bg, e.eventID, e.version(), owner.Actor, e.clock()); err != nil {
-		e.t.Fatal(err)
-	}
-}
-
-// write sends a Master write with the current version; a shift moves
-// 迎賓 and what follows by 5 minutes.
-func (e *env) write(path, token string) resp {
-	e.t.Helper()
-	if path == pathShift {
-		return e.do(http.MethodPost, path, token, shiftBody(e.version(), e.cue["迎賓"], 5))
-	}
-	return e.do(http.MethodPost, path, token, versionBody(e.version()))
-}
-
-func (e *env) mustWrite(path string) map[string]any {
-	e.t.Helper()
-	r := e.write(path, e.master)
-	r.wantResult(e.t, "ok")
-	return r.snapshot(e.t)
-}
-
-func (e *env) get(token string) resp {
-	e.t.Helper()
-	return e.do(http.MethodGet, pathSnapshot, token, "")
-}
-
-func (e *env) snap(token string) map[string]any {
-	e.t.Helper()
-	r := e.get(token)
-	r.wantResult(e.t, "ok")
-	return r.snapshot(e.t)
-}
-
 // ---------------------------------------------------------------- US-X-1
 
 func TestUS_X_1_1_TheLinkDecidesTheView(t *testing.T) {
