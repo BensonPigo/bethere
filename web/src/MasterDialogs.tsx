@@ -258,7 +258,12 @@ export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProp
       <div class="shift-title">{after ? `在「${after.title}」之後新增環節` : "新增第一個環節"}</div>
       <label class="field">
         開始時間
-        <input type="time" value={time} onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)} />
+        <input
+          type="time"
+          value={time}
+          onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
+          onChange={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
+        />
       </label>
       <label class="field">
         長度（分）
