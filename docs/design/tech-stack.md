@@ -42,10 +42,10 @@
 | 平移預覽 | 伺服器提供「試算」端點（同一套演算法、不寫入），預覽面板每次勾選變更都呼叫它 | 平移邏輯只有 Go 一份；總召離線時本來就不能操作（`sync-and-offline.md` 第 6 節） |
 | Token 與復原碼 | `crypto/rand` 產生；Token 16 位元組以 base64url 編碼；復原碼 16 位元組以 Crockford Base32 分組；兩者以 SHA-256 雜湊儲存並以雜湊查詢 | 熵已 128 位元，不需要慢雜湊 |
 | `lastSeenAt` | 只存在記憶體（`map[tokenHash]time.Time` + mutex），不寫資料庫；**只在 Token 驗證成功、且未被維護模式擋下之後**才更新；角色與連結管理畫面直接讀取，重啟後歸零 | 只用於角色與連結管理畫面顯示「最近有人在用」；少一個寫入來源；隨機 Token 無法讓 map 無限成長 |
-| QR Code | 伺服器在產生 Token 的同一個回應中附上 **PNG data URI**；函式庫鎖定版本 `github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e`（M2c 選定；QR 規格穩定），容錯等級 Medium、256 像素；內容為畫面上同一條文字連結（`api.md` 第 3 節「QR Code」） | 明文 Token 只在產生當下存在；前端不需額外套件 |
+| QR Code | 伺服器在產生 Token 的同一個回應中附上 **PNG data URI**；函式庫鎖定版本 `github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e`（QR 規格穩定），容錯等級 Medium、256 像素；內容為畫面上同一條文字連結（`api.md` 第 3 節「QR Code」） | 明文 Token 只在產生當下存在；前端不需額外套件 |
 | CSV | 匯入與事後紀錄匯出都在伺服器以 `encoding/csv` 處理；匯入先回傳驗證預覽；匯出加 UTF-8 BOM | 驗證規則只寫一份；Excel 開中文不亂碼 |
 | 資料刪除 | 每日排程刪除 `endsAt` 已超過 **80 天**的活動，`secure_delete` 讓內容被覆寫，checkpoint 交給 Litestream 管理，應用程式不自行執行（Litestream 持有讀取交易，外部的 `wal_checkpoint(TRUNCATE)` 可能一直回 busy）；演練時確認刪除後的資料已不在資料庫檔與 WAL 檔中。伺服器端各副本：Litestream 快照間隔 24h、保留 72h（版本 0.5.17，設定檔由 VM 的準備腳本產生，見 `ops/gcp/vm-startup.sh`）；**不排程磁碟快照**、不建立含資料的自訂映像；故障後留下的舊磁碟依 `operations/runbook.md` 第 4 節刪除。備份 bucket **關閉 soft delete（保留期 0）、不開物件版本控制**，否則已刪除的物件還會多留 7 天；**不設**生命週期規則，以免資料庫閒置時刪光唯一的備份；改由 `operations/runbook.md` 第 4 節在第 85 天驗收，未達成就手動刪除。合計**伺服器端**所有副本在 `endsAt` 後 **90 天內**消失（80 + 1 + 4 ≤ 90）。前提是主機常駐到刪除完成，否則依 `operations/runbook.md` 第 4 節手動銷毀 | 只刪資料庫不夠，備份會再多留數天；以「伺服器端所有副本 90 天內消失」為準才符合刪除承諾（NFR-5）（ADR-0011）。裝置上的 localStorage 依 `sync-and-offline.md` 第 6 節在再次開啟時清除，紙本不在系統控制範圍。代價是事後紀錄匯出必須在 80 天內完成 |
-| 伺服器端指令 | 同一執行檔的子命令：`serve`、`create-event`、`add-role`、`import-rundown`、`version`；`reset-recovery-code`（復原碼外流時重設）排在 M3；以 `gcloud compute ssh --tunnel-through-iap` 登入 VM 後執行 | 對應「建立活動由開發者以伺服器端指令執行」；輸出只到終端機 |
+| 伺服器端指令 | 同一執行檔的子命令：`serve`、`create-event`、`add-role`、`import-rundown`、`version`；`reset-recovery-code`（復原碼外流時重設）尚未實作；以 `gcloud compute ssh --tunnel-through-iap` 登入 VM 後執行 | 對應「建立活動由開發者以伺服器端指令執行」；輸出只到終端機 |
 | 時間 | 伺服器一律 UTC；時區資料以 `time/tzdata` 內嵌；活動時區只接受內嵌資料逐字收錄的名稱清單（`domain.SupportedTimeZone`，目前只有 `Asia/Taipei`）；時鐘以介面注入，測試可固定「現在」 | `endsAt` 與「活動僅限當天開始」都依活動時區計算 |
 | 日誌 | `log/slog` 輸出到 stdout；不記錄請求標頭與本文 | Token 在標頭、復原碼在本文 |
 | 安全標頭 | Go 中介層統一加 CSP：`default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'`（無 inline script）、`Referrer-Policy: no-referrer`、`X-Robots-Tag: noindex`；API 加 `Cache-Control: no-store` | `access-control.md` 3.2、3.3；防點擊劫持 |
@@ -77,7 +77,7 @@
 | 部署與回退 | 部署＝把 VM metadata 的版本號改成新版並重啟服務；回退＝改回上一版並重啟服務。活動前 7 天起凍結部署 |
 | 作業系統更新 | 平時開啟 Debian `unattended-upgrades`（只套安全更新、不自動重開機）；凍結期開始時套用一次更新並重開機驗證，之後停用自動更新到活動結束 |
 | 健康檢查 | `/healthz` 執行一次唯讀查詢（走唯讀連線池，不受寫入鎖影響） |
-| 監控與告警 | Cloud Monitoring Uptime Check 從外部探測 `/healthz`；另一個探測看備份新鮮度端點（本機變動超過 5 分鐘未複製即失敗，M3 先確認 Litestream 能否提供）；告警平時送開發者 email，凍結期改送備援操作者的手機推播與簡訊。不在 VM 安裝代理程式（ADR-0024） |
+| 監控與告警 | Cloud Monitoring Uptime Check 從外部探測 `/healthz`；另一個探測看備份新鮮度端點（本機變動超過 5 分鐘未複製即失敗，尚待確認 Litestream 能否提供）；告警平時送開發者 email，凍結期改送備援操作者的手機推播與簡訊。不在 VM 安裝代理程式（ADR-0024） |
 
 **為什麼不用 Cloud Run**：容器的檔案系統是暫時的，平台可能隨時替換實例，部署時新舊實例還會短暫並存，SQLite 會出現兩個寫入者；要用就得改成 Cloud SQL，資料層要重新設計，成本也更高。**為什麼不用負載平衡器**：Google 的 HTTPS 負載平衡器每月約 US$18，對單一 VM 沒有必要，TLS 交給 Caddy。
 
@@ -113,16 +113,12 @@ web/                Vite + Preact 前端
 
 ### 5.1 實機驗證結果
 
-2026-10-21 以 `ops/gcp/` 部署到正式專案的裝置驗證頁測試；該原型頁已於 M1 移除（見 git 紀錄）。
-
-| 日期 | 裝置與環境 | Token 保留 | 離線開啟 | 常亮 | 往返（中位數／p95） | 列印 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 2026-10-21 | iPhone，Safari 27.0.1（UA 回報 iOS 18_7），主畫面模式 | ✔ 加到主畫面後保留 | ✔ 飛航模式下關掉 App 重開仍可開啟 | ✔ 可啟用並維持；切到別的 App 再回來仍保持。**關掉 App 重開後需使用者點擊才能再啟用**，頁面載入時自動申請回 `NotAllowedError` | ✔ 19～44／65～153 ms（樣本 8） | ✔ 可叫出列印畫面 |
-
-| 2026-10-21 | iPhone，LINE 設定為「用外部瀏覽器開啟連結」→ Safari 分頁 | ✔ 保留 | Service Worker 已控制頁面（未測離線重開） | 同上，重開後需點擊 | 24～77 ms（樣本 6） | — |
-
-| 2026-10-21 | iPhone，LINE 26.16.0 內建瀏覽器（預設設定，User-Agent 含 `Line/26.16.0`） | ✔ 保留 | ✘ **頁面不受 Service Worker 控制，飛航模式下打不開**（符合 2.2「LINE 內建瀏覽器」的預設） | 未測 | 15／26 ms（樣本 12） | 未測 |
-| 2026-10-21 | iPhone，LINE 內建瀏覽器 →「以 Safari 開啟」 | ✔ 保留 | Service Worker 已控制頁面 | 重開後需點擊（同上） | 16／939 ms（樣本 7，一次離群值） | — |
+| 裝置與環境 | Token 保留 | 離線開啟 | 常亮 | 往返（中位數／p95） | 列印 |
+| --- | --- | --- | --- | --- | --- |
+| iPhone，Safari 27.0.1（UA 回報 iOS 18_7），主畫面模式 | ✔ 加到主畫面後保留 | ✔ 飛航模式下關掉 App 重開仍可開啟 | ✔ 可啟用並維持；切到別的 App 再回來仍保持。**關掉 App 重開後需使用者點擊才能再啟用**，頁面載入時自動申請回 `NotAllowedError` | ✔ 19～44／65～153 ms | ✔ 可叫出列印畫面 |
+| iPhone，LINE 設定為「用外部瀏覽器開啟連結」→ Safari 分頁 | ✔ 保留 | Service Worker 已控制頁面（未測離線重開） | 同上，重開後需點擊 | 24～77 ms | — |
+| iPhone，LINE 26.16.0 內建瀏覽器（預設設定，User-Agent 含 `Line/26.16.0`） | ✔ 保留 | ✘ **頁面不受 Service Worker 控制，飛航模式下打不開**（符合 2.2「LINE 內建瀏覽器」的預設） | 未測 | 15／26 ms | 未測 |
+| iPhone，LINE 內建瀏覽器 →「以 Safari 開啟」 | ✔ 保留 | Service Worker 已控制頁面 | 重開後需點擊（同上） | 16／939 ms | — |
 
 結論（iOS）：Token 在所有測過的路徑都保留；2.2「LINE 內建瀏覽器」的假設成立，LINE 內建瀏覽器可由 User-Agent 的 `Line/` 辨識，且無法離線開啟；依 `product/vision.md` V2 只以非強制的小字提示可改用 Safari，不阻擋使用。
 

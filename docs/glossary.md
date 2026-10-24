@@ -1,6 +1,5 @@
 # 術語與代號 (Glossary)
 
-> 依據：`adr/0017-documentation-structure-and-id-scheme.md`。
 > 新增任何代號前綴之前，先登錄在第 2 節。
 
 ---
@@ -38,16 +37,13 @@
 | `P0`、`P1`、`P2` | 功能優先層級，只用於範圍 | `requirements/scope.md` |
 | `Sev0`、`Sev1`、`Sev2` | 問題嚴重度 | `process/development-process.md` |
 | `V1`～`V5` | 產品原則 | `product/vision.md` |
-| `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`H` 新人、`X` 所有角色、`O` 維運（開發者或備援操作者） | `requirements/stories/` |
-| `US-<角色>-<n>.C<m>` | 故事的情境條件 | `requirements/stories/` |
+| `US-<角色>-<n>.<m>` | 故事的功能條件；角色為 `M` 總召、`ST` 新秘、`H` 新人、`X` 所有角色、`O` 維運（開發者或備援操作者） | `requirements/stories.md` |
+| `US-<角色>-<n>.C<m>` | 故事的情境條件 | `requirements/stories.md` |
 | `NFR-<n>` | 非功能需求與品質目標 | `requirements/scope.md` 第 4 節 |
-| `ADR-<NNNN>` | 決定（唯一的決定編號） | `adr/` |
+| `ADR-<NNNN>` | 決定（唯一的決定編號） | `decisions.md` |
 | `RISK-<n>` | 風險與待驗證項目 | `docs/README.md` 狀態節 |
 
 - 只有會被跨文件引用的東西才編號；其他用名稱稱呼。
 - 測試名稱帶驗收條件編號，例如 `TestUS_M_3_2_...`。
-- ADR-0017 之前的舊代號已全部退役，去向見 `archive/retired-ids.md`；只在以下地方保留：
-  - `archive/`：歸檔紀錄原樣保存；引用歸檔內容時可附上舊代號，例如「`archive/clarification.md` C5」。
-  - `internal/store/migrations/0001_init.sql` 的註解：已發行的遷移檔不能修改（ADR-0019）。
 - 「C4 模型」指一種軟體架構圖示法，不是代號。
-- `internal/docscheck` 的測試會在 CI 檢查：引用的 `.md` 檔都存在，以及 `archive/` 與上述例外以外沒有退役代號。新增代號前綴時，同步更新該測試。
+- `internal/docscheck` 的測試會在 CI 檢查文件與程式碼中引用的 `.md` 檔都存在。

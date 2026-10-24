@@ -1,7 +1,7 @@
 # 維運手冊 (Runbook)
 
 > 部署、回退、故障重建與活動前後的檢查。伺服器與主機的技術選擇見 `design/tech-stack.md` 第 3 節；理由見 ADR-0009、ADR-0012、ADR-0013。
-> 持續備份與開機還原已在正式專案啟用（2026-10-24 演練通過）。維護模式、刪除舊 VM 的腳本、`create-vm.sh` 帶 `bethere-maintenance` 都還沒有；第 2 節因此仍是要求草案（RISK-4、RISK-9）。
+> 持續備份與開機還原已在正式專案啟用並演練通過。維護模式、刪除舊 VM 的腳本、`create-vm.sh` 帶 `bethere-maintenance` 都還沒有；第 2 節因此仍是要求草案（RISK-4、RISK-9）。
 
 ---
 

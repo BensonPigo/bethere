@@ -1,5 +1,5 @@
 # Documentation rules for changes that touch only Markdown
-# (docs/adr/0017-documentation-structure-and-id-scheme.md). Code changes run
+# (docs/decisions.md, ADR-0017). Code changes run
 # the same checks inside ci.yml's go test.
 name: Docs
 

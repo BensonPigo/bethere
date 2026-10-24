@@ -1,88 +1,35 @@
 # BeThere 文件索引
 
-建議閱讀順序：先 `product/vision.md`，再 `requirements/`、`design/`。想先看全貌，從 `architecture/overview.md` 開始；想知道某個決定為什麼這樣選，看 `adr/`；看到不懂的代號，查 `glossary.md`。
+先讀 `product/vision.md`，再讀 `requirements/`、`design/`。想看全貌從 `architecture/overview.md` 開始；想知道某個決定為什麼這樣選，看 `decisions.md`；看到不懂的代號，查 `glossary.md`。
 
-文件結構與代號規則見 ADR-0017：每件事只有一個正本，其他地方只引用。
-
-## 術語與代號
+所有文件只寫現況；修訂經過只在 git 紀錄。
 
 | 文件 | 內容 |
 | --- | --- |
+| [product/vision.md](product/vision.md) | 產品願景與原則（V1～V5）；所有取捨的最上層依據 |
+| [requirements/scope.md](requirements/scope.md) | 功能清單 × 優先層級 × 里程碑；限制；非功能需求（NFR）；原始需求對照 |
+| [requirements/roles-and-scenarios.md](requirements/roles-and-scenarios.md) | 各角色的現場使用情境與原始使用者故事 |
+| [requirements/stories.md](requirements/stories.md) | 所有故事與驗收條件（US-x-n） |
+| [design/data-model.md](design/data-model.md) | 實體、狀態轉換、時間平移演算法、領域服務 |
+| [design/sync-and-offline.md](design/sync-and-offline.md) | 輪詢與快照、版本衝突、時鐘、連線狀態、離線快取、備援 Rundown |
+| [design/access-control.md](design/access-control.md) | Token、復原碼、角色權限、撤銷與重發 |
+| [design/screen-design.md](design/screen-design.md) | 各畫面的資訊架構 |
+| [design/api.md](design/api.md) | API 規格：驗證結果、端點、權限、各角色快照、錯誤對照 |
+| [design/tech-stack.md](design/tech-stack.md) | 技術選型、部署與託管、專案結構與測試、實機驗證結果 |
+| [architecture/overview.md](architecture/overview.md) | 一頁全貌：系統情境、容器、部署視圖、橫切關注 |
+| [operations/runbook.md](operations/runbook.md) | 部署與回退、當天的維運與故障重建、婚前檢查、婚後收尾 |
+| [process/development-process.md](process/development-process.md) | 開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI |
+| [process/e2e-test-routes.md](process/e2e-test-routes.md) | 端對端測試路線 |
+| [decisions.md](decisions.md) | 現行決定（ADR-NNNN）與理由 |
 | [glossary.md](glossary.md) | 術語與代號規則 |
-
-## product/ 產品
-
-| 文件 | 內容 |
-| --- | --- |
-| [vision.md](product/vision.md) | **產品願景與原則**：要解決的問題、兩個核心價值、V1～V5 原則；所有取捨的最上層依據 |
-
-## requirements/ 需求
-
-| 文件 | 內容 |
-| --- | --- |
-| [scope.md](requirements/scope.md) | 功能清單 × 優先層級（P0／P1／P2）× 里程碑；限制；非功能需求（NFR） |
-| [roles-and-scenarios.md](requirements/roles-and-scenarios.md) | 各角色的現場使用情境與原始使用者故事；P0 以外的故事作為待辦 |
-| [stories/m1.md](requirements/stories/m1.md) | M1 最小閉環的故事與驗收條件（已驗收） |
-| [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次實測的故事與驗收條件（已驗收） |
-| [stories/m2b.md](requirements/stories/m2b.md) | M2b 現場補齊的故事與驗收條件（已驗收） |
-| [stories/m2c.md](requirements/stories/m2c.md) | M2c 婚前準備的故事與驗收條件（已驗收） |
-| [stories/m3a.md](requirements/stories/m3a.md) | M3a 資料與維運的故事與驗收條件（US-O-1 完成，其餘為草稿，ADR-0033） |
-
-## design/ 設計
-
-規則、欄位與數字的正本；狀態圖與循序圖放在它說明的規則旁。
-
-| 文件 | 內容 |
-| --- | --- |
-| [data-model.md](design/data-model.md) | 實體、狀態轉換、時間平移演算法、領域服務 |
-| [sync-and-offline.md](design/sync-and-offline.md) | 輪詢與快照、版本衝突、時鐘、連線狀態、離線快取、備援 Rundown |
-| [access-control.md](design/access-control.md) | Token、復原碼、角色權限、撤銷與重發 |
-| [screen-design.md](design/screen-design.md) | 各畫面的資訊架構 |
-| [api.md](design/api.md) | API 規格：驗證結果、端點、權限、各角色快照、錯誤對照（依里程碑追加） |
-| [tech-stack.md](design/tech-stack.md) | 技術選型、部署與託管、專案結構與測試、實機驗證 |
-
-## architecture/ 架構
-
-| 文件 | 內容 |
-| --- | --- |
-| [overview.md](architecture/overview.md) | 一頁全貌：目標與限制、系統情境、容器、部署視圖、橫切關注 |
-
-## operations/ 維運
-
-| 文件 | 內容 |
-| --- | --- |
-| [runbook.md](operations/runbook.md) | 部署與回退、當天的維運與故障重建、婚前檢查、婚後收尾 |
-
-## process/ 開發流程
-
-| 文件 | 內容 |
-| --- | --- |
-| [development-process.md](process/development-process.md) | 輕量版開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI |
-| [e2e-test-routes.md](process/e2e-test-routes.md) | 端對端測試路線：模擬使用者操作的自動化測試，部署後由 PO 執行 |
-
-## adr/ 架構決策紀錄
-
-每個重大決定的背景、考慮過的選項與後果。索引與格式見 [adr/README.md](adr/README.md)。
-
-## archive/ 歸檔
-
-不再維護的原始紀錄，只供查證；內容可能已過時，以正本為準。
-
-| 文件 | 內容 |
-| --- | --- |
-| [clarification.md](archive/clarification.md) | 初期的需求釐清問答；每題的去向見 `retired-ids.md` |
-| [retired-ids.md](archive/retired-ids.md) | ADR-0017 之前的舊代號與去向（原 `glossary.md` 第 3 節，ADR-0034） |
-| [process-history.md](archive/process-history.md) | 開發流程改成輕量版的理由與當時的對應（原 `process/development-process.md` 第 7～9 節，ADR-0034） |
 
 ## 狀態
 
-> 只寫現況；歷史見 git log。
-
-- **目前工作**：持續備份與開機還原（`requirements/stories/m3a.md` US-O-1）已在正式專案啟用，2026-10-24 雲端演練通過（寫入 3 秒後強制停機並移走資料庫 → 錯誤的備份位置時拒絕啟動 → 正確位置時自動還原、資料完整、權限 0600）；其他新功能暫停（ADR-0033）；M3a 其餘項目與 M3b 等備份完成後依「最小可用」重新決定。人工試用只在最後做一次完整彩排，排在決定日前，日期與參加者尚未確定。M2c 已於 2026-10-24、M2b 已於 2026-10-23 經 PO 驗收。
-- **文件整合**：ADR-0017 的六個步驟已完成；2026-10-24 依 ADR-0034 再收斂一次（過期內容改為現況，舊代號表與流程歷史移到 `archive/`）。文件規則由 `internal/docscheck` 的測試在 CI 檢查。
-- **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
+- **已完成**：一場婚禮從頭到尾需要的功能（建立活動、婚前準備、傳連結、當天推進與平移、各角色看倒數、離線唯讀），以及持續備份與開機還原。
+- **暫停**：主持、領班、機動組、迎賓與禮金（ADR-0033）。
+- **還沒做**：見 `requirements/scope.md` 狀態為空白或「未做」的項目；要做哪些，依「最小可用」重新決定（ADR-0033）。
+- **決定日**：2027-04-15；之前做唯一一次完整彩排，日期與參加者未定；沒通過就改用紙本 + LINE 群組。
 - **已知問題**：無。
-- **尚未完成**：見 `requirements/scope.md` 的功能清單。
 
 ### 風險
 
@@ -92,8 +39,8 @@
 | RISK-2 | 延遲預算沒有緩衝（`design/sync-and-offline.md` 第 7 節） | M3b 負載測試；必要時把輪詢縮到 1～1.5 秒 |
 | RISK-3 | 單一 VM 單點故障；整個 `asia-east1` 故障時不切換區域 | 刻意接受；離線快取、紙本、15 分鐘恢復 |
 | RISK-4 | 故障重建腳本未寫、未演練（`operations/runbook.md` 第 2 節除備份外仍為要求草案）；`ops/gcp/env.sh` 的專案預設為正式專案，對暫存專案演練時漏設 `PROJECT` 就會打到正式環境 | M3a；寫成腳本，在暫存專案演練（先以 PO 帳號，人選決定後由本人再演練，ADR-0030） |
-| RISK-5 | 備援操作者與當天總召未定；未定期間復原碼只有開發者保管（ADR-0018） | 每個里程碑檢查；備援操作者須符合 `operations/runbook.md` 第 2 節的條件（不在婚禮工作組、帶已登入 gcloud 的筆電與熱點）；找不到就接受當天只剩離線快取與紙本（ADR-0013） |
-| RISK-6 | 正式網域尚未購買（原型用 `sslip.io`） | 發出任何真實連結前處理 |
+| RISK-5 | 備援操作者與當天總召未定；未定期間復原碼只有開發者保管（ADR-0018） | 決定日前確定；備援操作者須符合 `operations/runbook.md` 第 2 節的條件（不在婚禮工作組、帶已登入 gcloud 的筆電與熱點）；找不到就接受當天只剩離線快取與紙本（ADR-0013） |
+| RISK-6 | 正式網域尚未購買（目前用 `sslip.io`） | 發出任何真實連結前處理 |
 | RISK-7 | iOS 會清除 7 天未互動網站的本機資料與 Service Worker | 活動前一天請所有人再開一次連結（`operations/runbook.md` 第 3 節） |
 | RISK-8 | `GET /api/ping` 揭露版本號；Cue id 遞增 | 接受 |
 | RISK-9 | 維護模式尚未實作 | M3a；M3a 前正式環境不放真實資料 |

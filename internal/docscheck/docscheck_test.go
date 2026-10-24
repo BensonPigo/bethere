@@ -8,14 +8,9 @@ import (
 	"testing"
 )
 
-// Files that keep retired IDs or old paths on purpose (docs/glossary.md
-// section 2): archived records (including the ID mapping), the ADR describing
-// the change, and a released migration that must not be edited (ADR-0019).
+// A released migration keeps its comments as they were (ADR-0019).
 var exempt = []string{
-	"docs/archive/",
-	"docs/adr/0017-documentation-structure-and-id-scheme.md",
 	"internal/store/migrations/0001_init.sql",
-	"internal/docscheck/docscheck_test.go", // names the retired patterns
 }
 
 var scanned = map[string]bool{
@@ -88,8 +83,8 @@ func lineOf(s string, i int) int { return strings.Count(s[:i], "\n") + 1 }
 
 var mdRef = regexp.MustCompile(`[A-Za-z0-9_./-]+\.md\b`)
 
-// Placeholders in the ADR format description, not references.
-var placeholders = map[string]bool{"NNNN-short-title.md": true}
+// Placeholders in this file's own comments, not references.
+var placeholders = map[string]bool{"name.md": true}
 
 // TestMarkdownReferencesExist checks that every `name.md` mentioned in docs
 // and code resolves. Docs cite each other by path from docs/ ("design/api.md")
@@ -134,43 +129,28 @@ func TestMarkdownReferencesExist(t *testing.T) {
 	}
 }
 
-// Retired IDs (docs/archive/retired-ids.md). The kept IDs are not listed:
-// milestones M0–M3, priorities P0–P2, principles V1–V5, Sev, NFR, RISK, ADR
-// and story IDs such as US-M-1.C2. M1–M3 of the old data-model list collide
-// with milestones and cannot be told apart, so they are not checked.
-var retired = regexp.MustCompile(`(^|[^A-Za-z0-9_.\-])(` +
-	`[ABCEFKQRSTU][0-9]{1,2}[a-d]?` + // clarification A–F, sync S, screen U, tech T/R, api A/F, overview Q/K
-	`|T-[A-F]|D-[1-4]|D[12]` + // tech decision log, process decisions, scope questions
-	`|M(?:[4-9]|10)|P[3-8]|V2a|V6` + // data-model M4–M10, access-control P3–P8, screens
-	`)($|[^A-Za-z0-9_\-])`)
+// storyID matches a story or acceptance-criterion ID in code, written either
+// as in the docs ("US-M-3.6", "US-X-8.C1") or as in test names ("US_M_3_6").
+var storyID = regexp.MustCompile(`US[-_](M|ST|H|X|O)[-_]([0-9]+)(?:[._-](C?[0-9]+))?`)
 
-// allowed are phrases that look like retired IDs but are not.
-var allowed = []string{"C4 模型"}
-
-// archiveCite is a citation of an archived record with its own IDs, such as
-// "`archive/clarification.md` B1、B4" (docs/glossary.md section 2).
-var archiveCite = regexp.MustCompile("`archive/[^`]+\\.md`[ ]*(?:[A-Z][A-Za-z0-9-]*(?:[、～][A-Z]?[A-Za-z0-9-]*)*)")
-
-func TestNoRetiredIDs(t *testing.T) {
+// TestStoryIDsExist checks that every story ID cited in code is defined in
+// docs/requirements/stories.md, so a test never points at a removed criterion.
+func TestStoryIDsExist(t *testing.T) {
 	root, files := repoFiles(t)
+	stories := readFile(t, root, "docs/requirements/stories.md")
 	for _, f := range files {
-		text := readFile(t, root, f)
-		masked := text
-		for _, a := range allowed {
-			masked = strings.ReplaceAll(masked, a, strings.Repeat("_", len(a)))
+		if strings.HasSuffix(f, ".md") {
+			continue
 		}
-		masked = archiveCite.ReplaceAllStringFunc(masked, func(s string) string { return strings.Repeat("_", len(s)) })
-		// Search again from the end of each ID rather than of the match, so
-		// the separator in "T15/T18" can bound both.
-		for pos := 0; pos < len(masked); {
-			m := retired.FindStringSubmatchIndex(masked[pos:])
-			if m == nil {
-				break
+		text := readFile(t, root, f)
+		for _, m := range storyID.FindAllStringSubmatchIndex(text, -1) {
+			id := "US-" + text[m[2]:m[3]] + "-" + text[m[4]:m[5]]
+			if m[6] >= 0 {
+				id += "." + text[m[6]:m[7]]
 			}
-			start, end := pos+m[4], pos+m[5]
-			t.Errorf("%s:%d: retired ID %q; see docs/archive/retired-ids.md for where it went",
-				f, lineOf(text, start), text[start:end])
-			pos = end
+			if !regexp.MustCompile(regexp.QuoteMeta(id) + `([^0-9]|$)`).MatchString(stories) {
+				t.Errorf("%s:%d: %s is not in docs/requirements/stories.md", f, lineOf(text, m[0]), id)
+			}
 		}
 	}
 }
