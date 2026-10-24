@@ -4,7 +4,7 @@ import type { RoleCue, RoleSnapshot } from "./api";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./Prep";
-import { agoText, dateInZone, formatHM, zonedToISO } from "./format";
+import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
 import { delayText, freshNotice, isEarlier, monthDay, noticedCues, noticeText, originalTime, signed, suggestedShift } from "./notice";
@@ -372,6 +372,12 @@ describe("M2c: preparation (api.md section 3)", () => {
     expect(writeBody({ path: "/api/roles/delete", roleId: 2 }, 4)).toEqual({ version: 4, roleId: 2 });
     expect(writeBody({ path: "/api/roles/reissue", roleId: 2, origin: "https://a.example" }, 4)).toEqual({ roleId: 2, origin: "https://a.example" });
     expect(writeBody({ path: "/api/roles/reissue", roleId: 2 }, 4)).toEqual({ roleId: 2 });
+  });
+  it("reads a typed 24-hour time the same on every browser (US-M-10.C2 field test)", () => {
+    for (const [typed, want] of [["09:20", "09:20"], ["9:20", "09:20"], ["0920", "09:20"], ["920", "09:20"], [" 09：20 ", "09:20"], ["21:05", "21:05"], ["0000", "00:00"]]) {
+      expect(parseClock(typed)).toBe(want);
+    }
+    for (const typed of ["", "9", "24:00", "09:60", "9:2", "下午 9:20", "09:20:00", "12345"]) expect(parseClock(typed)).toBeNull();
   });
   it("locks the destructive edits from the event day on (ADR-0032)", () => {
     expect(dayStarted("2027-06-06", "2027-06-05")).toBe(false);
