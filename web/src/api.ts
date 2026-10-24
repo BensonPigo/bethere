@@ -33,8 +33,22 @@ export type MasterCue = {
   actualStart: string | null;
   actualEnd: string | null;
   notePublic: string | null;
-  roles: { roleId: string | number; name: string; roleNote: string | null }[];
+  // ackedAt: a venue lead's ack (api.md 9.3); absent in an older saved snapshot.
+  roles: { roleId: string | number; name: string; roleNote: string | null; ackedAt?: string | null }[];
 };
+
+// The four jobs (api.md 9.4–9.6).
+export type TaskState = "open" | "claimed" | "done";
+export type Task = {
+  id: string | number;
+  title: string;
+  createdBy: string | null;
+  createdAt: string;
+  claimedBy: string | null;
+  state: TaskState;
+};
+export type Guest = { id: string | number; name: string; table: string; note: string | null; arrived: boolean };
+export type CheckItem = { id: string | number; title: string; done: boolean; doneBy: string | null };
 
 export type MasterRole = {
   id: string | number;
@@ -56,11 +70,18 @@ export type MasterSnapshot = SnapshotBase & {
   conflicts: Conflict[];
   overrunMin: number; // minutes past the next pending cue's start (data-model.md 4.3)
   outOfOrder: { cueId: string | number; prevCueId: string | number }[]; // US-M-8.6
+  // Absent in a snapshot saved by an older release.
+  tasks?: Task[];
+  guests?: Guest[];
+  checklist?: CheckItem[];
 };
 
 // The role types that read their own cues, check in and can be assigned
 // cues (domain.RoleType.HasOwnCues).
-export const CUE_ROLE_TYPES = ["Stylist", "Media", "StageAV"];
+export const CUE_ROLE_TYPES = ["Stylist", "Media", "StageAV", "VenueLead", "Runner", "Reception", "Cashier"];
+
+// What a new role does besides reading its cues (api.md 9.2).
+export type Job = "general" | "VenueLead" | "Runner" | "Reception" | "Cashier";
 
 export type RoleCue = {
   id: string | number;
@@ -73,6 +94,7 @@ export type RoleCue = {
   status: CueStatus;
   notePublic: string | null;
   roleNote: string | null;
+  ackedAt?: string | null; // own ack, venue leads only (api.md 9.3)
 };
 
 // A shift that moved at least one of the caller's own cues (screen-design.md 4.4).
@@ -100,6 +122,11 @@ export type RoleSnapshot = SnapshotBase & {
   // Absent in a snapshot saved by an older release.
   myCheckIn?: boolean;
   currentTitle?: string | null; // the cue in progress, whoever it is assigned to (US-X-6.4)
+  // api.md 9.1, 9.4–9.6: the delay for all; each job's list only for that job, null otherwise.
+  delayMin?: number;
+  tasks?: Task[] | null;
+  guests?: Guest[] | null;
+  checklist?: CheckItem[] | null;
 };
 
 // The hosts' dashboard: no cues at all (api.md 5.4).
@@ -145,7 +172,7 @@ export type CueUpdate = {
 };
 
 // A role the Master adds: a name, a screen and whether it checks in (US-M-11.1).
-export type NewRole = { name: string; view: "HandsFree" | "Glance" | "Dashboard"; checksIn: boolean };
+export type NewRole = { name: string; view: "HandsFree" | "Glance" | "Dashboard"; checksIn: boolean; job?: Job };
 
 export type WriteRequest =
   | { path: "/api/cues/advance" | "/api/cues/undo" }
@@ -166,7 +193,16 @@ export type WriteRequest =
   | { path: "/api/rundown/import"; text: string; newRoles: NewRole[] }
   | { path: "/api/roles/add"; role: NewRole; origin: string }
   | { path: "/api/roles/rename"; roleId: string | number; name: string }
-  | { path: "/api/roles/delete"; roleId: string | number };
+  | { path: "/api/roles/delete"; roleId: string | number }
+  // The four jobs: no version (api.md section 9).
+  | { path: "/api/cues/ack"; cueId: string | number; acked: boolean }
+  | { path: "/api/tasks/add"; title: string }
+  | { path: "/api/tasks/set"; taskId: string | number; state: TaskState }
+  | { path: "/api/tasks/delete"; taskId: string | number }
+  | { path: "/api/guests/import"; text: string }
+  | { path: "/api/guests/arrive"; guestId: string | number; arrived: boolean }
+  | { path: "/api/checklist/items"; text: string }
+  | { path: "/api/checklist/check"; itemId: string | number; done: boolean };
 
 // writeBody is the JSON body of a write (api.md section 3).
 export function writeBody(w: WriteRequest, version: number): Record<string, unknown> {
@@ -206,6 +242,21 @@ export function writeBody(w: WriteRequest, version: number): Record<string, unkn
       return { roleId: w.roleId, name: w.name };
     case "/api/roles/delete":
       return { version, roleId: w.roleId };
+    case "/api/cues/ack":
+      return { cueId: w.cueId, acked: w.acked };
+    case "/api/tasks/add":
+      return { title: w.title };
+    case "/api/tasks/set":
+      return { taskId: w.taskId, state: w.state };
+    case "/api/tasks/delete":
+      return { taskId: w.taskId };
+    case "/api/guests/import":
+    case "/api/checklist/items":
+      return { text: w.text };
+    case "/api/guests/arrive":
+      return { guestId: w.guestId, arrived: w.arrived };
+    case "/api/checklist/check":
+      return { itemId: w.itemId, done: w.done };
   }
 }
 

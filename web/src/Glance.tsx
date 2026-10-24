@@ -2,7 +2,8 @@
 // section 4; ADR-0025; US-X-6), with the check-in at the bottom (US-X-5).
 import type { Notice, RoleCue, RoleSnapshot, WriteRequest } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";
-import { isEarlier, noticeText, noticedCues } from "./notice";
+import { JobPanel } from "./JobPanels";
+import { delayText, isEarlier, noticeText, noticedCues } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 import { countdownText, inProgressCue, stylistView } from "./roleView";
 
@@ -24,6 +25,18 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
   const marked = noticedCues(change);
   // StageAV notes hold file names: monospace, wrapped, never cut (US-X-6.6).
   const noteClass = snap.role.type === "StageAV" ? "note mono" : "note";
+  const lock = offline || busy || !!readOnly;
+  // US-VL-1: a venue lead answers the cue it is shown.
+  const ack = (c: RoleCue) =>
+    snap.role.type === "VenueLead" && (
+      <button
+        class={`ack ${c.ackedAt ? "done" : ""}`}
+        disabled={lock}
+        onClick={() => void write({ path: "/api/cues/ack", cueId: c.id, acked: !c.ackedAt })}
+      >
+        {c.ackedAt ? "已收到 ✔" : "收到"}
+      </button>
+    );
 
   let main;
   switch (view.kind) {
@@ -37,7 +50,12 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
       main = <div class="msg">你的環節都完成了</div>;
       break;
     case "inProgress":
-      main = <div class="msg">{view.cue.title}進行中</div>;
+      main = (
+        <div class="msg">
+          {view.cue.title}進行中
+          {ack(view.cue)}
+        </div>
+      );
       break;
     case "countdown": {
       const later = snap.cues
@@ -56,6 +74,7 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
             <div class="count">倒數 {countdownText(view.remaining).big}{countdownText(view.remaining).unit}</div>
             {view.target.roleNote && <div class={noteClass}>備註：{view.target.roleNote}</div>}
             {view.target.notePublic && <div class={noteClass}>{view.target.notePublic}</div>}
+            {ack(view.target)}
           </div>
           {later.length > 0 && (
             <div class="later">
@@ -79,9 +98,14 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
       {change && <div class={`change-banner ${isEarlier(change) ? "earlier" : "later"}`}>{noticeText(change, tz)}</div>}
       <div class="glance-head">{snap.role.name}</div>
       {view.kind !== "preDay" && snap.eventStatus === "Live" && (
-        <div class="current-line">目前：{current ?? "準備中"}</div>
+        <div class="current-line">
+          目前：{current ?? "準備中"}
+          {/* US-X-10.2: the MC keeps an eye on the hosts' side. */}
+          <span class={`delay ${delayText(snap.delayMin ?? 0).ok ? "ok" : "late"}`}>・{delayText(snap.delayMin ?? 0).text}</span>
+        </div>
       )}
       <div class="glance-main">{main}</div>
+      <JobPanel snap={snap} lock={lock} write={write} />
       {snap.role.checksIn !== false && (
         <CheckInBar checkedIn={snap.myCheckIn ?? false} offline={offline} busy={busy || !!readOnly} write={write} />
       )}

@@ -15,7 +15,7 @@ for i in $(seq "$FIRST" $((FIRST + COUNT - 1))); do
   master="$("$BIN" create-event -db "$DB" -name "E2E $i" -date "$DATE" -tz Asia/Taipei \
     -master-name 總召 -base-url https://e2e.invalid | token)"
   echo "$i 總召 $master"
-  for pair in 新秘:Stylist 攝影:Media 音控:StageAV 新人:Host; do
+  for pair in 新秘:Stylist 攝影:Media 音控:StageAV 新人:Host 領班:VenueLead 機動組:Runner 接待:Reception 禮金:Cashier; do
     name="${pair%%:*}" type="${pair##*:}"
     tok="$(echo "$master" | "$BIN" add-role -db "$DB" -name "$name" -type "$type" -base-url https://e2e.invalid 2>/dev/null | token)"
     echo "$i $name $tok"

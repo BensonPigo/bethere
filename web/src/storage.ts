@@ -12,11 +12,24 @@ export async function snapKey(token: string): Promise<string> {
   return PREFIX + hex;
 }
 
-// Stale Live snapshots (older than 2 days by serverTime) are dropped on open; Draft ones stay.
+// Stale Live snapshots (older than 2 days by serverTime) are dropped on open; Draft ones stay,
+// unless they hold a guest list (holdsStaleGuests).
 export function isStaleLive(snap: { eventStatus?: unknown; serverTime?: unknown }, nowMs: number): boolean {
   if (snap.eventStatus !== "Live" || typeof snap.serverTime !== "string") return false;
   const t = Date.parse(snap.serverTime);
   return Number.isFinite(t) && nowMs - t > MAX_LIVE_AGE_MS;
+}
+
+// A saved guest list (Master or reception) goes 2 days after the event day,
+// draft or live (api.md 9.5, NFR-5); the day ends at 24:00 in the event's
+// zone, so 2 days after its UTC midnight plus a day is a safe bound.
+export function holdsStaleGuests(
+  snap: { guests?: unknown; eventDay?: { date?: unknown } },
+  nowMs: number,
+): boolean {
+  if (!Array.isArray(snap.guests) || snap.guests.length === 0) return false;
+  const day = typeof snap.eventDay?.date === "string" ? Date.parse(snap.eventDay.date.slice(0, 10) + "T00:00:00Z") : NaN;
+  return Number.isFinite(day) && nowMs - day > 3 * 24 * 3600 * 1000;
 }
 
 export function pruneStale(store: Storage, nowMs: number): void {
@@ -27,7 +40,7 @@ export function pruneStale(store: Storage, nowMs: number): void {
       if (!k || !k.startsWith(PREFIX)) continue;
       try {
         const snap = JSON.parse(store.getItem(k) ?? "null");
-        if (snap && isStaleLive(snap, nowMs)) stale.push(k);
+        if (snap && (isStaleLive(snap, nowMs) || holdsStaleGuests(snap, nowMs))) stale.push(k);
       } catch {
         stale.push(k); // unreadable entry
       }

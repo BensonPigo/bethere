@@ -4,7 +4,7 @@
 // (US-M-14). Every write is off while offline or busy (US-X-8.4).
 import { useState } from "preact/hooks";
 import { isHostSnapshot } from "./api";
-import type { ImportPreview, MasterCue, MasterSnapshot, NewRole, RoleSnapshot, Snapshot, WriteRequest } from "./api";
+import type { ImportPreview, Job, MasterCue, MasterSnapshot, NewRole, RoleSnapshot, Snapshot, WriteRequest } from "./api";
 import { Dashboard } from "./Dashboard";
 import { formatHM, parseClock, zonedToISO } from "./format";
 import { Glance } from "./Glance";
@@ -51,6 +51,15 @@ const VIEWS: { view: NewRole["view"]; label: string; hint: string }[] = [
   { view: "Dashboard", label: "平安儀表板", hint: "只顯示一切順利或延誤（例如新人）" },
 ];
 
+// What the role does besides reading its cues (api.md 9.2, ADR-0035).
+const JOBS: { job: Job; label: string; hint: string }[] = [
+  { job: "general", label: "一般", hint: "只看自己的環節與倒數（例如攝影、主持）" },
+  { job: "VenueLead", label: "領班", hint: "對指派的環節按「收到」" },
+  { job: "Runner", label: "機動組", hint: "認領任務池裡的任務" },
+  { job: "Reception", label: "迎賓", hint: "查賓客桌號、報到、呼叫機動組" },
+  { job: "Cashier", label: "禮金", hint: "勾選交接檢核表" },
+];
+
 type AddRoleProps = {
   lock: boolean;
   addRole: (r: NewRole) => Promise<NewLink | null>;
@@ -63,6 +72,7 @@ export function AddRoleDialog({ lock, addRole, close }: AddRoleProps) {
   const [name, setName] = useState("");
   const [view, setView] = useState<NewRole["view"]>("Glance");
   const [checksIn, setChecksIn] = useState(true);
+  const [job, setJob] = useState<Job>("general");
   const [link, setLink] = useState<NewLink | null>(null);
   const dashboard = view === "Dashboard";
   return (
@@ -79,9 +89,29 @@ export function AddRoleDialog({ lock, addRole, close }: AddRoleProps) {
           <div class="label">畫面</div>
           {VIEWS.map((v) => (
             <label class="pick" key={v.view}>
-              <input type="radio" name="view" checked={view === v.view} onChange={() => setView(v.view)} />
+              <input
+                type="radio"
+                name="view"
+                checked={view === v.view}
+                disabled={v.view === "Dashboard" && job !== "general"}
+                onChange={() => setView(v.view)}
+              />
               {v.label}
               <small>{v.hint}</small>
+            </label>
+          ))}
+          <div class="label">工作</div>
+          {JOBS.map((j) => (
+            <label class="pick" key={j.job}>
+              <input
+                type="radio"
+                name="job"
+                checked={job === j.job}
+                disabled={dashboard && j.job !== "general"}
+                onChange={() => setJob(j.job)}
+              />
+              {j.label}
+              <small>{j.hint}</small>
             </label>
           ))}
           <label class="pick">
@@ -91,7 +121,7 @@ export function AddRoleDialog({ lock, addRole, close }: AddRoleProps) {
           <button
             class="confirm"
             disabled={lock || name.trim() === ""}
-            onClick={() => void addRole({ name, view, checksIn: checksIn && !dashboard }).then(setLink)}
+            onClick={() => void addRole({ name, view, checksIn: checksIn && !dashboard, job }).then(setLink)}
           >
             新增並產生連結
           </button>

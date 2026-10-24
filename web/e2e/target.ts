@@ -15,7 +15,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 export const ROOT = resolve(HERE, "../..");
 export const TZ = "Asia/Taipei";
-export const ROLES = ["總召", "新秘", "攝影", "音控", "新人"] as const;
+export const ROLES = ["總召", "新秘", "攝影", "音控", "新人", "領班", "機動組", "接待", "禮金"] as const;
 export type RoleName = (typeof ROLES)[number];
 export type Links = Record<RoleName, string>; // tokens of one test event
 
@@ -70,7 +70,7 @@ export function rundownCSV(now = new Date()): string {
   return [
     "seq,title,start,duration_min,fixed,roles,role_note,note",
     `1,新娘化妝,${at(-10)},30,,新秘,新娘房,`,
-    `2,迎賓,${at(15)},15,,攝影;音控,大門口 welcome.mp3,賓客入場`,
+    `2,迎賓,${at(15)},15,,攝影;音控;領班,大門口 welcome.mp3,賓客入場`,
     `3,一進預備,${at(40)},10,Y,攝影;音控;新秘,側門 entrance_v2.wav,`,
     `4,敬酒,${at(60)},20,,攝影,跟拍主桌,`,
     `5,送客,${at(80)},15,,攝影;音控;新秘,bye.mp3,`,
