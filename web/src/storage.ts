@@ -1,5 +1,8 @@
 // Local snapshot (sync-and-offline.md section 6, tech-stack.md 2.2「本機快照」).
 import type { Snapshot } from "./api";
+import { DEFAULT_TZ, zonedToISO } from "./format";
+
+const DAY_MS = 24 * 3600 * 1000;
 
 const PREFIX = "snap:";
 const MAX_LIVE_AGE_MS = 2 * 24 * 3600 * 1000;
@@ -20,16 +23,17 @@ export function isStaleLive(snap: { eventStatus?: unknown; serverTime?: unknown 
   return Number.isFinite(t) && nowMs - t > MAX_LIVE_AGE_MS;
 }
 
-// A saved guest list (Master or reception) goes 2 days after the event day,
-// draft or live (api.md 9.5, NFR-5); the day ends at 24:00 in the event's
-// zone, so 2 days after its UTC midnight plus a day is a safe bound.
+// A saved guest list (Master or reception) goes 2 days after the event
+// day ends at 24:00 in the event's zone, draft or live (api.md 9.5, NFR-5).
 export function holdsStaleGuests(
-  snap: { guests?: unknown; eventDay?: { date?: unknown } },
+  snap: { guests?: unknown; eventDay?: { date?: unknown; timezone?: unknown } },
   nowMs: number,
 ): boolean {
   if (!Array.isArray(snap.guests) || snap.guests.length === 0) return false;
-  const day = typeof snap.eventDay?.date === "string" ? Date.parse(snap.eventDay.date.slice(0, 10) + "T00:00:00Z") : NaN;
-  return Number.isFinite(day) && nowMs - day > 3 * 24 * 3600 * 1000;
+  const date = snap.eventDay?.date;
+  const tz = typeof snap.eventDay?.timezone === "string" ? snap.eventDay.timezone : DEFAULT_TZ;
+  const start = typeof date === "string" ? zonedToISO(date.slice(0, 10), "00:00", tz) : null;
+  return start !== null && nowMs - Date.parse(start) > 3 * DAY_MS;
 }
 
 export function pruneStale(store: Storage, nowMs: number): void {

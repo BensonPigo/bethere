@@ -210,3 +210,5 @@ label.check small { color: var(--muted); font-size: 13px; }
 .jobs-body .row { display: flex; gap: 8px; }
 .jobs-body .row input { flex: 1; }
 .jobs-body textarea, .jobs-body input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid #3c4043; border-radius: 8px; padding: 8px; }
+.jobs .editor-head button.tab { background: #3c4043; color: var(--fg); }
+.jobs .editor-head button.tab.on { background: var(--accent); color: #0b1220; }

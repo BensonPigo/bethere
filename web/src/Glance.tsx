@@ -2,7 +2,7 @@
 // section 4; ADR-0025; US-X-6), with the check-in at the bottom (US-X-5).
 import type { Notice, RoleCue, RoleSnapshot, WriteRequest } from "./api";
 import { DEFAULT_TZ, formatHM } from "./format";
-import { JobPanel } from "./JobPanels";
+import { hasPanel, JobPanel } from "./JobPanels";
 import { delayText, isEarlier, noticeText, noticedCues } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 import { countdownText, inProgressCue, stylistView } from "./roleView";
@@ -44,7 +44,8 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
       main = <PreDayList cues={view.cues} tz={tz} />;
       break;
     case "none":
-      main = <div class="msg">沒有指派給你的環節</div>;
+      // A job's own panel is the screen then; no big empty message over it.
+      main = hasPanel(snap) ? null : <div class="msg">沒有指派給你的環節</div>;
       break;
     case "done":
       main = <div class="msg">你的環節都完成了</div>;
@@ -104,8 +105,9 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
           <span class={`delay ${delayText(snap.delayMin ?? 0).ok ? "ok" : "late"}`}>・{delayText(snap.delayMin ?? 0).text}</span>
         </div>
       )}
-      <div class="glance-main">{main}</div>
+      {/* The job's tool first: it is what these roles came to do (screen-design.md 4.3). */}
       <JobPanel snap={snap} lock={lock} write={write} />
+      {main && <div class="glance-main">{main}</div>}
       {snap.role.checksIn !== false && (
         <CheckInBar checkedIn={snap.myCheckIn ?? false} offline={offline} busy={busy || !!readOnly} write={write} />
       )}

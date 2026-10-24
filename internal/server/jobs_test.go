@@ -240,8 +240,8 @@ func TestUS_RC_1_GuestList(t *testing.T) {
 		guests[1]["note"] != nil || guests[2]["table"] != "主桌" {
 		t.Fatalf("guests = %v", guests)
 	}
-	// Commas work too.
-	e.post(pathImportGuests, e.master, map[string]any{"text": "陳大文,5,素食\n陳小美,5\n林阿姨,主桌,輪椅"}).wantResult(t, "ok")
+	// Commas work too; the header is the first non-blank line.
+	e.post(pathImportGuests, e.master, map[string]any{"text": "\n姓名,桌號\n陳大文,5,素食\n陳小美,5\n林阿姨,主桌,輪椅"}).wantResult(t, "ok")
 	guests = list(t, e.snap(rec), "guests")
 	if len(guests) != 3 {
 		t.Fatalf("reception guests = %v", guests)
@@ -255,8 +255,8 @@ func TestUS_RC_1_GuestList(t *testing.T) {
 	if body := e.get(e.addRoleWithToken(domain.Host)).Body.String(); strings.Contains(body, "陳大文") {
 		t.Error("the hosts' snapshot holds a guest")
 	}
-	// US-RC-1.5: one bad line refuses the whole list.
-	for _, bad := range []string{"只有名字", "陳\t5\t備註\t多一欄", "\t5", "陳\t" + strings.Repeat("桌", 21), "陳​大文\t5"} {
+	// US-RC-1.5: one bad line refuses the whole list; a header only never empties it.
+	for _, bad := range []string{"姓名\t桌號\t備註\n", "\n\n", "只有名字", "陳\t5\t備註\t多一欄", "\t5", "陳\t" + strings.Repeat("桌", 21), "陳​大文\t5"} {
 		e.post(pathImportGuests, e.master, map[string]any{"text": bad}).wantError(t, http.StatusUnprocessableEntity, "invalid_import")
 	}
 	// US-RC-1.2: arrival by the reception.
@@ -297,8 +297,12 @@ func TestUS_CA_1_Checklist(t *testing.T) {
 	}
 	e.post(pathChecklist, e.master, map[string]any{"text": "新的"}).wantError(t, http.StatusUnprocessableEntity, "checklist_started")
 	e.post(pathCheckItem, cash, map[string]any{"itemId": items[0]["id"], "done": false}).wantResult(t, "ok")
-	e.post(pathChecklist, e.master, map[string]any{"text": strings.Repeat("項\n", 31)}).
-		wantError(t, http.StatusUnprocessableEntity, "invalid_checklist")
+	for _, bad := range []string{strings.Repeat("項\n", 31), "", " \n \n"} {
+		e.post(pathChecklist, e.master, map[string]any{"text": bad}).wantError(t, http.StatusUnprocessableEntity, "invalid_checklist")
+	}
+	if n := len(list(t, e.snap(cash), "checklist")); n != 3 {
+		t.Errorf("checklist has %d items after refused replacements, want 3", n)
+	}
 	e.post(pathCheckItem, e.stylist, map[string]any{"itemId": items[0]["id"], "done": true}).wantError(t, http.StatusForbidden, "forbidden")
 	if got := e.snap(e.stylist)["checklist"]; got != nil {
 		t.Errorf("stylist checklist = %v", got)
@@ -373,4 +377,21 @@ func TestJobIDsOfAnotherEventAre404(t *testing.T) {
 			e.post(c.path, c.tok, c.body).wantError(t, http.StatusNotFound, "not_found")
 		}
 	}
+}
+
+// api.md 9.4: deleting a role puts the task it had claimed back in the pool.
+func TestUS_RN_1_DeletedClaimerReopensTheTask(t *testing.T) {
+	e := newEnv(t)
+	e.dayBefore()
+	runner, runnerID := e.jobRole(domain.Runner)
+	other, _ := e.jobRole(domain.Runner)
+	e.exec(`UPDATE roles SET name = '機動B' WHERE id = (SELECT MAX(id) FROM roles)`)
+	r := e.post(pathAddTask, e.master, map[string]any{"title": "補水"})
+	id := list(t, r.snapshot(t), "tasks")[0]["id"]
+	e.post(pathSetTask, runner, map[string]any{"taskId": id, "state": "claimed"}).wantResult(t, "ok")
+	e.post(pathDeleteRole, e.master, map[string]any{"version": e.version(), "roleId": runnerID}).wantResult(t, "ok")
+	if got := list(t, e.snap(e.master), "tasks")[0]; got["state"] != "open" || got["claimedBy"] != nil {
+		t.Errorf("after the claimer was deleted: %v", got)
+	}
+	e.post(pathSetTask, other, map[string]any{"taskId": id, "state": "claimed"}).wantResult(t, "ok")
 }

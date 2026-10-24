@@ -199,6 +199,11 @@ func (s *Store) DeleteRole(ctx context.Context, eventID, expectVersion, roleID i
 		if err := rows.Err(); err != nil {
 			return err
 		}
+		// A task it had claimed goes back to the pool, not to a claimer nobody is (api.md 9.4).
+		if _, err := tx.ExecContext(ctx, `UPDATE tasks SET state = 'open', claimed_by_role_id = NULL, updated_at = ?
+			WHERE claimed_by_role_id = ? AND state = 'claimed'`, toNS(now), roleID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM roles WHERE id = ? AND event_id = ?`, roleID, eventID); err != nil {
 			return err
 		}

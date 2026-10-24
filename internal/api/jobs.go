@@ -58,23 +58,26 @@ const (
 
 // parseGuests reads one guest per line: name, table, optional note,
 // separated by tabs when the line has one, by commas otherwise. A first
-// line starting with 姓名 is a header; blank lines are skipped. Any bad
-// line makes the whole list nil (api.md 9.5).
+// non-blank line starting with 姓名 is a header; blank lines are skipped.
+// Any bad line makes the whole list nil (api.md 9.5).
 func parseGuests(text string) []store.GuestRow {
 	if len(text) > maxPastedText {
 		return nil
 	}
 	rows := []store.GuestRow{}
-	for i, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+	first := true
+	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		header := first
+		first = false
 		sep := ","
 		if strings.Contains(line, "\t") {
 			sep = "\t"
 		}
 		cells := strings.Split(line, sep)
-		if i == 0 && strings.TrimSpace(cells[0]) == "姓名" {
+		if header && strings.TrimSpace(cells[0]) == "姓名" {
 			continue
 		}
 		if len(cells) < 2 || len(cells) > 3 {
