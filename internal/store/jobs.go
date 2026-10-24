@@ -187,8 +187,8 @@ func (s *Store) DeleteTask(ctx context.Context, eventID, taskID int64, actor Act
 			return err
 		}
 		var (
-			title, state       string
-			createdBy, claimed sql.NullInt64
+			title, state         string
+			createdBy, claimed   sql.NullInt64
 			createdAt, updatedAt int64
 		)
 		err := tx.QueryRowContext(ctx, `SELECT title, state, created_by_role_id, claimed_by_role_id, created_at, updated_at
