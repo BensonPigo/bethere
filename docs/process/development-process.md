@@ -88,7 +88,7 @@
 
 - 開發在功能分支（例如 `m1/master-advance`），完成後合併進 `main`。
 - CI 以 GitHub Actions 執行，repo 為私人，用的是有限的免費分鐘數（Windows 計 2 倍、macOS 計 10 倍），所以只在需要的地方跑：
-  - **程式修改**（`.github/workflows/ci.yml`）：push 與 pull request 時，Go 的 `vet` 與 `test` 跑 Linux、Windows；前端單元測試（`npm test`）與 build 跑 Linux。
+  - **程式修改**（`.github/workflows/ci.yml`）：push 與 pull request 時，Go 的 `vet` 與 `test` 跑 Linux、Windows，Linux 另檢查 `gofmt`；前端單元測試（`npm test`）與 build 跑 Linux。
   - **只改 Markdown**（`.github/workflows/docs.yml`）：只在 Linux 跑文件規則檢查（`internal/docscheck`）。
   - **macOS**（`.github/workflows/macos.yml`）：macOS 與 Windows 都是開發機，所以改到 Go 程式（`.go`、`go.mod`、`go.sum`）的修改**進 `main` 時**跑一次，換到 Mac 時拉下來的 `main` 一定驗過；另外每週一定時跑一次，也可手動觸發（`gh workflow run macOS`）。功能分支的 push 不跑。
   - 同一分支有新的 push 時，取消還在跑的舊執行。
