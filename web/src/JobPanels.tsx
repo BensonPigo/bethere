@@ -8,6 +8,9 @@ import { callRunnerTitle, doneCount, searchGuests, TASK_STATE_TEXT } from "./job
 type Write = (w: WriteRequest) => Promise<boolean>;
 type Props = { snap: RoleSnapshot; lock: boolean; write: Write };
 
+// hasPanel: the jobs whose glance screen leads with their own tool.
+export const hasPanel = (snap: RoleSnapshot) => ["Runner", "Reception", "Cashier"].includes(snap.role.type);
+
 export function JobPanel({ snap, lock, write }: Props) {
   switch (snap.role.type) {
     case "Runner":

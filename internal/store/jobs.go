@@ -189,10 +189,10 @@ func (s *Store) DeleteTask(ctx context.Context, eventID, taskID int64, actor Act
 		var (
 			title, state       string
 			createdBy, claimed sql.NullInt64
-			createdAt          int64
+			createdAt, updatedAt int64
 		)
-		err := tx.QueryRowContext(ctx, `SELECT title, state, created_by_role_id, claimed_by_role_id, created_at
-			FROM tasks WHERE id = ? AND event_id = ?`, taskID, eventID).Scan(&title, &state, &createdBy, &claimed, &createdAt)
+		err := tx.QueryRowContext(ctx, `SELECT title, state, created_by_role_id, claimed_by_role_id, created_at, updated_at
+			FROM tasks WHERE id = ? AND event_id = ?`, taskID, eventID).Scan(&title, &state, &createdBy, &claimed, &createdAt, &updatedAt)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrItemNotFound
 		}
@@ -204,7 +204,7 @@ func (s *Store) DeleteTask(ctx context.Context, eventID, taskID int64, actor Act
 		}
 		return logAction(ctx, tx, eventID, actor, "task.delete", map[string]any{
 			"taskId": taskID, "title": title, "state": state, "createdByRoleId": nullID(createdBy),
-			"claimedByRoleId": nullID(claimed), "createdAt": createdAt,
+			"claimedByRoleId": nullID(claimed), "createdAt": createdAt, "updatedAt": updatedAt, "byTokenId": actor.tokenID,
 		}, now)
 	})
 }
@@ -242,7 +242,8 @@ func (s *Store) ReplaceGuests(ctx context.Context, eventID int64, rows []GuestRo
 		if arrived {
 			return ErrGuestsArrived
 		}
-		if rows == nil || len(rows) > MaxGuests {
+		// No rows at all, a header only included, never empties the list.
+		if len(rows) == 0 || len(rows) > MaxGuests {
 			return ErrInvalidImport
 		}
 		old, err := loadGuests(ctx, tx, eventID)
@@ -258,7 +259,8 @@ func (s *Store) ReplaceGuests(ctx context.Context, eventID int64, rows []GuestRo
 				return err
 			}
 		}
-		return logAction(ctx, tx, eventID, actor, "guests.import", map[string]any{"count": len(rows), "replaced": old}, now)
+		return logAction(ctx, tx, eventID, actor, "guests.import",
+			map[string]any{"count": len(rows), "replaced": old, "byTokenId": actor.tokenID}, now)
 	})
 }
 
@@ -308,7 +310,7 @@ func (s *Store) ReplaceChecklist(ctx context.Context, eventID int64, titles []st
 		if started {
 			return ErrChecklistStarted
 		}
-		if titles == nil || len(titles) > MaxChecklistItems {
+		if len(titles) == 0 || len(titles) > MaxChecklistItems {
 			return ErrInvalidChecklist
 		}
 		clean := make([]string, len(titles))
@@ -332,7 +334,8 @@ func (s *Store) ReplaceChecklist(ctx context.Context, eventID int64, titles []st
 				return err
 			}
 		}
-		return logAction(ctx, tx, eventID, actor, "checklist.replace", map[string]any{"count": len(clean), "replaced": old}, now)
+		return logAction(ctx, tx, eventID, actor, "checklist.replace",
+			map[string]any{"count": len(clean), "replaced": old, "byTokenId": actor.tokenID}, now)
 	})
 }
 

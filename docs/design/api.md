@@ -343,7 +343,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | `POST /api/tasks/delete` | Master | `{"taskId":n}` | `ok` + 新的 Master 快照 |
 
 - 標題 1～100 字（規則同 Cue 標題）；每場最多 200 個任務，超過回 422 `too_many_tasks`。
-- 刪除任務時，被刪任務的完整欄位寫入操作紀錄（ADR-0032）。
+- 刪除任務時，被刪任務的完整欄位寫入操作紀錄（ADR-0032）。刪除角色時，它認領中的任務回到 `open`。取代名單、取代檢核表、刪除任務的紀錄都記下操作者使用的 `access_tokens.id`（`byTokenId`）。
 - 狀態轉換：Runner 只能把 `open` 改成 `claimed`（認領者為自己）、把**自己認領的**改回 `open` 或改成 `done`；別人已認領的回 422 `task_taken`，其他不允許的轉換回 422 `invalid_task_state`。Master 可以把任何任務改成任何狀態；改成 `open` 時清除認領者，改成 `claimed` 回 422 `invalid_task_state`（Master 不替人認領）。
 - 快照的 `tasks`：每項 `{"id","title","createdBy","createdAt","claimedBy","state"}`，`createdBy`、`claimedBy` 是角色名稱（角色已刪除時為 `null`），依建立時間由新到舊。
   - Master：全部任務。
@@ -358,10 +358,10 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | `POST /api/guests/import` | Master | `{"text":"…"}` | `ok` + 新的 Master 快照 |
 | `POST /api/guests/arrive` | Master、Reception | `{"guestId":n,"arrived":bool}` | `ok` + 自己的快照 |
 
-- 匯入取代整份名單。每行一位：`姓名`、`桌號`、`備註`，以 Tab（從試算表複製）或逗號分隔，備註可省略；第一列若是 `姓名` 開頭就當標題列略過；空行略過。姓名 1～50 字、桌號 1～20 字、備註最多 100 字，規則同角色名稱（不含控制字元與看不見的格式字元）；最多 1000 位、本文上限 256 KB。任一列不合格就整份不寫入，回 422 `invalid_import`。已有任何賓客報到時不能取代，回 422 `guests_arrived`；從活動日 00:00（活動時區）起不能取代，回 422 `locked_on_event_day`（ADR-0032）。
+- 匯入取代整份名單。每行一位：`姓名`、`桌號`、`備註`，以 Tab（從試算表複製）或逗號分隔，備註可省略；第一列若是 `姓名` 開頭就當標題列略過；空行略過。姓名 1～50 字、桌號 1～20 字、備註最多 100 字，規則同角色名稱（不含控制字元與看不見的格式字元）；最多 1000 位、文字最多 100 KB（本文上限 256 KB）。任一列不合格、或沒有任何一位（例如只有標題列），整份不寫入，回 422 `invalid_import`。已有任何賓客報到時不能取代，回 422 `guests_arrived`；從活動日 00:00（活動時區）起不能取代，回 422 `locked_on_event_day`（ADR-0032）。
 - 只蒐集姓名、桌號與備註；隨活動一起刪除（NFR-5）。被取代的名單完整寫入操作紀錄（內部資料表，不進任何快照，隨活動刪除），需要時由開發者救回。
 - 快照的 `guests`：Master 與 Reception 為全部賓客 `{"id","name","table","note","arrived"}`，依匯入順序；其他角色為 `null`。搜尋在客戶端進行。
-- 本機快照含賓客名單時，活動日已過 2 天就在開啟頁面時刪除，不論活動是 Draft 或 Live（NFR-5）。
+- 本機快照含賓客名單時，活動日結束（活動時區 24:00）後 2 天就在開啟頁面時刪除，不論活動是 Draft 或 Live（NFR-5）。
 
 ### 9.6 檢核表（Cashier）
 
@@ -370,7 +370,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | `POST /api/checklist/items` | Master | `{"text":"…"}` | `ok` + 新的 Master 快照 |
 | `POST /api/checklist/check` | Master、Cashier | `{"itemId":n,"done":bool}` | `ok` + 自己的快照 |
 
-- 項目取代整份，每行一項，空行略過；每項 1～100 字，最多 30 項。已有任何項目完成時不能取代，回 422 `checklist_started`；從活動日 00:00 起不能取代，回 422 `locked_on_event_day`。被取代的項目完整寫入操作紀錄。
+- 項目取代整份，每行一項，空行略過；每項 1～100 字，1～30 項（沒有任何一項回 422 `invalid_checklist`，不會清空）。已有任何項目完成時不能取代，回 422 `checklist_started`；從活動日 00:00 起不能取代，回 422 `locked_on_event_day`。被取代的項目完整寫入操作紀錄。
 - 快照的 `checklist`：Master 與 Cashier 為全部項目 `{"id","title","done","doneBy"}`，`doneBy` 為完成者的角色名稱；其他角色為 `null`。
 
 ### 9.7 快照的新鍵

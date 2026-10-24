@@ -27,7 +27,7 @@ export function MasterJobs({ snap, lock, locked, write, close }: Props) {
       <div class="editor-head">
         <span class="shift-title">現場工作</span>
         {(["tasks", "guests", "checklist"] as Tab[]).map((t) => (
-          <button key={t} class={tab === t ? "confirm" : ""} onClick={() => setTab(t)}>
+          <button key={t} class={tab === t ? "tab on" : "tab"} aria-pressed={tab === t} onClick={() => setTab(t)}>
             {{ tasks: "任務池", guests: "賓客名單", checklist: "禮金檢核" }[t]}
           </button>
         ))}
@@ -158,7 +158,7 @@ function ChecklistEditor({ snap, lock, locked, write }: { snap: MasterSnapshot; 
       />
       <button
         class="confirm"
-        disabled={lock || locked || started}
+        disabled={lock || locked || started || text.trim() === ""}
         onClick={() => window.confirm("以這份內容取代檢核表？") && void write({ path: "/api/checklist/items", text })}
       >
         儲存檢核表

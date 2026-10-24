@@ -453,9 +453,10 @@ describe("the four jobs (api.md section 9)", () => {
     expect(callRunnerTitle("名".repeat(120)).length).toBe(100);
   });
   it("api.md 9.5: a saved guest list goes 2 days after the event day, draft or live", () => {
-    const day = Date.parse("2027-06-06T00:00:00Z");
-    const s = { guests: [guests[0]], eventDay: { date: "2027-06-06" } };
-    expect(holdsStaleGuests(s, day + 2 * 24 * 3600 * 1000)).toBe(false);
+    // Taipei: the day starts 2027-06-05T16:00Z and ends 24 hours later.
+    const day = Date.parse("2027-06-05T16:00:00Z");
+    const s = { guests: [guests[0]], eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" } };
+    expect(holdsStaleGuests(s, day + 3 * 24 * 3600 * 1000)).toBe(false);
     expect(holdsStaleGuests(s, day + 3 * 24 * 3600 * 1000 + 1)).toBe(true);
     expect(holdsStaleGuests({ ...s, guests: [] }, day + 9e9)).toBe(false);
     expect(holdsStaleGuests({ eventDay: s.eventDay }, day + 9e9)).toBe(false);
