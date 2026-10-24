@@ -76,7 +76,7 @@ erDiagram
 | type | enum | `Master` / `Stylist` / `Media` / `StageAV` / `VenueLead` / `Reception` / `Cashier` / `Runner` / `Host` |
 | displayOrder | int | |
 | view | enum? | 使用哪種畫面：`HandsFree`（免手持）／`Glance`（快速瞄）／`Dashboard`（平安儀表板）／`Console`（主控台）。未設定時依類型預設：Master → Console、Host → Dashboard、Stylist → HandsFree、其他 → Glance。必須與類型相容：Master 只能 Console、Host 只能 Dashboard，其他類型只能 HandsFree 或 Glance。在建立角色時設定（ADR-0025） |
-| checksIn | bool? | 是否需要就位打卡（M2c，ADR-0031）。未設定時依類型：Stylist、Media、StageAV 打卡，其他不打卡；只能設為「不打卡」，不能讓 Host 或 Master 打卡。總召在畫面上新增角色時設定，之後不可修改 |
+| checksIn | bool? | 是否需要就位打卡（ADR-0031）。未設定時依類型：Stylist、Media、StageAV 打卡，其他不打卡；只能設為「不打卡」，不能讓 Host 或 Master 打卡。總召在畫面上新增角色時設定，之後不可修改 |
 
 `type` 決定可做的動作與快照內容，建立後不可修改。每個活動只有一個 `Master` 角色，在建立活動時產生，不能新增、刪除。一般角色只能在 Draft 階段刪除，刪除時在同一交易內撤銷其 Token 並移除 CueRole。**一個 Role 是一個「位子」**，同一位子可被多支手機同時使用；兩位攝影師就建兩個 Role。
 
@@ -113,7 +113,7 @@ erDiagram
 一個 Role 目前是否就位 = 存在未取消的 CheckIn。
 
 ### 平移紀錄
-不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `docs/adr/0015-cue-ops-in-action-log.md`。
+不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。
 
 ### ActionLog（操作紀錄）
 `id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（4.1）。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（P1，`requirements/scope.md`）。

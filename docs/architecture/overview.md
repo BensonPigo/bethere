@@ -1,6 +1,6 @@
 # 架構總覽 (Architecture Overview)
 
-> 一頁看全貌：系統邊界、容器、部署與橫切關注。規則以 `design/` 為準，理由見 `adr/`，品質目標見 `requirements/scope.md` 的 NFR，風險見 `docs/README.md` 的 RISK。
+> 一頁看全貌：系統邊界、容器、部署與橫切關注。規則以 `design/` 為準，理由見 `decisions.md`，品質目標見 `requirements/scope.md` 的 NFR，風險見 `docs/README.md` 的 RISK。
 > 流程圖與狀態圖放在它們說明的設計文件裡（ADR-0017）。
 
 ---
