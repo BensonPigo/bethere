@@ -6,6 +6,7 @@ import { arrivedCount, callRunnerTitle, searchGuests, tableText } from "./jobs";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./controls";
+import { readTheme, saveTheme } from "./theme";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -478,5 +479,28 @@ describe("the four jobs (api.md section 9)", () => {
     } as unknown as Storage;
     pruneStale(store, day + 4 * 24 * 3600 * 1000);
     expect([...m.keys()]).toEqual(["snap:b"]);
+  });
+});
+
+describe("the colour theme (screen-design.md section 2)", () => {
+  const mem = (init: Record<string, string> = {}) => {
+    const m = new Map(Object.entries(init));
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) } as unknown as Storage;
+  };
+  it("dark unless this device chose light; storage that throws or is missing means dark", () => {
+    expect(readTheme(mem())).toBe("dark");
+    expect(readTheme(mem({ theme: "light" }))).toBe("light");
+    expect(readTheme(mem({ theme: "neon" }))).toBe("dark");
+    expect(readTheme(null)).toBe("dark");
+    const broken = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } } as unknown as Storage;
+    expect(readTheme(broken)).toBe("dark");
+    expect(() => saveTheme(broken, "light")).not.toThrow();
+  });
+  it("the choice is remembered on this device", () => {
+    const s = mem();
+    saveTheme(s, "light");
+    expect(readTheme(s)).toBe("light");
+    saveTheme(s, "dark");
+    expect(readTheme(s)).toBe("dark");
   });
 });

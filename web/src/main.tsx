@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { App } from "./App";
 import { PrintPage } from "./PrintPage";
+import { applyTheme, deviceStorage, readTheme } from "./theme";
 import "./style.css";
 import "./app.css";
 
@@ -13,5 +14,8 @@ function Root() {
       return <App />;
   }
 }
+
+// Before the first paint, so a light device never flashes dark.
+applyTheme(readTheme(deviceStorage()));
 
 render(<Root />, document.getElementById("app")!);
