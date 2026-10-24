@@ -26,8 +26,13 @@ func (t RoleType) Valid() bool {
 }
 
 // HasOwnCues reports whether a role of type t reads the cues assigned to
-// it, checks in by itself and can be assigned cues: the types opened in P0
-// besides Master and Host (access-control.md section 4).
+// it, checks in by itself and can be assigned cues: every type but Master
+// and Host (access-control.md section 4). The four jobs have one more task
+// each (api.md section 9, ADR-0035).
 func (t RoleType) HasOwnCues() bool {
-	return t == Stylist || t == Media || t == StageAV
+	switch t {
+	case Stylist, Media, StageAV, VenueLead, Runner, Reception, Cashier:
+		return true
+	}
+	return false
 }

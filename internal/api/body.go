@@ -38,6 +38,13 @@ type body struct {
 	originGiven bool // origin is in the body, even as ""
 	text        string
 	newRoles    []store.NewRole
+	// The four jobs (api.md section 9).
+	job     string
+	taskID  int64
+	guestID int64
+	itemID  int64
+	state   string
+	on      bool // acked, arrived or done
 }
 
 type fieldKind int
@@ -90,9 +97,18 @@ var (
 	deleteCueFields     = fieldSet{"version": positiveInt, "cueId": positiveInt}
 	importPreviewFields = fieldSet{"text": text}
 	importFields        = fieldSet{"version": positiveInt, "text": text, "newRoles": newRoleList}
-	addRoleFields       = fieldSet{"name": text, "view": text, "checksIn": boolean, "origin": text}
+	addRoleFields       = fieldSet{"name": text, "view": text, "checksIn": boolean, "origin": text, "job": optString}
 	renameFields        = fieldSet{"roleId": positiveInt, "name": text}
 	deleteRoleFields    = fieldSet{"version": positiveInt, "roleId": positiveInt}
+	// The four jobs carry no version (api.md section 9, ADR-0023).
+	ackFields         = fieldSet{"cueId": positiveInt, "acked": boolean}
+	addTaskFields     = fieldSet{"title": text}
+	setTaskFields     = fieldSet{"taskId": positiveInt, "state": text}
+	deleteTaskFields  = fieldSet{"taskId": positiveInt}
+	guestImportFields = fieldSet{"text": text}
+	arriveFields      = fieldSet{"guestId": positiveInt, "arrived": boolean}
+	checklistFields   = fieldSet{"text": text}
+	checkItemFields   = fieldSet{"itemId": positiveInt, "done": boolean}
 )
 
 // LargeBodyBytes is the body limit of the pasted import only: its text of
@@ -162,6 +178,12 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 				b.cueID = v
 			case "afterCueId":
 				b.afterCueID = v
+			case "taskId":
+				b.taskID = v
+			case "guestId":
+				b.guestID = v
+			case "itemId":
+				b.itemID = v
 			}
 		case signedInt:
 			v, ok := readInt(dec, true)
@@ -186,6 +208,8 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 				b.isFixed = v
 			case "checksIn":
 				b.checksIn = v
+			case "acked", "arrived", "done":
+				b.on = v
 			}
 		case count:
 			tok, err := dec.Token()
@@ -214,6 +238,10 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 				b.origin, b.originGiven = s, true
 			case "text":
 				b.text = s
+			case "job":
+				b.job = s
+			case "state":
+				b.state = s
 			}
 		case nullableID:
 			tok, err := dec.Token()

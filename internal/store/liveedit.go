@@ -169,6 +169,10 @@ func (s *Store) SetCueRoles(ctx context.Context, eventID, expectVersion, cueID i
 			if _, err := tx.ExecContext(ctx, `DELETE FROM cue_roles WHERE cue_id = ? AND role_id = ?`, cueID, id); err != nil {
 				return err
 			}
+			// Its ack goes with the assignment (api.md 9.3).
+			if _, err := tx.ExecContext(ctx, `DELETE FROM cue_acks WHERE cue_id = ? AND role_id = ?`, cueID, id); err != nil {
+				return err
+			}
 			rec.Removed = append(rec.Removed, id)
 		}
 		slices.Sort(rec.Removed)

@@ -61,7 +61,7 @@ func (a *API) addRole(ctx context.Context, o store.TokenOwner, b body, now time.
 		return link{}, err
 	}
 	id, err := a.store.CreateRole(ctx, o.EventID, store.NewRole{
-		Name: b.name, View: domain.View(b.view), ChecksIn: b.checksIn,
+		Name: b.name, View: domain.View(b.view), ChecksIn: b.checksIn, Job: domain.Job(b.job),
 	}, auth.HashToken(token), o.Actor, now)
 	if err != nil {
 		return link{}, err

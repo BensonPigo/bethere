@@ -57,6 +57,36 @@ type masterSnapshot struct {
 	Conflicts    []conflictView     `json:"conflicts"`
 	OverrunMin   int                `json:"overrunMin"` // data-model.md 4.3
 	OutOfOrder   []orderView        `json:"outOfOrder"` // US-M-8.6
+	// The four jobs (api.md 9.7): always arrays for the Master.
+	Tasks     []taskView  `json:"tasks"`
+	Guests    []guestView `json:"guests"`
+	Checklist []checkView `json:"checklist"`
+}
+
+// taskView, guestView and checkView are api.md 9.4–9.6; roles by name,
+// null when the role was deleted.
+type taskView struct {
+	ID        int64   `json:"id"`
+	Title     string  `json:"title"`
+	CreatedBy *string `json:"createdBy"`
+	CreatedAt string  `json:"createdAt"`
+	ClaimedBy *string `json:"claimedBy"`
+	State     string  `json:"state"`
+}
+
+type guestView struct {
+	ID      int64   `json:"id"`
+	Name    string  `json:"name"`
+	Table   string  `json:"table"`
+	Note    *string `json:"note"`
+	Arrived bool    `json:"arrived"`
+}
+
+type checkView struct {
+	ID     int64   `json:"id"`
+	Title  string  `json:"title"`
+	Done   bool    `json:"done"`
+	DoneBy *string `json:"doneBy"`
 }
 
 type orderView struct {
@@ -90,6 +120,7 @@ type masterCueRole struct {
 	RoleID   int64   `json:"roleId"`
 	Name     string  `json:"name"`
 	RoleNote *string `json:"roleNote"`
+	AckedAt  *string `json:"ackedAt"` // a venue lead's ack (api.md 9.3)
 }
 
 type undoView struct {
@@ -121,6 +152,11 @@ type roleSnapshot struct {
 	Notice       *noticeView        `json:"notice"`
 	MyCheckIn    bool               `json:"myCheckIn"`
 	CurrentTitle *string            `json:"currentTitle"`
+	DelayMin     int                `json:"delayMin"` // the hosts' delay, for the MC too (api.md 9.1)
+	// Only for the job that uses each (api.md 9.4–9.6); null otherwise.
+	Tasks     *[]taskView  `json:"tasks"`
+	Guests    *[]guestView `json:"guests"`
+	Checklist *[]checkView `json:"checklist"`
 }
 
 // noticeView is the newer of two notices (api.md 5.3, US-X-7.4), about
@@ -163,6 +199,7 @@ type roleCue struct {
 	Status         domain.Status `json:"status"`
 	NotePublic     *string       `json:"notePublic"`
 	RoleNote       *string       `json:"roleNote"`
+	AckedAt        *string       `json:"ackedAt"` // own ack, venue leads only (api.md 9.3)
 }
 
 var (
@@ -279,7 +316,8 @@ func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int6
 			Roles:          make([]masterCueRole, 0, len(c.Roles)),
 		}
 		for _, r := range c.Roles {
-			mc.Roles = append(mc.Roles, masterCueRole{RoleID: r.RoleID, Name: r.RoleName, RoleNote: r.RoleNote})
+			mc.Roles = append(mc.Roles, masterCueRole{RoleID: r.RoleID, Name: r.RoleName, RoleNote: r.RoleNote,
+				AckedAt: ackedAt(d, c.ID, r.RoleID)})
 		}
 		if c.Status == domain.InProgress {
 			if s.ActiveCueID != nil {
@@ -308,6 +346,10 @@ func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int6
 	if d.Event.Status == domain.Live {
 		s.OverrunMin = domain.OverrunMin(cues, now)
 	}
+	names := roleNames(d)
+	s.Tasks = taskViews(d.Tasks, names, func(store.Task) bool { return true })
+	s.Guests = guestViews(d.Guests)
+	s.Checklist = checkViews(d.Checklist, names)
 	// In draft the only cue operation is a skip, which can be undone too
 	// (US-M-6.4). An operation whose cues were deleted or replaced since
 	// (M2c) can no longer be undone and offers no button (api.md 5.2).
@@ -354,11 +396,40 @@ func buildRole(d store.SnapshotData, now time.Time) roleSnapshot {
 				NotePublic:     c.NotePublic,
 				RoleNote:       r.RoleNote,
 			})
+			if d.Owner.RoleType == domain.VenueLead {
+				s.Cues[len(s.Cues)-1].AckedAt = ackedAt(d, c.ID, d.Owner.RoleID)
+			}
 			mine[c.ID] = c.Cue
 			break
 		}
 	}
 	s.Notice = noticeFor(d.Shifts, d.Assigns, d.Owner.RoleID, mine)
+	if d.Event.Status == domain.Live {
+		s.DelayMin = domain.DelayMin(plainCues(d), now)
+	}
+	names, me := roleNames(d), d.Owner.RoleID
+	switch d.Owner.RoleType {
+	case domain.Runner:
+		done := 0
+		v := taskViews(d.Tasks, names, func(t store.Task) bool {
+			if t.State != store.TaskDone {
+				return true
+			}
+			if t.ClaimedBy == me && done < store.RecentDoneTasks {
+				done++
+				return true
+			}
+			return false
+		})
+		s.Tasks = &v
+	case domain.Reception:
+		v := taskViews(d.Tasks, names, func(t store.Task) bool { return t.CreatedBy == me })
+		g := guestViews(d.Guests)
+		s.Tasks, s.Guests = &v, &g
+	case domain.Cashier:
+		c := checkViews(d.Checklist, names)
+		s.Checklist = &c
+	}
 	return s
 }
 
@@ -457,4 +528,56 @@ func describeUndo(op domain.Op, titles map[int64]string) string {
 		}
 	}
 	return "撤銷上一步"
+}
+
+// ackedAt is when roleID acknowledged cueID, or null.
+func ackedAt(d store.SnapshotData, cueID, roleID int64) *string {
+	if at, ok := d.Acks[cueID][roleID]; ok {
+		return optTime(at)
+	}
+	return nil
+}
+
+func roleNames(d store.SnapshotData) map[int64]string {
+	names := make(map[int64]string, len(d.Roles))
+	for _, r := range d.Roles {
+		names[r.ID] = r.Name
+	}
+	return names
+}
+
+func nameOf(names map[int64]string, id int64) *string {
+	if n, ok := names[id]; ok && id != 0 {
+		return &n
+	}
+	return nil
+}
+
+// taskViews keeps the tasks the caller may see, newest first.
+func taskViews(ts []store.Task, names map[int64]string, keep func(store.Task) bool) []taskView {
+	out := []taskView{}
+	for _, t := range ts {
+		if !keep(t) {
+			continue
+		}
+		out = append(out, taskView{ID: t.ID, Title: t.Title, CreatedBy: nameOf(names, t.CreatedBy),
+			CreatedAt: FormatTime(t.CreatedAt), ClaimedBy: nameOf(names, t.ClaimedBy), State: t.State})
+	}
+	return out
+}
+
+func guestViews(gs []store.Guest) []guestView {
+	out := make([]guestView, 0, len(gs))
+	for _, g := range gs {
+		out = append(out, guestView{ID: g.ID, Name: g.Name, Table: g.Table, Note: g.Note, Arrived: g.Arrived})
+	}
+	return out
+}
+
+func checkViews(items []store.ChecklistItem, names map[int64]string) []checkView {
+	out := make([]checkView, 0, len(items))
+	for _, it := range items {
+		out = append(out, checkView{ID: it.ID, Title: it.Title, Done: it.Done, DoneBy: nameOf(names, it.DoneBy)})
+	}
+	return out
 }

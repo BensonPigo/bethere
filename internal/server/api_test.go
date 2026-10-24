@@ -638,7 +638,7 @@ func TestSnapshotKeySets(t *testing.T) {
 	wantKeys(t, "ok response", r.body, "result", "snapshot")
 	m := r.snapshot(t)
 	wantKeys(t, "Master snapshot", m, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "event", "cues",
-		"activeCueId", "undo", "roles", "conflicts", "overrunMin", "outOfOrder")
+		"activeCueId", "undo", "roles", "conflicts", "overrunMin", "outOfOrder", "tasks", "guests", "checklist")
 	wantKeys(t, "role", m["role"].(map[string]any), "type", "name", "view", "checksIn")
 	wantKeys(t, "eventDay", m["eventDay"].(map[string]any), "date", "timezone")
 	wantKeys(t, "event", m["event"].(map[string]any), "name", "date", "timezone")
@@ -647,7 +647,7 @@ func TestSnapshotKeySets(t *testing.T) {
 		wantKeys(t, "Master cue", c, "id", "seq", "title", "scheduledStart", "effectiveStart", "durationMin", "isFixed",
 			"offsetMin", "status", "actualStart", "actualEnd", "notePublic", "roles")
 		for _, cr := range c["roles"].([]any) {
-			wantKeys(t, "Master cue role", cr.(map[string]any), "roleId", "name", "roleNote")
+			wantKeys(t, "Master cue role", cr.(map[string]any), "roleId", "name", "roleNote", "ackedAt")
 		}
 	}
 	roles := m["roles"].([]any)
@@ -662,11 +662,11 @@ func TestSnapshotKeySets(t *testing.T) {
 	wantKeys(t, "ok response", s.body, "result", "snapshot")
 	ss := s.snapshot(t)
 	wantKeys(t, "Stylist snapshot", ss, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "cues", "notice",
-		"myCheckIn", "currentTitle")
+		"myCheckIn", "currentTitle", "delayMin", "tasks", "guests", "checklist")
 	wantKeys(t, "role", ss["role"].(map[string]any), "type", "name", "view", "checksIn")
 	for _, c := range cues(t, ss) {
 		wantKeys(t, "Stylist cue", c, "id", "seq", "title", "effectiveStart", "durationMin", "isFixed", "offsetMin",
-			"status", "notePublic", "roleNote")
+			"status", "notePublic", "roleNote", "ackedAt")
 	}
 	// A stylist with no assigned cue gets an empty list, not null.
 	e.exec(`DELETE FROM cue_roles WHERE role_id = ?`, e.stylistRole)
