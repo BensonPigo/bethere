@@ -5,7 +5,7 @@ import { printRows } from "./print";
 import { arrivedCount, callRunnerTitle, searchGuests } from "./jobs";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
-import { dayStarted } from "./Prep";
+import { dayStarted } from "./controls";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
