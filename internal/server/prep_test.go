@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"slices"
 	"strings"
@@ -11,81 +10,10 @@ import (
 
 	qrcode "github.com/skip2/go-qrcode"
 
-	"github.com/BensonPigo/bethere/internal/auth"
 	"github.com/BensonPigo/bethere/internal/domain"
 )
 
-const (
-	pathUpdate        = "/api/cues/update"
-	pathMove          = "/api/cues/move"
-	pathDeleteCue     = "/api/cues/delete"
-	pathImportPreview = "/api/rundown/import/preview"
-	pathImport        = "/api/rundown/import"
-	pathAddRole       = "/api/roles/add"
-	pathRename        = "/api/roles/rename"
-	pathDeleteRole    = "/api/roles/delete"
-	pathPreviewRole   = "/api/roles/preview"
-)
-
 const origin = "https://bethere.example"
-
-// dayBefore puts the clock on the day before the event, when every edit
-// of the preparation is open (ADR-0032).
-func (e *env) dayBefore() { e.setClock(at(9, 0).AddDate(0, 0, -1)) }
-
-func updateBody(v, cueID int64, start time.Time, title string) map[string]any {
-	return map[string]any{"version": v, "cueId": cueID, "start": start.UTC().Format(time.RFC3339),
-		"durationMin": 25, "isFixed": true, "title": title, "notePublic": "新備註"}
-}
-
-func (e *env) addRole(name, view string, checksIn bool) resp {
-	e.t.Helper()
-	return e.post(pathAddRole, e.master, map[string]any{"name": name, "view": view, "checksIn": checksIn, "origin": origin})
-}
-
-// seqs is the cue titles in seq order, failing unless seq runs 1..n.
-func (e *env) seqs() []string {
-	e.t.Helper()
-	rows, err := e.db().Query(`SELECT seq, title FROM cues WHERE event_id = ? ORDER BY seq`, e.eventID)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	defer rows.Close()
-	var titles []string
-	for rows.Next() {
-		var (
-			seq   int
-			title string
-		)
-		rows.Scan(&seq, &title)
-		if seq != len(titles)+1 {
-			e.t.Errorf("seq %d at position %d: not 1..n", seq, len(titles)+1)
-		}
-		titles = append(titles, title)
-	}
-	return titles
-}
-
-// lastLog is the payload of the latest log entry of a type.
-func (e *env) lastLog(typ string) map[string]any {
-	e.t.Helper()
-	var p string
-	if err := e.db().QueryRow(`SELECT payload FROM action_logs WHERE type = ? ORDER BY id DESC LIMIT 1`, typ).Scan(&p); err != nil {
-		e.t.Fatalf("no %s log: %v", typ, err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal([]byte(p), &m); err != nil {
-		e.t.Fatal(err)
-	}
-	return m
-}
-
-func (e *env) masterTokenID() float64 {
-	e.t.Helper()
-	var id int64
-	e.db().QueryRow(`SELECT id FROM access_tokens WHERE token_hash = ?`, auth.HashToken(e.master)).Scan(&id)
-	return float64(id)
-}
 
 // ---------------------------------------------------------------- US-M-10
 
@@ -395,17 +323,6 @@ const pasted = "seq\ttitle\tstart\tduration_min\tfixed\troles\trole_note\tnote\n
 	"10\t新娘化妝\t08:00\t120\t\t新秘\t新娘房\t\n" +
 	"30\t一進\t11:15\t15\tY\t攝影\t側門\t\n"
 
-func (e *env) importBody(text string, newRoles ...map[string]any) map[string]any {
-	if newRoles == nil {
-		newRoles = []map[string]any{}
-	}
-	return map[string]any{"version": e.version(), "text": text, "newRoles": newRoles}
-}
-
-func newRole(name string) map[string]any {
-	return map[string]any{"name": name, "view": "Glance", "checksIn": true}
-}
-
 func TestUS_M_12_PreviewAndReplace(t *testing.T) {
 	e := newEnv(t)
 	e.dayBefore()
@@ -460,14 +377,6 @@ func TestUS_M_12_PreviewAndReplace(t *testing.T) {
 	if c := e.snap(e.stylist)["cues"].([]any); len(c) != 2 {
 		t.Errorf("stylist cues = %v", c)
 	}
-}
-
-func anyStrings(v any) []string {
-	var out []string
-	for _, s := range v.([]any) {
-		out = append(out, s.(string))
-	}
-	return out
 }
 
 // Role names are matched against every role, the Master included; a

@@ -10,40 +10,6 @@ import (
 
 // The four jobs and the MC's delay (api.md section 9, ADR-0035).
 
-const (
-	pathAck          = "/api/cues/ack"
-	pathAddTask      = "/api/tasks/add"
-	pathSetTask      = "/api/tasks/set"
-	pathDeleteTask   = "/api/tasks/delete"
-	pathImportGuests = "/api/guests/import"
-	pathArrive       = "/api/guests/arrive"
-	pathChecklist    = "/api/checklist/items"
-	pathCheckItem    = "/api/checklist/check"
-)
-
-// jobRole adds a role of typ assigned to 迎賓, with a link; returns the
-// token and the role id.
-func (e *env) jobRole(typ domain.RoleType) (string, int64) {
-	e.t.Helper()
-	tok := e.addRoleWithToken(typ)
-	var id int64
-	e.db().QueryRow(`SELECT id FROM roles WHERE type = ? ORDER BY id DESC LIMIT 1`, string(typ)).Scan(&id)
-	return tok, id
-}
-
-func list(t *testing.T, snap map[string]any, key string) []map[string]any {
-	t.Helper()
-	v, ok := snap[key].([]any)
-	if !ok {
-		t.Fatalf("%s = %v, want a list", key, snap[key])
-	}
-	out := make([]map[string]any, len(v))
-	for i, x := range v {
-		out[i] = x.(map[string]any)
-	}
-	return out
-}
-
 func TestUS_X_10_RoleSnapshotsCarryTheDelay(t *testing.T) {
 	e := newEnv(t)
 	media := e.addRoleWithToken(domain.Media)

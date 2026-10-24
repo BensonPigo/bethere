@@ -10,36 +10,6 @@ import (
 	"github.com/BensonPigo/bethere/internal/domain"
 )
 
-// live starts the event and puts 新娘化妝 in progress at 08:00.
-func (e *env) live() {
-	e.t.Helper()
-	e.setClock(at(8, 0))
-	e.mustWrite(pathAdvance)
-}
-
-func (e *env) preview(token, body string) resp {
-	e.t.Helper()
-	return e.do(http.MethodPost, pathPreview, token, body)
-}
-
-func previewOf(t *testing.T, r resp) map[string]any {
-	t.Helper()
-	r.wantResult(t, "ok")
-	p, ok := r.body["preview"].(map[string]any)
-	if !ok {
-		t.Fatalf("no preview in %s", r.Body.String())
-	}
-	return p
-}
-
-func movedIDs(p map[string]any) map[float64]bool {
-	out := map[float64]bool{}
-	for _, c := range p["changes"].([]any) {
-		out[c.(map[string]any)["cueId"].(float64)] = true
-	}
-	return out
-}
-
 // ---------------------------------------------------------------- US-M-2
 
 func TestUS_M_2_1_PreviewWritesNothing(t *testing.T) {
@@ -239,12 +209,6 @@ func TestUS_H_1_HostDashboardHoldsOnlyTheDelayAndCurrentTitle(t *testing.T) {
 }
 
 // ---------------------------------------------------------------- US-ST-2
-
-func notice(t *testing.T, s map[string]any) map[string]any {
-	t.Helper()
-	n, _ := s["notice"].(map[string]any)
-	return n
-}
 
 func TestUS_ST_2_NoticeOnlyForTheCallersOwnCues(t *testing.T) {
 	e := newEnv(t)

@@ -9,137 +9,13 @@ import (
 
 	"github.com/BensonPigo/bethere/internal/auth"
 	"github.com/BensonPigo/bethere/internal/domain"
-	"github.com/BensonPigo/bethere/internal/store"
 )
-
-const (
-	pathCheckIn      = "/api/checkin"
-	pathProxyCheckIn = "/api/roles/checkin"
-	pathSkip         = "/api/cues/skip"
-	pathInsert       = "/api/cues/insert"
-	pathAssign       = "/api/cues/roles"
-	pathEdit         = "/api/cues/edit"
-	pathReissue      = "/api/roles/reissue"
-	pathRevoke       = "/api/roles/revoke"
-)
-
-func jsonBody(v map[string]any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
-}
-
-func (e *env) post(path, token string, v map[string]any) resp {
-	e.t.Helper()
-	return e.do(http.MethodPost, path, token, jsonBody(v))
-}
-
-func (e *env) checkIn(token string, on bool) resp {
-	e.t.Helper()
-	return e.post(pathCheckIn, token, map[string]any{"checkedIn": on})
-}
-
-func (e *env) proxyCheckIn(roleID int64, on bool) resp {
-	e.t.Helper()
-	return e.post(pathProxyCheckIn, e.master, map[string]any{"roleId": roleID, "checkedIn": on})
-}
-
-func (e *env) skip(cueID int64) resp {
-	e.t.Helper()
-	return e.post(pathSkip, e.master, map[string]any{"version": e.version(), "cueId": cueID})
-}
-
-func assignment(roleID int64, note any) map[string]any {
-	return map[string]any{"roleId": roleID, "roleNote": note}
-}
-
-// insert adds 長輩致詞 at 12:00 for 10 minutes after the given cue.
-func (e *env) insert(afterCueID int64, roles ...map[string]any) resp {
-	e.t.Helper()
-	return e.post(pathInsert, e.master, insertBody(e.version(), afterCueID, at(12, 0), roles...))
-}
-
-func insertBody(version, afterCueID int64, start time.Time, roles ...map[string]any) map[string]any {
-	if roles == nil {
-		roles = []map[string]any{}
-	}
-	return map[string]any{"version": version, "afterCueId": afterCueID, "start": start.UTC().Format(time.RFC3339),
-		"durationMin": 10, "title": "長輩致詞", "notePublic": nil, "roles": roles}
-}
-
-func (e *env) assign(cueID int64, roles ...map[string]any) resp {
-	e.t.Helper()
-	if roles == nil {
-		roles = []map[string]any{}
-	}
-	return e.post(pathAssign, e.master, map[string]any{"version": e.version(), "cueId": cueID, "roles": roles})
-}
-
-func (e *env) roleItem(t *testing.T, s map[string]any, id int64) map[string]any {
-	t.Helper()
-	for _, r := range s["roles"].([]any) {
-		if m := r.(map[string]any); m["id"] == float64(id) {
-			return m
-		}
-	}
-	t.Fatalf("role %d not in %v", id, s["roles"])
-	return nil
-}
-
-func (e *env) count(query string, args ...any) int {
-	e.t.Helper()
-	var n int
-	if err := e.db().QueryRow(query, args...).Scan(&n); err != nil {
-		e.t.Fatal(err)
-	}
-	return n
-}
 
 // foreign is another event in the same database, for the ownership rules
 // of api.md section 6: its Master, Host and Stylist roles and a cue that
 // has already finished.
 type foreign struct {
 	masterRole, host, stylist, doneCue int64
-}
-
-// otherEvent creates that event on 2027-06-<day>; a day before the 6th
-// has ended by the env's clock.
-func (e *env) otherEvent(day int) foreign {
-	e.t.Helper()
-	created := at(0, 0).AddDate(0, -1, 0)
-	tok := newToken(e.t)
-	id, err := e.st.CreateEvent(bg, store.NewEvent{
-		Name: "別場", Date: domain.Date{Year: 2027, Month: time.June, Day: day}, TimeZone: "Asia/Taipei",
-		MasterName: "別場總召", MasterTokenHash: auth.HashToken(tok), RecoveryCodeHash: auth.HashToken(newToken(e.t)),
-	}, created)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	owner, err := e.st.LookupToken(bg, auth.HashToken(tok), created)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	f := foreign{masterRole: owner.RoleID}
-	if f.host, err = e.st.AddRole(bg, id, "別場新人", domain.Host, owner.Actor, created); err != nil {
-		e.t.Fatal(err)
-	}
-	if f.stylist, err = e.st.AddRole(bg, id, "別場新秘", domain.Stylist, owner.Actor, created); err != nil {
-		e.t.Fatal(err)
-	}
-	if err := e.st.ImportRundown(bg, id, []store.ImportRow{
-		{Line: 2, Seq: 1, Title: "別場環節", StartHour: 9, DurationMin: 10, Roles: []string{"別場新秘"}},
-	}, owner.Actor, created); err != nil {
-		e.t.Fatal(err)
-	}
-	cues, err := e.st.Cues(bg, id)
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	f.doneCue = cues[0].ID
-	e.exec(`UPDATE cues SET status = 'Completed' WHERE id = ?`, f.doneCue)
-	return f
 }
 
 // ---------------------------------------------------------------- US-X-5, US-M-1
@@ -731,15 +607,6 @@ func TestM2bCapabilityTableEveryCell(t *testing.T) {
 }
 
 // ---------------------------------------------------------------- 5.7 conditional requests
-
-func (e *env) getIfNoneMatch(token string, tags ...string) resp {
-	e.t.Helper()
-	r := e.request(http.MethodGet, pathSnapshot, token, "")
-	for _, tag := range tags {
-		r.Header.Add("If-None-Match", tag)
-	}
-	return e.doReq(r)
-}
 
 func TestSnapshotETagAnd304(t *testing.T) {
 	e := newEnv(t)
