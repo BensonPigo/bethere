@@ -141,14 +141,14 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .editor-head .shift-title { margin-right: auto; }
 .editor-head button { min-height: 48px; }
 .editor-rows { display: flex; flex-direction: column; gap: 8px; }
-.editor-row { display: grid; grid-template-columns: 110px 80px minmax(140px, 1fr) auto minmax(120px, 1fr) auto; gap: 6px; align-items: center; background: var(--card); border-radius: 10px; padding: 8px; }
+.editor-row { display: grid; grid-template-columns: 120px 100px minmax(140px, 1fr) 150px minmax(120px, 1fr) auto; gap: 6px; align-items: center; background: var(--card); border-radius: 10px; padding: 8px; }
 .editor-row.skipped { opacity: 0.6; }
 .editor-row input:not([type="checkbox"]) { min-height: 44px; font-size: 17px; padding: 4px 8px; border-radius: 8px; border: 1px solid #555; background: var(--bg); color: var(--fg); min-width: 0; }
 .editor-row .fixed { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .editor-row .row-actions, .editor-row .reason { grid-column: 1 / -1; }
 .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .row-actions button { min-height: 44px; }
-@media (max-width: 800px) { .editor-row { grid-template-columns: 1fr 1fr; } .editor-row .title, .editor-row .note { grid-column: 1 / -1; } }
+@media (max-width: 800px) { .editor-row { grid-template-columns: 1fr 1fr; } .editor-row .cell.wide, .editor-row .cell.fixed { grid-column: 1 / -1; } }
 .link-result { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
 .link-result .qr { align-self: center; background: #fff; padding: 8px; border-radius: 8px; image-rendering: pixelated; }
 .pick small { grid-column: 2; color: var(--muted); font-size: 14px; }
@@ -165,3 +165,15 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .unsaved-note { grid-column: 1 / -1; color: var(--accent); font-weight: 600; }
 /* A refusal or failure stays readable over the editor and dialogs. */
 .app > .notice { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 40; max-width: 90vw; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }
+/* Each editor field carries its name and meaning (US-M-10.C1 field test). */
+.editor-help { color: var(--muted); font-size: 15px; }
+.editor-row { align-items: start; }
+.editor-row .cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.editor-row .cell > span { font-size: 14px; color: var(--muted); font-weight: 600; }
+.editor-row .cell > small { font-size: 12px; color: var(--muted); }
+.editor-row .cell.fixed input { width: 28px; height: 28px; margin: 8px 0; }
+.editor-row > button.confirm { align-self: center; }
+.import-columns { font-size: 14px; border-collapse: collapse; }
+.import-columns td { padding: 2px 8px; color: var(--muted); }
+.import-columns td:first-child { font-family: ui-monospace, Menlo, monospace; color: var(--fg); }
+.editor-row .cell.fixed { white-space: normal; align-items: flex-start; gap: 2px; }

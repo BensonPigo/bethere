@@ -133,6 +133,9 @@ export function RundownEditor({ snap, tz, today, lock, write, openCue, insertAft
         </button>
         <button onClick={close}>關閉</button>
       </div>
+      <div class="editor-help">
+        每一列改完後按該列的「儲存」才會生效；誰負責這個環節、給他們的備註，按「指派」設定。存好後，相關的人不用重新整理就會看到。
+      </div>
       {live && <div class="reason">活動已開始，時間請用平移；標題、備註與指派請點主控台的環節修改</div>}
       {!live && dayStarted(snap.event.date, today) && <div class="reason">今天是活動日：不能整份貼上取代，請逐一修改環節</div>}
       {snap.cues.length === 0 && <div class="msg">還沒有環節。按「新增第一個環節」或「貼上匯入」開始。</div>}
@@ -192,14 +195,32 @@ function EditorRow({ snap, cue, prev, next, beforePrev, warn, tz, disabled, writ
   const move = (afterCueId: string | number | null) => void write({ path: "/api/cues/move", cueId: cue.id, afterCueId });
   return (
     <div class={`editor-row ${cue.status.toLowerCase()} ${changed ? "unsaved" : ""}`} data-cue={String(cue.id)}>
-      <ClockInput value={time} disabled={disabled} onValue={setTime} />
-      <input class="duration" type="number" aria-label="長度（分）" min={0} max={1440} value={duration} disabled={disabled} onInput={(e) => setDuration((e.currentTarget as HTMLInputElement).value)} />
-      <input class="title" aria-label="標題" value={title} maxLength={100} disabled={disabled} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} />
-      <label class="fixed">
-        <input type="checkbox" checked={fixed} disabled={disabled} onChange={() => setFixed(!fixed)} />
-        固定
+      {/* Every field says what it is and means, on the field itself (US-M-10.C1 field test). */}
+      <label class="cell">
+        <span>開始時間</span>
+        <ClockInput value={time} disabled={disabled} onValue={setTime} />
+        <small>24 小時制，例如 09:20</small>
       </label>
-      <input class="note" aria-label="公開備註" placeholder="公開備註" value={note} maxLength={500} disabled={disabled} onInput={(e) => setNote((e.currentTarget as HTMLInputElement).value)} />
+      <label class="cell">
+        <span>長度（分鐘）</span>
+        <input class="duration" type="number" min={0} max={1440} value={duration} disabled={disabled} onInput={(e) => setDuration((e.currentTarget as HTMLInputElement).value)} />
+        <small>預計進行多久</small>
+      </label>
+      <label class="cell wide">
+        <span>標題</span>
+        <input class="title" value={title} maxLength={100} disabled={disabled} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} />
+        <small>&nbsp;</small>
+      </label>
+      <label class="cell fixed">
+        <span>固定時間</span>
+        <input type="checkbox" checked={fixed} disabled={disabled} onChange={() => setFixed(!fixed)} />
+        <small>延後或提早時不跟著動，例如吉時、開席</small>
+      </label>
+      <label class="cell wide">
+        <span>公開備註</span>
+        <input class="note" value={note} maxLength={500} disabled={disabled} onInput={(e) => setNote((e.currentTarget as HTMLInputElement).value)} />
+        <small>被指派的人都看得到</small>
+      </label>
       <button
         class="confirm"
         disabled={disabled || !changed || !valid}
@@ -300,8 +321,20 @@ export function ImportDialog({ snap, lock, importPreview, write, close }: Import
         <button onClick={close}>取消</button>
       </div>
       <div class="label">
-        從 Excel 或 Google 試算表複製整份流程表貼上，第一列為欄位名稱：seq、title、start、duration_min、fixed、roles、role_note、note
+        從 Excel 或 Google 試算表複製整份流程表貼上。第一列必須是欄位名稱（英文），之後每列一個環節：
       </div>
+      <table class="import-columns">
+        <tbody>
+          <tr><td>seq</td><td>順序（1、2、3…）</td><td>必填</td></tr>
+          <tr><td>title</td><td>環節名稱</td><td>必填</td></tr>
+          <tr><td>start</td><td>開始時間，24 小時制，例如 09:20</td><td>必填</td></tr>
+          <tr><td>duration_min</td><td>長度，幾分鐘</td><td>必填</td></tr>
+          <tr><td>fixed</td><td>固定時間填 Y，否則空白</td><td>選填</td></tr>
+          <tr><td>roles</td><td>負責的角色名稱，多個用分號隔開，例如 攝影;新秘</td><td>選填</td></tr>
+          <tr><td>role_note</td><td>給負責角色的備註</td><td>選填</td></tr>
+          <tr><td>note</td><td>公開備註</td><td>選填</td></tr>
+        </tbody>
+      </table>
       <textarea class="import-text" value={text} rows={8} onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)} />
       <button disabled={text.trim() === ""} onClick={() => void run()}>
         預覽
