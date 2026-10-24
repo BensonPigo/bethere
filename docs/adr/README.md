@@ -44,9 +44,10 @@
 | [0024](0024-external-monitoring-and-alerts.md) | 外部監控伺服器與備份，告警在活動前改送備援操作者 | 已接受 |
 | [0025](0025-screens-by-usage-situation.md) | 畫面依使用情況分類，與角色類型分開 | 已接受 |
 | [0026](0026-delay-measured-on-next-pending-cue.md) | 新人儀表板的延誤以下一個待辦 Cue 為準 | 已接受 |
-| [0027](0027-small-field-tests-and-one-full-rehearsal.md) | 里程碑改用小型實測，完整彩排只做一次 | 已接受 |
+| [0027](0027-small-field-tests-and-one-full-rehearsal.md) | 里程碑改用小型實測，完整彩排只做一次 | 已接受（小型實測由 0033 取消） |
 | [0028](0028-show-original-time-of-shifted-cues.md) | 被平移的環節旁顯示原時間，不顯示偏移量 | 已接受 |
 | [0029](0029-e2e-routes-on-a-vm-test-service.md) | 端對端測試路線在 VM 的測試服務上，由 PO 手動執行 | 已接受 |
 | [0030](0030-split-m3-into-data-ops-and-field-readiness.md) | M3 拆成資料與維運（M3a）、現場準備（M3b） | 已接受 |
-| [0031](0031-pre-event-setup-and-more-roles-before-m3a.md) | M3a 之前先做婚前準備（M2c）與更多角色（M2d），第一版處理賓客 | 已接受 |
+| [0031](0031-pre-event-setup-and-more-roles-before-m3a.md) | M3a 之前先做婚前準備（M2c）與更多角色（M2d），第一版處理賓客 | 已接受（M2d 由 0033 暫停） |
 | [0032](0032-destructive-edits-logged-and-locked-on-event-day.md) | 破壞性修改完整記錄，活動日當天鎖住匯入取代與刪除角色 | 已接受 |
+| [0033](0033-converge-on-a-minimum-usable-version.md) | 收斂到最小可用版本：先做備份，新功能暫停，人工試用只在最後做一次 | 已接受 |
