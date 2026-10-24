@@ -48,6 +48,9 @@ button:disabled { opacity: 0.4; }
 .print th, .print td { border-bottom: 1px solid #444; padding: 8px; text-align: left; }
 .print .no-print { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
 .print .no-print a { color: var(--accent); }
+.print .note { font-size: 0.85em; opacity: 0.8; }
+.print tr.done { opacity: 0.55; }
+.print-link { display: block; margin: 12px 0; color: var(--accent); text-align: center; }
 
 @media print {
   body { background: #fff; color: #000; }

@@ -163,6 +163,11 @@ export function Master(props: Props) {
           </button>
         )}
 
+        {/* screen-design.md 8: the backup rundown on paper. */}
+        <a class="print-link" href={`/print${location.hash}`}>
+          列印備援流程表
+        </a>
+
         <RolesPanel
           snap={snap}
           now={correctedNow}

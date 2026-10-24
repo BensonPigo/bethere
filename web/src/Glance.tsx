@@ -85,6 +85,12 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
       {snap.role.checksIn !== false && (
         <CheckInBar checkedIn={snap.myCheckIn ?? false} offline={offline} busy={busy || !!readOnly} write={write} />
       )}
+      {/* screen-design.md 8; not in a role preview, where the hash is the Master's. */}
+      {!readOnly && (
+        <a class="print-link" href={`/print${location.hash}`}>
+          列印我的流程表
+        </a>
+      )}
     </div>
   );
 }
