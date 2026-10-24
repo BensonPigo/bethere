@@ -234,12 +234,12 @@ func TestAddRoleRefusals(t *testing.T) {
 		args  []string
 		code  int
 	}{
-		// api.md section 4: Stylist, Media, StageAV and Host in P0.
+		// api.md section 4: the types with cues of their own and Host.
 		"Host Glance":  {master, []string{"-type", "Host", "-view", "Glance"}, 2},
 		"Console":      {master, []string{"-view", "Console"}, 2},
 		"bad view":     {master, []string{"-view", "handsfree"}, 2},
 		"Master":       {master, []string{"-type", "Master"}, 2},
-		"VenueLead":    {master, []string{"-type", "VenueLead"}, 2},
+		"unknown type": {master, []string{"-type", "Planner"}, 2},
 		"lower case":   {master, []string{"-type", "stylist"}, 2},
 		"http base":    {master, []string{"-base-url", "http://bethere.example"}, 2},
 		"base path":    {master, []string{"-base-url", base + "/x"}, 2},

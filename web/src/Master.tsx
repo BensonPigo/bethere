@@ -5,6 +5,7 @@ import type {
 } from "./api";
 import { dateInZone, formatHM } from "./format";
 import { CueDialog, InsertDialog, RoleMenu, RolesPanel } from "./MasterDialogs";
+import { jobsSummary, MasterJobs } from "./MasterJobs";
 import { AddRoleDialog, dayStarted, ImportDialog, RolePreview, RundownEditor } from "./Prep";
 import type { NewLink } from "./session";
 import { OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
@@ -42,6 +43,7 @@ type Open =
   | { kind: "insert"; after: string | number | null }
   | { kind: "import" }
   | { kind: "addRole" }
+  | { kind: "jobs" }
   | { kind: "preview"; snap: Snapshot; name: string };
 
 export function Master(props: Props) {
@@ -163,6 +165,11 @@ export function Master(props: Props) {
           </button>
         )}
 
+        {/* US-M-16: tasks, guests and the checklist, one tap away. */}
+        <button class="edit-rundown jobs-open" onClick={() => setOpen({ kind: "jobs" })}>
+          現場工作<small>{jobsSummary(snap)}</small>
+        </button>
+
         {/* screen-design.md 8: the backup rundown on paper. */}
         <a class="print-link" href={`/print${location.hash}`}>
           列印備援流程表
@@ -205,6 +212,9 @@ export function Master(props: Props) {
         />
       )}
       {open?.kind === "addRole" && <AddRoleDialog lock={lock} addRole={props.addRole} close={() => setOpen(null)} />}
+      {open?.kind === "jobs" && (
+        <MasterJobs snap={snap} lock={lock} locked={dayStarted(snap.event.date, today)} write={write} close={() => setOpen(null)} />
+      )}
       {open?.kind === "import" && (
         <ImportDialog snap={snap} lock={lock} importPreview={props.importPreview} write={write} close={() => setOpen(null)} />
       )}
@@ -364,7 +374,17 @@ function CueRow({ cue, tz, conflict, outOfOrder, open }: RowProps) {
         {formatHM(cue.effectiveStart, tz)}
         <OriginalTime start={cue.effectiveStart} offsetMin={cue.offsetMin} tz={tz} />
       </span>
-      <span class="title">{cue.title}</span>
+      <span class="title">
+        {cue.title}
+        {/* US-VL-1.1: who has answered this cue. */}
+        {cue.roles
+          .filter((r) => r.ackedAt)
+          .map((r) => (
+            <small class="acked" key={r.roleId}>
+              ✔ {r.name}收到
+            </small>
+          ))}
+      </span>
       <span class="mark">
         {cue.isFixed && <span title="固定">■ 固定</span>} {conflict && <span title="固定環節衝突">⚠ 衝突</span>}{" "}
         {outOfOrder && <span title="時間早於前一個環節">⚠ 倒序</span>}{" "}

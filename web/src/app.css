@@ -177,3 +177,36 @@ button.edit-rundown, button.role-add { min-height: 52px; background: #3c4043; co
 .import-columns td { padding: 2px 8px; color: var(--muted); }
 .import-columns td:first-child { font-family: ui-monospace, Menlo, monospace; color: var(--fg); }
 .editor-row .cell.fixed { white-space: normal; align-items: flex-start; gap: 2px; }
+
+/* The four jobs (api.md section 9): panels under the glance screen, the Master's dialog. */
+.current-line .delay.ok { color: #81c995; }
+.current-line .delay.late { color: var(--bad); font-weight: 700; }
+button.ack { display: block; width: 100%; min-height: 56px; margin-top: 12px; font-size: 22px; }
+button.ack.done { background: #1e4620; color: #fff; }
+.cue .title small.acked { display: block; font-size: 13px; color: #81c995; }
+.job-panel { background: var(--card); border-radius: 12px; padding: 12px; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.job-panel .label, .jobs-body .label { color: var(--muted); font-size: 15px; }
+.job-panel .empty, .jobs-body .empty { color: var(--muted); }
+.task, .guest { display: flex; align-items: center; gap: 8px; min-height: 52px; border-bottom: 1px solid #2c313a; }
+.task .task-title, .guest .guest-name { flex: 1; font-size: 18px; }
+.task small { display: block; color: var(--muted); font-size: 13px; }
+.task.mine { background: #1f3a5f; border-radius: 8px; padding: 0 8px; }
+.task.other, .task.done { opacity: 0.6; }
+.task-actions { display: flex; gap: 6px; }
+.task button, .guest button { min-height: 44px; min-width: 64px; }
+.done-line { color: var(--muted); font-size: 14px; }
+button.call { min-height: 60px; font-size: 22px; background: #f9ab00; color: #111; }
+.call-state { color: var(--muted); font-size: 15px; }
+input.guest-search { font-size: 22px; min-height: 52px; padding: 0 12px; border-radius: 10px; border: 1px solid #3c4043; background: var(--bg); color: var(--fg); }
+.guest .guest-table { font-size: 22px; font-weight: 700; white-space: nowrap; }
+.guest.arrived .guest-name { opacity: 0.6; }
+.guest .note { color: var(--muted); font-size: 14px; }
+label.check { display: flex; align-items: center; gap: 10px; min-height: 52px; font-size: 19px; }
+label.check input { width: 28px; height: 28px; }
+label.check.done span { text-decoration: line-through; opacity: 0.7; }
+label.check small { color: var(--muted); font-size: 13px; }
+.jobs-open small { display: block; font-weight: 400; color: var(--muted); font-size: 14px; }
+.jobs-body { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+.jobs-body .row { display: flex; gap: 8px; }
+.jobs-body .row input { flex: 1; }
+.jobs-body textarea, .jobs-body input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid #3c4043; border-radius: 8px; padding: 8px; }

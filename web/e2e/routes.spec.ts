@@ -171,7 +171,7 @@ test("廠商收到變更：打卡、平移與新增環節的提示、目前環�
 
   await test.step("開始後攝影看到目前環節的名稱（US-X-6.4）", async () => {
     await advance(master);
-    await expect(media.locator(".current-line")).toHaveText("目前：新娘化妝", { timeout: PROPAGATE_MS });
+    await expect(media.locator(".current-line")).toHaveText(/^目前：新娘化妝・/, { timeout: PROPAGATE_MS });
   });
 
   await test.step("總召延後 10 分，攝影與新秘看到時程已更新（US-ST-2.1、2.2）", async () => {
@@ -316,6 +316,58 @@ test("備援流程表：總召印全部或某角色，攝影印自己的，新�
   await expect(host.locator(".print")).toContainText("這個連結沒有可列印的流程表"); // US-X-9.4
 });
 
+test("現場工作：領班收到、迎賓查桌號與報到、呼叫機動組、禮金檢核", async ({ browser }) => {
+  // Before the day (the second event of tomorrow): the Master sets up the guest list and the checklist.
+  const prep = event(8);
+  const master = await open(browser, prep, "總召");
+  await master.getByRole("button", { name: /現場工作/ }).click();
+  await master.getByRole("button", { name: "賓客名單" }).click();
+  await master.locator(".jobs textarea").fill("陳大文\t5\t素食\n林阿姨\t主桌\t輪椅");
+  await master.getByRole("button", { name: "匯入（取代整份名單）" }).click();
+  await expect(master.locator(".jobs")).toContainText("已報到 0／2 位"); // US-M-16.2
+  await master.getByRole("button", { name: "禮金檢核" }).click();
+  await master.locator(".jobs textarea").fill("總金額確認\n簽名確認");
+  await master.getByRole("button", { name: "儲存檢核表" }).click();
+  await expect(master.locator(".jobs label.check")).toHaveCount(2); // US-M-16.3
+
+  // US-RC-1.6, US-RC-1.2: one character finds the table; arrival reaches the Master.
+  const reception = await open(browser, prep, "接待");
+  await reception.locator(".guest-search").fill("陳");
+  await expect(reception.locator(".guest")).toHaveCount(1);
+  await expect(reception.locator(".guest")).toContainText("5 桌");
+  await reception.locator(".guest").getByRole("button", { name: "報到" }).click();
+  await master.getByRole("button", { name: "賓客名單" }).click();
+  await timed("報到 → 總召", () => expect(master.locator(".jobs")).toContainText("已報到 1／2 位", { timeout: PROPAGATE_MS }));
+
+  // US-RC-2.1, US-RN-1.1: a call for help, taken by a runner.
+  const runner = await open(browser, prep, "機動組");
+  await reception.getByRole("button", { name: "呼叫機動組" }).click();
+  const task = runner.locator(".tasks .task", { hasText: "接待需要機動組支援" });
+  await timed("呼叫 → 機動組", () => expect(task).toBeVisible({ timeout: PROPAGATE_MS }));
+  await task.getByRole("button", { name: "我來" }).click();
+  await expect(reception.locator(".call-state")).toContainText("處理中（機動組）", { timeout: PROPAGATE_MS });
+
+  // US-CA-1.2: the cashier ticks an item; the Master sees who.
+  const cashier = await open(browser, prep, "禮金");
+  // The box follows the server's answer, never a guess (ADR-0005).
+  await cashier.locator("label.check", { hasText: "總金額確認" }).locator("input").click();
+  await expect(cashier.locator("label.check.done")).toContainText("總金額確認");
+  await master.getByRole("button", { name: "禮金檢核" }).click();
+  await expect(master.locator(".jobs label.check.done")).toContainText("禮金", { timeout: PROPAGATE_MS });
+
+  // On the day (the seventh event of today): the venue lead answers its cue; the MC sees the delay.
+  const day = event(6);
+  const console_ = await open(browser, day, "總召");
+  await advance(console_);
+  const lead = await open(browser, day, "領班");
+  await expect(lead.locator(".next-card")).toContainText("迎賓");
+  await expect(lead.locator(".current-line")).toContainText("一切順利"); // US-X-10.2
+  await lead.getByRole("button", { name: "收到" }).click(); // US-VL-1.1
+  await timed("收到 → 總召", () =>
+    expect(cueRow(console_, "迎賓")).toContainText("領班收到", { timeout: PROPAGATE_MS }),
+  );
+});
+
 // ---------------------------------------------------------------- 婚前準備
 
 // The tab-separated rundown a spreadsheet copies (US-M-12.1); 主持 is a role
@@ -330,7 +382,7 @@ const PASTED = [
 const editorRow = (master: Page, i: number) => master.locator(".editor-row").nth(i);
 
 test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上匯入、刪除角色", async ({ browser }) => {
-  const links = event(6); // the event of tomorrow: its day has not begun
+  const links = event(7); // the first event of tomorrow: its day has not begun
   const master = await open(browser, links, "總召");
   const stylist = await open(browser, links, "新秘");
   await expect(stylist.locator(".preday")).toContainText("新娘化妝");
@@ -443,6 +495,6 @@ test("伺服器停擺：各裝置顯示離線、恢復後自己更新", async ({
     await expect(media.locator(".offline-banner")).toBeHidden({ timeout: OFFLINE_MS });
     await expect(master.locator(".offline-banner")).toBeHidden({ timeout: OFFLINE_MS });
     await advance(master);
-    await expect(media.locator(".current-line")).toHaveText("目前：迎賓", { timeout: PROPAGATE_MS });
+    await expect(media.locator(".current-line")).toHaveText(/^目前：迎賓・/, { timeout: PROPAGATE_MS });
   });
 });

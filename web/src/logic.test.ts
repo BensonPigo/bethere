@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { classifyNotModified, classifyResponse, shouldWipeLocalData, writeBody } from "./api";
-import type { HostSnapshot, MasterCue, MasterSnapshot, RoleCue, RoleSnapshot } from "./api";
+import type { Guest, HostSnapshot, MasterCue, MasterSnapshot, RoleCue, RoleSnapshot } from "./api";
 import { printRows } from "./print";
+import { arrivedCount, callRunnerTitle, searchGuests } from "./jobs";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./Prep";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
-import { isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
+import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
 import { delayText, freshNotice, isEarlier, monthDay, noticedCues, noticeText, originalTime, signed, suggestedShift } from "./notice";
 import type { AssignNotice, ShiftNotice } from "./api";
@@ -432,5 +433,43 @@ describe("backup rundown rows (sync-and-offline 9)", () => {
       eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null,
     };
     expect(printRows(host)).toEqual([]);
+  });
+});
+
+describe("the four jobs (api.md section 9)", () => {
+  const g = (id: number, name: string, table: string, arrived = false): Guest => ({ id, name, table, note: null, arrived });
+  const guests = [g(1, "陳大文", "5"), g(2, "林阿姨", "主桌", true), g(3, "Amy Chen", "12")];
+
+  it("US-RC-1.6: one character of a name or a table finds the guest; Latin ignores case", () => {
+    expect(searchGuests(guests, "陳").map((x) => x.id)).toEqual([1]);
+    expect(searchGuests(guests, "主").map((x) => x.id)).toEqual([2]);
+    expect(searchGuests(guests, "chen").map((x) => x.id)).toEqual([3]);
+    expect(searchGuests(guests, "1").map((x) => x.id)).toEqual([3]);
+    expect(searchGuests(guests, "  ")).toEqual([]);
+    expect(arrivedCount(guests)).toEqual({ arrived: 1, total: 3 });
+  });
+  it("US-RC-2.1: the call names the reception and fits a task title", () => {
+    expect(callRunnerTitle("接待")).toBe("接待需要機動組支援");
+    expect(callRunnerTitle("名".repeat(120)).length).toBe(100);
+  });
+  it("api.md 9.5: a saved guest list goes 2 days after the event day, draft or live", () => {
+    const day = Date.parse("2027-06-06T00:00:00Z");
+    const s = { guests: [guests[0]], eventDay: { date: "2027-06-06" } };
+    expect(holdsStaleGuests(s, day + 2 * 24 * 3600 * 1000)).toBe(false);
+    expect(holdsStaleGuests(s, day + 3 * 24 * 3600 * 1000 + 1)).toBe(true);
+    expect(holdsStaleGuests({ ...s, guests: [] }, day + 9e9)).toBe(false);
+    expect(holdsStaleGuests({ eventDay: s.eventDay }, day + 9e9)).toBe(false);
+    const m = new Map<string, string>([
+      ["snap:a", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-05T00:00:00Z", ...s })],
+      ["snap:b", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-05T00:00:00Z", eventDay: s.eventDay })],
+    ]);
+    const store = {
+      get length() { return m.size; },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      getItem: (k: string) => m.get(k) ?? null,
+      removeItem: (k: string) => void m.delete(k),
+    } as unknown as Storage;
+    pruneStale(store, day + 4 * 24 * 3600 * 1000);
+    expect([...m.keys()]).toEqual(["snap:b"]);
   });
 });
