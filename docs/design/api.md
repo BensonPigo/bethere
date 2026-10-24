@@ -2,7 +2,7 @@
 
 > 狀態：PO 核准（2026-10-21）；已經安全審查（2026-10-21），無 P0／P1，發現均已處理；審查紀錄見 git 歷史。
 > M2b 追加（第 3～8 節標示「M2b」的部分）：PO 核准（2026-10-22）；實作前安全審查（2026-10-22）無 P0，3 項 P1 與 P2 均已寫入本文件；完成後由 `verifier` 再驗一次。
-> M2c 追加（標示「M2c」的部分）：草稿（2026-10-24），待 PO 核准與實作前安全審查。
+> M2c 追加（標示「M2c」的部分）：PO 核准（2026-10-24）；實作前安全審查（2026-10-24）無 P0，3 項 P1 與 P2 均已寫入本文件（第 3 項依 ADR-0032）；完成後由 `verifier` 再驗一次。
 > 範圍：`requirements/stories/m1.md`、`m2a.md`、`m2b.md`、`m2c.md`；之後的里程碑在本文件追加端點。
 > 依據：`access-control.md`（身分、驗證結果、權限表）、`sync-and-offline.md`（輪詢與快照）、`data-model.md`（狀態轉換）、`tech-stack.md` 2.1（逾時與錯誤、Token 與復原碼、lastSeenAt、日誌、安全標頭）。
 
@@ -16,7 +16,7 @@
 | Token | 只放在 `Authorization: Bearer <token>` 標頭（Caddy 預設在存取日誌中遮蔽 `Authorization`，不要啟用 `log_credentials`）。不接受查詢字串、Cookie 或本文中的 Token |
 | Token 格式 | 16 位元組隨機值的 base64url（無補位），恰好 22 字元；伺服器以 SHA-256（對這 22 個字元的 ASCII 位元組）查詢（指令產生連結與伺服器查詢用同一規則，不需先解碼）。格式不符視為「格式錯誤」（400），**不是**「無效」 |
 | 快取 | 所有 `/api/` 回應（含錯誤）一律 `Cache-Control: no-store`，由中介層統一設定 |
-| 本文 | 上限 16 KB（M2c：`/api/rundown/import` 與 `import/preview` 上限 128 KB，只有這兩個端點）；只接受單一 JSON 物件；**未知欄位一律拒絕**（400）；`version` 缺少、為 `null`、不是整數或小於 1 都回 400 |
+| 本文 | 上限 16 KB（M2c：`/api/rundown/import` 與 `import/preview` 上限 256 KB，只有這兩個端點；其中 `text` 的 100 KB 以解碼後的 UTF-8 位元組計算，JSON 跳脫後仍在 256 KB 內）；只接受單一 JSON 物件；**未知欄位一律拒絕**（400）；`version` 缺少、為 `null`、不是整數或小於 1 都回 400 |
 | 活動與角色 | Token 驗證的請求**不帶** `eventId` 或自己的 `roleId`；活動與角色一律取自 Token（杜絕跨活動與冒用他人角色） |
 | 時間 | 一律 UTC，RFC 3339（含小數秒），例如 `2027-06-06T03:15:00.123Z` |
 | 跨來源 | 不回任何 `Access-Control-*` 標頭、不使用 Cookie；Token 只在標頭，所以 CSRF 不適用 |
@@ -45,11 +45,11 @@
 
 | HTTP | `error` | 何時 |
 | --- | --- | --- |
-| 400 | `bad_request` | 缺少或重複的 `Authorization` 標頭、Token 格式不符、本文不是單一 JSON 物件、有未知欄位、超過 16 KB |
+| 400 | `bad_request` | 缺少或重複的 `Authorization` 標頭、Token 格式不符、本文不是單一 JSON 物件、有未知欄位、超過本文上限（第 1 節） |
 | 403 | `forbidden` | Token 有效，但角色類型沒有這個端點的權限（第 4 節） |
 | 409 | `version_conflict` | 寫入帶的 `version` 不是目前版本；回應另附 `snapshot`（最新快照），客戶端更新畫面並提示「畫面已更新，請重新確認」 |
 | 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節） |
-| 422 | `not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`；M2b 追加 `not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`；M2c 追加 `invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import` | 領域規則不允許（第 6 節） |
+| 422 | `not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`；M2b 追加 `not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`；M2c 追加 `invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
 
 ## 3. 端點
@@ -97,31 +97,34 @@
 - **撤銷與重發**：目標為 Master 時回 `master_role`（Master 只能以復原碼換發）；目標可以是 Host。重發在單一交易內撤銷舊 Token、建立新 Token；新 Token 的明文**只出現在這一次回應**，客戶端以 `location.origin + "/#t=" + token` 組成連結顯示，不存入本機快照或任何儲存。撤銷沒有有效 Token 的角色時照常成功（冪等，現有 `store.RevokeToken` 回 `ErrNotFound` 的行為要改）。兩台總召裝置同時重發同一角色時，後到的覆蓋前一個，先拿到的連結已失效（接受；畫面上的「連結最近使用時間」看得出新連結有沒有人開）。客戶端只把回應中的 `snapshot` 存入本機快照，`token` 只以文字加「複製」按鈕顯示，**不做成可點的連結**（總召在同一分頁點開會讓裝置變成該角色）。撤銷與重發的操作紀錄另記操作者使用的 `access_tokens.id`（不是雜湊），以復原碼換發 Master 連結後，才分得出哪些重發是外流的舊連結做的（`access-control.md` 3.4）。重發已寫入、但重新讀取快照失敗時回 500（第 7 節第 4 條），新 Token 的明文因此遺失；舊連結已失效，總召再按一次重發即可。
 - **M2c 寫入的共通規則**（Rundown 編輯器、角色管理、匯入）：
   - **只限 Draft 的結構性修改**：`cues/update`、`cues/move`、`cues/delete`、`rundown/import`、`rundown/import/preview`、`roles/delete` 在 Live 回 422 `not_draft`，由 store 在交易內檢查，不只靠畫面（US-M-10.7）。Live 時的編輯仍只有 M2b 的有限編輯（`access-control.md` 第 4 節）。
+  - **活動日當天鎖住兩項**（ADR-0032）：從活動日 00:00（活動時區）起，`rundown/import` 與 `roles/delete` 回 422 `locked_on_event_day`（`rundown/import/preview` 照常回應，讓畫面說明原因）；在交易內以伺服器時鐘判斷。當天仍可以逐一 `cues/update`、`move`、`delete`，以及新增、改名角色。判斷順序：歸屬（404）→ `not_draft` → `locked_on_event_day` → 其他檢查。
   - **版本**：改到 Cue 或指派的寫入（`cues/update`、`move`、`delete`、`rundown/import`、`roles/delete`）帶 `version`，成功後 `eventVersion` + 1；`roles/add`、`roles/rename` 不帶 `version`、不改 `eventVersion`（與重發相同，不影響任何人的 Cue；ADR-0023）。
-  - **操作紀錄**：型別為 `rundown.update`、`rundown.move`、`rundown.delete`、`rundown.import`、`role.add`、`role.rename`、`role.delete`，都不以 `cue.` 開頭，不是「復原上一步」的步驟（ADR-0021）。`rundown.delete` 記被刪的 Cue id 與標題；`rundown.import` 只記筆數（取代了幾個、寫入幾列、新建幾個角色），不記內容；`role.*` 記角色 id 與名稱。都不含 Token、雜湊或 `origin`。
-  - **歸屬先於一切檢查**與**目標的 Token 不影響驗證結果**（M2b 的兩條）同樣適用於 M2c 帶 id 的端點：`cueId`、`afterCueId`、`roleId` 只在呼叫者的活動中尋找，查不到回 404，排在 `master_role`、`not_draft`、`invalid_*` 等檢查之前；刪除、改名、預覽一個沒有有效 Token 的角色照常成功。
+  - **操作紀錄**：型別為 `rundown.update`、`rundown.move`、`rundown.delete`、`rundown.import`、`role.add`、`role.rename`、`role.delete`，都不以 `cue.` 開頭，不是「復原上一步」的步驟（ADR-0021）。被取代或刪除的內容**完整記錄**（ADR-0032）：`rundown.delete` 記被刪 Cue 的欄位、指派與角色備註；`rundown.import` 記被取代的每個 Cue 的欄位、指派與角色備註，以及新建的角色；`role.delete` 記角色的名稱、類型、畫面、是否打卡與它的指派、角色備註；`role.add`、`role.rename` 記角色 id 與名稱。操作紀錄不進任何快照，隨活動一起刪除。**所有 M2c 寫入的紀錄都另記操作者的 `byTokenId`**（`access_tokens.id`，不是雜湊；同 M2b 的重發與撤銷），以復原碼換發 Master 後，才查得出外流的舊連結建立、刪除或匯入了什麼（`access-control.md` 第 1 節、3.4；安全審查 P1）。都不含 Token、雜湊或 `origin`。
+  - **歸屬先於一切檢查**與**目標的 Token 不影響驗證結果**（M2b 的兩條）同樣適用於 M2c 帶 id 的端點：`cueId`、`afterCueId`、`roleId` 只在呼叫者的活動中尋找，查不到回 404，排在 `master_role`、`not_draft`、`invalid_*`、`duplicate_name`、`too_many_roles` 等檢查之前；重名與上限只以**呼叫者的活動**為範圍查詢，不得以目標 id 反查活動（否則 `duplicate_name` 會成為探測別的活動角色名稱的工具）；刪除、改名、預覽一個沒有有效 Token 的角色照常成功。
 - **編輯 Cue**（`cues/update`）：整筆取代該 Cue 的開始時間、長度、固定、標題、公開備註；限制與新增相同（`start` 落在活動日 00:00 到 `endsAt` 之間、`durationMin` 0～1440、標題 1～100 字、備註最多 500 字，否則 `invalid_cue`）。`start` 直接寫入 `scheduledStart`：平移只在 Live（`opLiveOnly`），所以 Draft 的 `offsetMin` 一定是 0；store 仍在交易內確認 `offsetMin = 0`，不是 0 時回 500（程式錯誤，不該發生）。Pending 與 Skipped 的 Cue 都可以改（Draft 只有這兩種狀態）。指派與角色備註沿用 `POST /api/cues/roles`。
-- **調整順序**（`cues/move`）：把 Cue 移到 `afterCueId` 之後，`null` 為移到第一個；`afterCueId` 等於 `cueId` 回 `invalid_position`。在單一交易內重排 `seq`，維持唯一、連續（`UNIQUE (event_id, seq)` 需兩段式更新，同新增）。只改順序，不改時間；順序與時間不一致時由 `outOfOrder[]` 提示（US-M-10.6）。
+- **調整順序**（`cues/move`）：把 Cue 移到 `afterCueId` 之後，`null` 為移到第一個；`afterCueId` 等於 `cueId` 回 `invalid_position`。在單一交易內重排 `seq`，維持唯一、連續（`UNIQUE (event_id, seq)` 需兩段式更新，同新增）。只改順序，不改時間；順序與時間不一致時由 `outOfOrder[]` 提示（US-M-10.6）。移動與刪除後整份重新編號為 1..n，所以 M1 匯入時留下的間隔（例如 10、20、30）也會被整理。
 - **刪除 Cue**（`cues/delete`）：刪除該 Cue 與其指派（外鍵 `ON DELETE CASCADE`），後面的 `seq` 依序遞補。不留墓碑；Live 時的「刪除」仍是略過。
-- **新增 Cue 在 Draft 的放寬**：M2c 起，Draft 階段的 `POST /api/cues/insert` 可帶 `"afterCueId":null`，插在第一個；流程表是空的時只能帶 `null`。Live 仍必須帶 `afterCueId`（M2b 規則不變）。
-- **復原上一步與 M2c 的修改**：M2c 的修改不是步驟，但可能讓上一個 Cue 操作無法復原（例如被略過的 Cue 已刪除、或整份已被匯入取代）；此時 `POST /api/cues/undo` 回 `undo_stale`（`domain.Undo` 找不到 Cue 就回 `ErrUndoStale`，既有行為）。Master 快照的 `undo` 改為：上一個 Cue 操作已無法復原時為 `null`，不顯示一個按了必定失敗的按鈕。
+- **新增 Cue 在 Draft 的放寬**：M2c 起，Draft 階段的 `POST /api/cues/insert` 可帶 `"afterCueId":null`，插在第一個；流程表是空的時只能帶 `null`。Live 帶 `null` 回 `invalid_position`，在 store 的交易內判斷活動階段（M2b 規則不變）；本文需要新的欄位種類「正整數或 null」。
+- **復原上一步與 M2c 的修改**：M2c 的修改不是步驟，但可能讓上一個 Cue 操作無法復原（例如被略過的 Cue 已刪除、或整份已被匯入取代）；此時 `POST /api/cues/undo` 回 `undo_stale`（`domain.Undo` 找不到 Cue 就回 `ErrUndoStale`，既有行為）。Master 快照的 `undo` 改為：上一個 Cue 操作已無法復原時，與「沒有可復原的操作」相同，回 `{"available":false,"description":null}`（鍵集合不變），不顯示一個按了必定失敗的按鈕；判斷方式是對目前的 Cue 試跑 `domain.Undo`，回 `ErrUndoStale` 即為無法復原。
 - **貼上匯入**：
-  - `text` 為整份流程表文字，欄位與 `bethere import-rundown` 的 CSV 相同（`stories/m1.md` US-M-0.2，含標題列）；第一列含 Tab 時以 Tab 分隔（從試算表複製），否則以逗號分隔。最多 200 列資料、100 KB；超過回 `invalid_import`。驗證與 `import-rundown` 共用同一個解析與驗證函式。
-  - 預覽回 `rows[]`：`{"line","seq","title","start","durationMin","isFixed","roles":["…"],"roleNote","notePublic","errors":["…"]}`，`errors` 為人看得懂的中文原因；`missingRoles[]` 為文字中提到、但活動裡沒有的角色名稱（依出現順序、不重複）；`replaces` 為目前的 Cue 數量（畫面據此提示「現有的 N 個環節與指派將被取代」）。有任何一列錯誤時畫面不能確認。角色名稱比對 Master 以外的角色；寫到 Master 或 Host 視為錯誤列（與指派規則相同）。
-  - 匯入在單一交易內：確認 `newRoles` 的名稱集合**恰好等於**此刻的 `missingRoles`（不多不少，否則 `invalid_import`，因為兩次請求之間別人可能已新增角色）→ 建立 `newRoles`（不產生 Token，US-M-12.6）→ 刪除現有全部 Cue 與指派 → 寫入新的 Cue 與指派 → 一筆 `rundown.import` 紀錄 → `eventVersion` + 1。任一步失敗整份不寫入。`newRoles` 的 `view` 只能是 `HandsFree` 或 `Glance`（匯入的角色會被指派 Cue，平安儀表板不看 Cue）。
+  - `text` 為整份流程表文字，欄位與 `bethere import-rundown` 的 CSV 相同（`stories/m1.md` US-M-0.2，含標題列）；第一列含 Tab 時以 Tab 分隔（從試算表複製），否則以逗號分隔。最多 200 列資料、100 KB；超過回 `invalid_import`。驗證與 `import-rundown` 共用同一個解析與驗證函式；這個函式補上與新增 Cue 相同的限制（標題 1～100 字、`notePublic` 與 `roleNote` 最多 500 字），讓匯入的 Cue 在編輯器原樣儲存不會失敗。寫入時依 CSV 的 `seq` 排序，重新編號為 1..n。
+  - 預覽回 `rows[]`：`{"line","seq","title","start","durationMin","isFixed","roles":["…"],"roleNote","notePublic","errors":["…"]}`，`errors` 為人看得懂的中文原因；`missingRoles[]` 為文字中提到、但活動裡沒有的角色名稱（依出現順序、不重複）；`replaces` 為目前的 Cue 數量（畫面據此提示「現有的 N 個環節與指派將被取代」）。有任何一列錯誤時畫面不能確認。
+  - **角色比對**（安全審查 P1）：以該活動的**所有**角色（含 Master）比對名稱。對到 Master、Host 或不開放的類型就是錯誤列（與指派規則相同）；**只有完全對不到的名稱**才列入 `missingRoles`。缺少的名稱也要通過新增角色的名稱規則（不合格時該列標為錯誤）；建立後會超過 50 個角色時，預覽另回 `"tooManyRoles":true`，畫面不能確認。
+  - 匯入在單一交易內：確認 `newRoles` 的名稱集合**恰好等於**此刻的 `missingRoles`（不多不少，否則 `invalid_import`，因為兩次請求之間別人可能已新增角色）→ `newRoles` 的名稱不可重複（400）、每一筆經過與 `roles/add` 相同的名稱檢查函式與上限檢查（`invalid_role`、`too_many_roles`）→ 建立 `newRoles`（不產生 Token，US-M-12.6）→ 刪除現有全部 Cue 與指派 → 寫入新的 Cue 與指派 → 一筆 `rundown.import` 紀錄 → `eventVersion` + 1。任一步失敗整份不寫入。`newRoles` 的 `view` 只能是 `HandsFree` 或 `Glance`（匯入的角色會被指派 Cue，平安儀表板不看 Cue）。
   - `bethere import-rundown` 維持「活動中尚無 Cue 才能匯入」（US-M-0.2a），不提供取代。
 - **新增角色**：
-  - `name` 去除前後空白後 1～50 字（否則 `invalid_role`），與同一活動的其他角色（含 Master）不可同名（`duplicate_name`）；一場活動最多 50 個角色（含 Master，`too_many_roles`）。改名的名稱規則相同。
+  - `name` 去除前後空白後 1～50 字，不得含 `;`（CSV 以它分隔角色）、控制字元或零寬字元（否則 `invalid_role`），與同一活動的其他角色（含 Master）不可同名（`duplicate_name`）；一場活動最多 50 個角色（含 Master，`too_many_roles`）。改名的名稱規則相同。
   - **類型由伺服器依 `view` 決定**，總召不指定權限（ADR-0031）：`HandsFree` → Stylist、`Glance` → Media、`Dashboard` → Host。`Dashboard` 帶 `checksIn: true` 回 `invalid_role`。StageAV 只能以指令建立（快速瞄畫面以等寬字顯示備註的差異，見 `screen-design.md` 第 4 節）。
-  - **`checksIn`** 存在新欄位 `roles.checks_in`（可為空，ADR-0019；遷移 0003）：`NULL` 表示依類型（Stylist、Media、StageAV 打卡，Host 不打卡；既有角色與 `add-role` 建立的角色都是 `NULL`），`0` 表示不打卡。`checksIn: false` 的角色：本人打卡與代打卡都回 `not_checkin_role`，Master 快照的 `checkedIn` 為 `false`；仍然可以被指派 Cue。
-  - 新增在單一交易內建立角色與 Token，回應附 `token` 與 `qr`，明文只出現這一次（同重發）。Master 角色不能經此建立（`view` 不接受 `Console`）。
-- **QR Code**：`origin` 是客戶端的 `location.origin`，伺服器只接受 `https://` 或 `http://` 加主機（可帶連接埠）、沒有路徑、查詢與片段、最多 200 字元的值（否則 400）；QR Code 的內容為 `origin + "/#t=" + token`，與畫面上的文字連結完全相同。以鎖定版本的函式庫在記憶體產生 PNG，以 data URI 回傳，不寫入磁碟、日誌或資料庫；客戶端只顯示，不存入本機快照或任何儲存（US-M-13.2）。`origin` 只用於這一次回應。
+  - **`checksIn`** 存在新欄位 `roles.checks_in`（可為空，ADR-0019；遷移 0003）：`NULL` 表示依類型（Stylist、Media、StageAV 打卡，Host 不打卡；既有角色與 `add-role` 建立的角色都是 `NULL`），`0` 表示不打卡；只寫入 `NULL` 或 `0`（`checksIn: true` 存成 `NULL`），遷移 0003 為 `ALTER TABLE roles ADD COLUMN checks_in INTEGER CHECK (checks_in IS NULL OR checks_in = 0)`，不帶 `bethere:foreign_keys=off`，只新增（ADR-0019）；解析時 Master、Host 一律不打卡，不理會這個欄位。打卡在同一交易內讀取這個欄位。退回 M2b 之前的版本時，舊程式不認得這個欄位，`checksIn: false` 的角色又可以打卡（接受）。`checksIn: false` 的角色：本人打卡與代打卡都回 `not_checkin_role`，Master 快照的 `checkedIn` 為 `false`；仍然可以被指派 Cue。
+  - 新增在單一交易內建立角色與 Token，回應附 `token` 與 `qr`，明文只出現這一次（同重發）。Token 在寫入前產生，QR Code 也在**寫入前**產生，產生失敗就不寫入、回 500；QR 函式庫的錯誤不得包含編碼內容（記錄的 err 裡不能有 Token）。新增已寫入、但重新讀取快照失敗而回 500 時，Token 明文遺失，總召在角色清單按「產生連結」即可（同重發）。Master 角色不能經此建立（`view` 不接受 `Console`）。
+- **QR Code**：`origin` 是客戶端的 `location.origin`，最多 200 字元，以 `url.Parse` 解析後必須：scheme 為小寫的 `https`（`http` 只限主機為 `localhost` 或 `127.0.0.1`）；`User`、`Path`、`RawQuery`、`Fragment`、`Opaque` 全部為空；主機只含 `[a-z0-9.-]`；連接埠若有則為 1～65535；重新序列化後與輸入完全相同。不符一律 400（安全審查 P2：擋下 `https://正式網域@evil.example` 這類讓 QR 指向別處、把 Token 交給攻擊者的值）；QR Code 的內容為 `origin + "/#t=" + token`，與畫面上的文字連結完全相同。以鎖定版本的函式庫在記憶體產生 PNG，以 data URI 回傳，不寫入磁碟、日誌或資料庫；客戶端只顯示，不存入本機快照或任何儲存（US-M-13.2）。`origin` 只用於這一次回應。
 - **刪除角色**：只限 Draft；Master 回 `master_role`。同一交易內刪除角色列，其 Token、指派、打卡隨外鍵一併刪除，持有該連結的裝置下一次輪詢收到 `invalid`（查無 Token）。
 - **改名**：Draft 與 Live 都可以；Master 可以改名。
 - **角色預覽**：
   - 回應的鍵是 `preview`，**不是** `snapshot`：客戶端只把 `snapshot` 存入本機快照，`preview` 只在記憶體顯示，絕不寫入本機儲存、不影響 ETag 與輪詢（否則總召的裝置會把別人的快照當成自己的）。
   - `preview` 由第 7 節第 2 條的同一個快照產生函式，以**目標角色**的身分組出，內容與目標角色自己 `GET /api/snapshot` 拿到的相同（`serverTime` 除外），以測試比對；目標是 Host 時為彙總快照。目標為 Master 回 `master_role`。
   - 預覽只讀：不寫入任何資料與操作紀錄，不更新**目標**的 `lastSeenAt`（呼叫者自己的照常更新），不需要也不讀取目標的 Token。
+  - 實作上，store 的預覽函式分開回傳「呼叫者的 `TokenOwner`」與「以目標組出的快照資料」；目標那一份的 `TokenID` 為 0、`Actor` 為零值（不帶任何憑證），API 層只對呼叫者呼叫 `seen`。目標是不開放的類型時回 404（與不存在相同），不回 500。前端預覽時不處理 `notice`，不寫入任何「已看過的提示」標記。
 - **`POST /api/report` 移除**：實機驗證原型已完成；它不需憑證、會寫入日誌並記錄 Token 前綴。M3 的 Android 驗證改以截圖與手動紀錄。
 
 ## 4. 權限
@@ -162,7 +165,7 @@
 | `event` | `{"name","date","timezone"}` |
 | `cues[]` | 全部 Cue：`id, seq, title, scheduledStart, effectiveStart, durationMin, isFixed, offsetMin, status, actualStart, actualEnd, notePublic, roles[]`；`roles[]` 為 `{"roleId","name","roleNote"}` |
 | `activeCueId` | 進行中的 Cue，沒有則為 `null` |
-| `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生，沒有可復原的操作、或上一個 Cue 操作已無法復原（M2c，第 3 節「復原上一步與 M2c 的修改」）時為 `null`。推進的描述以「開始的那個 Cue」命名；推進的是最後一個 Cue（沒有開始新的）時，以「完成的那個 Cue」命名（PO 於 2026-10-22 確認） |
+| `undo` | `{"available":bool,"description":"撤銷：推進『一進預備』"}`；描述由伺服器產生，沒有可復原的操作時 `available` 為 false、`description` 為 `null`；M2c 起，上一個 Cue 操作已無法復原時也一樣（第 3 節「復原上一步與 M2c 的修改」）。推進的描述以「開始的那個 Cue」命名；推進的是最後一個 Cue（沒有開始新的）時，以「完成的那個 Cue」命名（PO 於 2026-10-22 確認） |
 | `roles[]` | `{"id","name","type","view","checksIn","checkedIn","lastSeenAt","hasLink"}`（M2b 追加 `checkedIn`、`lastSeenAt`、`hasLink`；M2c 追加 `view`、`checksIn`）：`checkedIn` 為是否就位（Master 與 Host 一律 `false`）；`lastSeenAt` 為該角色連結最近一次驗證成功的時間，**截到分鐘**，沒有時為 null；`hasLink` 為是否有有效 Token。不含 Token 或其雜湊 |
 | `outOfOrder[]` | M2b 追加：時間倒序警告 `{"cueId","prevCueId"}`（`data-model.md` 4.2 第 5 步，US-M-8.6） |
 | `conflicts[]` | 固定環節衝突：`{"cueId","fixedCueId","overrunMin"}`（`data-model.md` 4.2） |
@@ -238,6 +241,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | M2c：角色已達 50 個 | 422 `too_many_roles` |
 | M2c：匯入文字超過上限、任一列不合法、`newRoles` 與缺少的角色不完全相同 | 422 `invalid_import` |
 | M2c：打卡的角色 `checksIn` 為 false | 422 `not_checkin_role` |
+| M2c：活動日當天的匯入取代或刪除角色 | 422 `locked_on_event_day`（ADR-0032） |
 | 本文的角色 id 不在呼叫者的活動裡 | 404 `not_found`，不帶 `result`（與 Cue id 相同） |
 | `domain.ErrCueNotFound` | 404 `not_found`，不帶 `result` |
 | `store.ErrNoActor`、`store.ErrCrossEvent`、`store.ErrNotFound` | 500 `internal`（端點先以呼叫者的活動查詢目標，查不到已回 404；這三者出現即為程式錯誤） |
@@ -295,3 +299,10 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
     - `checksIn: false` 的角色本人打卡、被代打卡都回 `not_checkin_role`。
     - `cues/move` 後 `seq` 唯一且從 1 連續；`cues/delete` 後同樣。
     - Draft 的 `offsetMin` 不為 0 時，`cues/update` 回 500 而不是寫入（以直接改資料庫模擬）。
+    - 所有 M2c 寫入的操作紀錄都有操作者的 `byTokenId`。
+    - 活動日當天（以注入的時鐘）`rundown/import` 與 `roles/delete` 回 `locked_on_event_day` 且資料不變；前一天 23:59 可以。
+    - `rundown.import`、`rundown.delete`、`role.delete` 的紀錄足以重建被取代或刪除的 Cue、指派與角色（以紀錄重建後比對原資料的測試固定），且不含 Token 或雜湊。
+    - 匯入：CSV 寫到 Master 的名稱是錯誤列，不進 `missingRoles`；`newRoles` 有重複名稱回 400；缺少的名稱含 `;` 或超過 50 字時該列為錯誤；從有間隔的 `seq` 匯入後為 1..n。
+    - 改名別的活動的角色 id、並帶上與該活動某角色相同的名稱，回 404 而不是 `duplicate_name`。
+    - 預覽從未發過連結的角色（匯入時建立的）回 200；預覽不開放類型的角色回 404。
+    - `origin` 為 `https://a@b.example`、含反斜線、大寫 scheme、`http://` 加公開主機時回 400。

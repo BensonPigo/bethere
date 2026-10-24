@@ -49,3 +49,4 @@
 | [0029](0029-e2e-routes-on-a-vm-test-service.md) | 端對端測試路線在 VM 的測試服務上，由 PO 手動執行 | 已接受 |
 | [0030](0030-split-m3-into-data-ops-and-field-readiness.md) | M3 拆成資料與維運（M3a）、現場準備（M3b） | 已接受 |
 | [0031](0031-pre-event-setup-and-more-roles-before-m3a.md) | M3a 之前先做婚前準備（M2c）與更多角色（M2d），第一版處理賓客 | 已接受 |
+| [0032](0032-destructive-edits-logged-and-locked-on-event-day.md) | 破壞性修改完整記錄，活動日當天鎖住匯入取代與刪除角色 | 已接受 |
