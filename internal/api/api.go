@@ -326,7 +326,7 @@ func (a *API) reissue(ctx context.Context, o store.TokenOwner, b body, now time.
 	if err != nil {
 		return link{}, err
 	}
-	qr, err := linkQR(b.origin, token)
+	qr, err := linkQR(b.origin, b.originGiven, token)
 	if err != nil {
 		return link{}, err
 	}

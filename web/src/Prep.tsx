@@ -254,7 +254,9 @@ export function ImportDialog({ snap, lock, importPreview, write, close }: Import
   const [checked, setChecked] = useState<{ text: string; result: ImportPreview | string } | null>(null);
   const [roles, setRoles] = useState<Record<string, { view: "HandsFree" | "Glance"; checksIn: boolean }>>({});
   const preview = checked && checked.text === text && typeof checked.result === "object" ? checked.result : null;
-  const bad = preview ? preview.fileError !== null || preview.tooManyRoles || preview.rows.some((r) => r.errors.length > 0) : true;
+  const bad = preview
+    ? preview.fileError !== null || preview.tooManyRoles || preview.rows.length === 0 || preview.rows.some((r) => r.errors.length > 0)
+    : true;
   const roleOf = (name: string) => roles[name] ?? { view: "Glance" as const, checksIn: true };
   const run = async () => setChecked({ text, result: await importPreview(text) });
   const confirm = async () => {
