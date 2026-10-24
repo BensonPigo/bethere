@@ -6,7 +6,7 @@ import { useState } from "preact/hooks";
 import { CUE_ROLE_TYPES } from "./api";
 import type { Assignment, MasterCue, MasterRole, MasterSnapshot, WriteRequest } from "./api";
 import { agoText, formatHM, parseClock, zonedToISO } from "./format";
-import { ClockInput, LinkResult } from "./Prep";
+import { ClockInput, LinkResult } from "./controls";
 import type { NewLink } from "./session";
 
 type Write = (w: WriteRequest) => Promise<boolean>;
