@@ -293,6 +293,29 @@ test("新人儀表板：開始前、一切順利、延誤、復原", async ({ br
   await expect(host.locator(".dashboard .state")).toHaveText("一切順利", { timeout: PROPAGATE_MS });
 });
 
+test("備援流程表：總召印全部或某角色，攝影印自己的，新人沒有", async ({ browser }) => {
+  const links = event(4);
+  const master = await open(browser, links, "總召");
+  await master.getByRole("link", { name: "列印備援流程表" }).click();
+  await expect(master).toHaveURL(/\/print#t=/);
+  const rows = (p: Page) => p.locator(".print tbody tr");
+  await expect(rows(master)).toHaveCount(5); // US-X-9.1
+  await expect(rows(master).filter({ hasText: "迎賓" })).toContainText("攝影：大門口 welcome.mp3");
+  await master.getByLabel("印給").selectOption({ label: "新秘" }); // US-X-9.2
+  await expect(rows(master)).toHaveCount(3);
+  await expect(master.locator(".print tbody")).not.toContainText("攝影");
+
+  const media = await open(browser, links, "攝影");
+  await media.getByRole("link", { name: "列印我的流程表" }).click(); // US-X-9.3
+  await expect(rows(media)).toHaveCount(4);
+  await expect(media.locator(".print tbody")).not.toContainText("新秘");
+  await expect(media.locator(".print h1")).toContainText("攝影");
+
+  const host = await open(browser, links, "新人");
+  await host.goto(`/print#t=${links["新人"]}`);
+  await expect(host.locator(".print")).toContainText("這個連結沒有可列印的流程表"); // US-X-9.4
+});
+
 // ---------------------------------------------------------------- 婚前準備
 
 // The tab-separated rundown a spreadsheet copies (US-M-12.1); 主持 is a role

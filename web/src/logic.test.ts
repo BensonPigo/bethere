@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyNotModified, classifyResponse, shouldWipeLocalData, writeBody } from "./api";
-import type { RoleCue, RoleSnapshot } from "./api";
+import type { HostSnapshot, MasterCue, MasterSnapshot, RoleCue, RoleSnapshot } from "./api";
+import { printRows } from "./print";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./Prep";
@@ -383,5 +384,53 @@ describe("M2c: preparation (api.md section 3)", () => {
     expect(dayStarted("2027-06-06", "2027-06-05")).toBe(false);
     expect(dayStarted("2027-06-06", "2027-06-06")).toBe(true);
     expect(dayStarted("2027-06-06", "2027-06-07")).toBe(true);
+  });
+});
+
+describe("backup rundown rows (sync-and-offline 9)", () => {
+  const mcue = (over: Partial<MasterCue>): MasterCue => ({
+    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-06T03:00:00Z", effectiveStart: "2027-06-06T03:00:00Z",
+    durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", actualStart: null, actualEnd: null,
+    notePublic: null, roles: [], ...over,
+  });
+  const master = (cues: MasterCue[]): MasterSnapshot => ({
+    eventVersion: 3, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+    role: { type: "Master", name: "總召", view: "Console" },
+    eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" },
+    event: { name: "婚禮", date: "2027-06-06", timezone: "Asia/Taipei" },
+    cues, activeCueId: null, undo: { available: false, description: null }, roles: [],
+    conflicts: [], overrunMin: 0, outOfOrder: [],
+  });
+  const cues = [
+    mcue({ id: 2, seq: 2, title: "開席", isFixed: true, effectiveStart: "2027-06-06T04:10:00Z", offsetMin: 10,
+      roles: [{ roleId: 7, name: "攝影", roleNote: "大門" }] }),
+    mcue({ id: 1, seq: 1, title: "一進", status: "Completed", notePublic: "全體",
+      roles: [{ roleId: 5, name: "新秘", roleNote: "白紗" }, { roleId: 7, name: "攝影", roleNote: null }] }),
+  ];
+
+  it("US-X-9.1: the Master prints every cue in order with the time in force, roles and notes", () => {
+    const rows = printRows(master(cues));
+    expect(rows.map((r) => r.title)).toEqual(["一進", "開席"]);
+    expect(rows[0]).toMatchObject({ done: true, notePublic: "全體", roles: [{ name: "新秘", note: "白紗" }, { name: "攝影", note: null }] });
+    expect(rows[1]).toMatchObject({ start: "2027-06-06T04:10:00Z", isFixed: true, durationMin: 10 });
+  });
+  it("US-X-9.2: the Master can print one role's copy: its cues and only its notes", () => {
+    const rows = printRows(master(cues), 5);
+    expect(rows.map((r) => r.title)).toEqual(["一進"]);
+    expect(rows[0].roles).toEqual([{ name: "新秘", note: "白紗" }]);
+    expect(printRows(master(cues), "7").map((r) => r.title)).toEqual(["一進", "開席"]);
+  });
+  it("US-X-9.3: another role prints its own cues with its own note", () => {
+    const rows = printRows(snap({ cues: [cue({ id: 4, seq: 4, title: "B" }), cue({ id: 3, seq: 3, title: "A", roleNote: "n" })] }));
+    expect(rows.map((r) => r.title)).toEqual(["A", "B"]);
+    expect(rows[0].roles).toEqual([{ name: "新秘", note: "n" }]);
+  });
+  it("US-X-9.4: the hosts' link has nothing to print", () => {
+    const host: HostSnapshot = {
+      eventVersion: 1, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+      role: { type: "Host", name: "新人", view: "Dashboard" },
+      eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null,
+    };
+    expect(printRows(host)).toEqual([]);
   });
 });
