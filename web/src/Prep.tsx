@@ -6,7 +6,7 @@ import { useState } from "preact/hooks";
 import { isHostSnapshot } from "./api";
 import type { ImportPreview, MasterCue, MasterSnapshot, NewRole, RoleSnapshot, Snapshot, WriteRequest } from "./api";
 import { Dashboard } from "./Dashboard";
-import { formatHM, zonedToISO } from "./format";
+import { formatHM, parseClock, zonedToISO } from "./format";
 import { Glance } from "./Glance";
 import { HandsFree } from "./HandsFree";
 import type { NewLink } from "./session";
@@ -179,11 +179,12 @@ function EditorRow({ snap, cue, prev, next, beforePrev, warn, tz, disabled, writ
   const [title, setTitle] = useState(cue.title);
   const [fixed, setFixed] = useState(cue.isFixed);
   const [note, setNote] = useState(cue.notePublic ?? "");
-  const start = zonedToISO(snap.event.date, time, tz);
+  const clock = parseClock(time);
+  const start = clock === null ? null : zonedToISO(snap.event.date, clock, tz);
   const minutes = Number.parseInt(duration, 10);
   const valid = start !== null && Number.isFinite(minutes) && minutes >= 0 && minutes <= 1440 && title.trim() !== "";
   const changed =
-    time !== formatHM(cue.scheduledStart, tz) ||
+    (clock ?? time) !== formatHM(cue.scheduledStart, tz) ||
     minutes !== cue.durationMin ||
     title !== cue.title ||
     fixed !== cue.isFixed ||
@@ -191,16 +192,7 @@ function EditorRow({ snap, cue, prev, next, beforePrev, warn, tz, disabled, writ
   const move = (afterCueId: string | number | null) => void write({ path: "/api/cues/move", cueId: cue.id, afterCueId });
   return (
     <div class={`editor-row ${cue.status.toLowerCase()} ${changed ? "unsaved" : ""}`} data-cue={String(cue.id)}>
-      {/* iPad Safari's time wheel reports with a change event only (US-M-10.C2 field test). */}
-      <input
-        class="time"
-        type="time"
-        aria-label="開始時間"
-        value={time}
-        disabled={disabled}
-        onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
-        onChange={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
-      />
+      <ClockInput value={time} disabled={disabled} onValue={setTime} />
       <input class="duration" type="number" aria-label="長度（分）" min={0} max={1440} value={duration} disabled={disabled} onInput={(e) => setDuration((e.currentTarget as HTMLInputElement).value)} />
       <input class="title" aria-label="標題" value={title} maxLength={100} disabled={disabled} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} />
       <label class="fixed">
@@ -240,9 +232,34 @@ function EditorRow({ snap, cue, prev, next, beforePrev, warn, tz, disabled, writ
           刪除
         </button>
       </div>
-      {changed && <div class="unsaved-note">尚未儲存{valid ? "，請按「儲存」" : "：時間、長度或標題不正確"}</div>}
+      {changed && (
+        <div class="unsaved-note">
+          {clock === null ? "時間請用 24 小時制，例如 09:20 或 0920" : valid ? "尚未儲存，請按「儲存」" : "尚未儲存：長度或標題不正確"}
+        </div>
+      )}
       {warn && prev && <div class="reason">⚠ 時間早於前一個環節 {formatHM(prev.effectiveStart, tz)}</div>}
     </div>
+  );
+}
+
+// ClockInput is a plain 24-hour time field: the same on every browser,
+// with the number pad on a phone or tablet (see parseClock).
+export function ClockInput(props: { value: string; disabled?: boolean; onValue: (v: string) => void }) {
+  const set = (e: Event) => props.onValue((e.currentTarget as HTMLInputElement).value);
+  return (
+    <input
+      class="time"
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      aria-label="開始時間"
+      placeholder="09:20"
+      maxLength={5}
+      value={props.value}
+      disabled={props.disabled}
+      onInput={set}
+      onChange={set}
+    />
   );
 }
 

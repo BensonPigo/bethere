@@ -316,6 +316,7 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await master.getByRole("button", { name: "編輯流程表" }).click();
     let row = editorRow(master, 0);
     await expect(row.locator("input.title")).toHaveValue("新娘化妝");
+    // A value reported by a change event only, as some pickers do.
     await row.locator("input.time").evaluate((el: HTMLInputElement) => {
       el.value = "09:10";
       el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -327,12 +328,9 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     row = editorRow(master, 0); // the row starts over from the new version
     await row.locator("input.title").fill("新娘化妝（加長）");
     await row.locator("input.duration").fill("45");
-    // iPad Safari's time wheel reports the new value with a change event
-    // only, not input (US-M-10.C2 field test); set it the same way.
-    await row.locator("input.time").evaluate((el: HTMLInputElement) => {
-      el.value = "09:20";
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    // Typed as people type it, with no colon (US-M-10.C2 field test).
+    await row.locator("input.time").fill("");
+    await row.locator("input.time").pressSequentially("0920");
     await row.getByRole("button", { name: "儲存" }).click();
     await master.waitForTimeout(1200);
     await timed("編輯 → 新秘", () => expect(stylist.locator(".preday")).toContainText("新娘化妝（加長）", { timeout: PROPAGATE_MS }));

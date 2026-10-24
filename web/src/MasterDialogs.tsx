@@ -5,8 +5,8 @@
 import { useState } from "preact/hooks";
 import { CUE_ROLE_TYPES } from "./api";
 import type { Assignment, MasterCue, MasterRole, MasterSnapshot, WriteRequest } from "./api";
-import { agoText, formatHM, zonedToISO } from "./format";
-import { LinkResult } from "./Prep";
+import { agoText, formatHM, parseClock, zonedToISO } from "./format";
+import { ClockInput, LinkResult } from "./Prep";
 import type { NewLink } from "./session";
 
 type Write = (w: WriteRequest) => Promise<boolean>;
@@ -249,7 +249,8 @@ export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProp
   const [duration, setDuration] = useState("10");
   const [title, setTitle] = useState("");
   const [roles, setRoles] = useState<Assignment[]>([]);
-  const start = zonedToISO(snap.event.date, time, tz);
+  const clock = parseClock(time);
+  const start = clock === null ? null : zonedToISO(snap.event.date, clock, tz);
   const minutes = Number.parseInt(duration, 10);
   const valid = start !== null && Number.isFinite(minutes) && minutes >= 0 && minutes <= 1440 && title.trim() !== "";
 
@@ -257,13 +258,8 @@ export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProp
     <div class="shift-panel dialog" role="dialog">
       <div class="shift-title">{after ? `在「${after.title}」之後新增環節` : "新增第一個環節"}</div>
       <label class="field">
-        開始時間
-        <input
-          type="time"
-          value={time}
-          onInput={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
-          onChange={(e) => setTime((e.currentTarget as HTMLInputElement).value)}
-        />
+        開始時間（24 小時制）
+        <ClockInput value={time} onValue={setTime} />
       </label>
       <label class="field">
         長度（分）

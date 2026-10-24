@@ -18,6 +18,21 @@ export function dateInZone(ms: number, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
 }
 
+// parseClock reads a 24-hour time typed by hand: "09:20", "9:20", "0920"
+// or "920", with a half- or full-width colon, as "HH:MM"; null otherwise.
+// The browser's own time field is not used: in a Traditional Chinese
+// Chrome it is 12-hour with the 上午/下午 part easily out of sight, so
+// "0920" became 21:20 (M2c field test, US-M-10.C2).
+export function parseClock(text: string): string | null {
+  const s = text.trim().replace("：", ":");
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s) ?? /^(\d{1,2})(\d{2})$/.exec(s);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return `${String(h).padStart(2, "0")}:${m[2]}`;
+}
+
 // zonedToISO turns "HH:MM" on `date` (YYYY-MM-DD) in a time zone into a
 // UTC RFC 3339 instant, e.g. for a cue added on the event day. Null when
 // the input is not a time.
