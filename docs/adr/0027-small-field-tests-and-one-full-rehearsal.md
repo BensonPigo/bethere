@@ -1,6 +1,6 @@
 # ADR-0027：里程碑改用小型實測，完整彩排只做一次
 
-- 狀態：已接受
+- 狀態：已接受（每個里程碑的小型實測由 ADR-0033 取消）
 - 日期：2026-10-22
 - 對應：`process/development-process.md` 第 1、3 節；`requirements/stories/m2a.md`「小型實測」；`product/vision.md` 第 7 節
 

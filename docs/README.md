@@ -26,7 +26,7 @@
 | [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次實測的故事與驗收條件（已驗收） |
 | [stories/m2b.md](requirements/stories/m2b.md) | M2b 現場補齊的故事與驗收條件（已驗收） |
 | [stories/m2c.md](requirements/stories/m2c.md) | M2c 婚前準備的故事與驗收條件（已驗收） |
-| [stories/m3a.md](requirements/stories/m3a.md) | M3a 資料與維運的故事與驗收條件（草稿，排在 M2d 之後） |
+| [stories/m3a.md](requirements/stories/m3a.md) | M3a 資料與維運的故事與驗收條件（草稿；US-O-1 備份先做，ADR-0033） |
 
 ## design/ 設計
 
@@ -76,7 +76,7 @@
 
 > 只寫現況；歷史見 git log。
 
-- **目前里程碑**：M2d（更多角色：主持、領班、機動組、迎賓與禮金），目標 2027-01 底，故事尚未撰寫；之後依序是 M3a（資料與維運，故事草稿已寫）、M3b（現場準備）（ADR-0030、ADR-0031）。M2c 已於 2026-10-24、M2b 已於 2026-10-23 經 PO 驗收（`requirements/stories/m2c.md`、`m2b.md`）。移到 M3b 完整彩排判定的情境條件：US-X-6.C1、US-X-6.C2（攝影、音控視圖）、打卡是否需要說明、US-M-10.C1（沒看過系統的人編輯流程表）；完整彩排只做一次（ADR-0027），日期與參加者尚未確定。
+- **目前工作**：持續備份與開機還原（`requirements/stories/m3a.md` US-O-1），其他新功能暫停（ADR-0033）；M3a 其餘項目與 M3b 等備份完成後依「最小可用」重新決定。人工試用只在最後做一次完整彩排，排在決定日前，日期與參加者尚未確定。M2c 已於 2026-10-24、M2b 已於 2026-10-23 經 PO 驗收。
 - **文件整合**：ADR-0017 的六個步驟已完成；文件規則由 `internal/docscheck` 的測試在 CI 檢查。
 - **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
 - **已知問題**：無。

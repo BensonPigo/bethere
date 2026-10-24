@@ -1,6 +1,6 @@
 # ADR-0031：M3a 之前先做婚前準備（M2c）與更多角色（M2d）
 
-- 狀態：已接受
+- 狀態：已接受（M2d 由 ADR-0033 暫停）
 - 日期：2026-10-24
 - 對應：`requirements/scope.md` 第 2 節；`product/vision.md` 第 5 節；`process/development-process.md` 第 3 節；ADR-0030
 
