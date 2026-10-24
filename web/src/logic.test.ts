@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifyNotModified, classifyResponse, shouldWipeLocalData, writeBody } from "./api";
 import type { Guest, HostSnapshot, MasterCue, MasterSnapshot, RoleCue, RoleSnapshot } from "./api";
 import { printRows } from "./print";
-import { arrivedCount, callRunnerTitle, searchGuests } from "./jobs";
+import { arrivedCount, callRunnerTitle, searchGuests, tableText } from "./jobs";
 import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./controls";
@@ -447,6 +447,12 @@ describe("the four jobs (api.md section 9)", () => {
     expect(searchGuests(guests, "1").map((x) => x.id)).toEqual([3]);
     expect(searchGuests(guests, "  ")).toEqual([]);
     expect(arrivedCount(guests)).toEqual({ arrived: 1, total: 3 });
+  });
+  it("US-RC-1.6: a table number reads「5 桌」; a named table keeps its name", () => {
+    expect(tableText("5")).toBe("5 桌");
+    expect(tableText("主桌")).toBe("主桌");
+    expect(tableText("Head Table")).toBe("Head Table");
+    expect(tableText("A3")).toBe("A3");
   });
   it("US-RC-2.1: the call names the reception and fits a task title", () => {
     expect(callRunnerTitle("接待")).toBe("接待需要機動組支援");

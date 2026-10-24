@@ -105,7 +105,7 @@ export function RoleMenu({ role, lock, deleteReason, write, reissue, preview, cl
         </div>
       )}
       <div class="shift-actions">
-        <button onClick={close}>關閉</button>
+        <button class="secondary" onClick={close}>關閉</button>
       </div>
     </div>
   );
@@ -165,7 +165,7 @@ export function CueDialog({ snap, cue, tz, lock, write, insertAfter, close }: Cu
         <button disabled={lock} onClick={() => insertAfter(cue)}>
           在此之後新增環節
         </button>
-        <button onClick={close}>關閉</button>
+        <button class="secondary" onClick={close}>關閉</button>
       </div>
     </div>
   );
@@ -271,7 +271,7 @@ export function InsertDialog({ snap, after, tz, lock, write, close }: InsertProp
       </label>
       <RolePicker snap={snap} initial={[]} editable lock={lock} onChange={setRoles} />
       <div class="shift-actions">
-        <button onClick={close}>取消</button>
+        <button class="secondary" onClick={close}>取消</button>
         <button
           class="confirm"
           disabled={lock || !valid}

@@ -212,3 +212,20 @@ label.check small { color: var(--muted); font-size: 13px; }
 .jobs-body textarea, .jobs-body input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid #3c4043; border-radius: 8px; padding: 8px; }
 .jobs .editor-head button.tab { background: #3c4043; color: var(--fg); }
 .jobs .editor-head button.tab.on { background: var(--accent); color: #0b1220; }
+
+/* Which button is the answer: one filled primary per choice, the way out
+   (取消, 關閉, 還沒) in grey, and a venue lead's 收到 outlined so it never
+   looks like 我已就位 below it. */
+button.secondary { background: #3c4043; color: var(--fg); }
+button.ack:not(.done) { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.overlay.ask { background: #000; }
+
+/* Longer text, a guest's English name or a future translation, wraps
+   instead of being cut or pushing the page sideways. */
+body { overflow-wrap: anywhere; }
+.panel > *, .glance > *, .glance-main > * { flex-shrink: 0; }
+.cue > *, .move > *, .task .task-title { min-width: 0; }
+input, select { text-overflow: ellipsis; }
+.guest { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto; column-gap: 8px; padding: 4px 0; }
+.guest .note { grid-column: 1 / -1; }
+.guest .guest-table { white-space: normal; text-align: right; overflow-wrap: normal; }

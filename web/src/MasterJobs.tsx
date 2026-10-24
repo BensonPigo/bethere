@@ -3,7 +3,7 @@
 // console keeps only the common actions (V1).
 import { useState } from "preact/hooks";
 import type { MasterSnapshot, Task, WriteRequest } from "./api";
-import { arrivedCount, doneCount, searchGuests, TASK_STATE_TEXT } from "./jobs";
+import { arrivedCount, doneCount, searchGuests, tableText, TASK_STATE_TEXT } from "./jobs";
 
 type Write = (w: WriteRequest) => Promise<boolean>;
 type Props = { snap: MasterSnapshot; lock: boolean; locked: boolean; write: Write; close: () => void };
@@ -31,7 +31,7 @@ export function MasterJobs({ snap, lock, locked, write, close }: Props) {
             {{ tasks: "任務池", guests: "賓客名單", checklist: "禮金檢核" }[t]}
           </button>
         ))}
-        <button onClick={close}>關閉</button>
+        <button class="secondary" onClick={close}>關閉</button>
       </div>
       {tab === "tasks" && <Tasks tasks={snap.tasks ?? []} lock={lock} write={write} />}
       {tab === "guests" && <Guests snap={snap} lock={lock} locked={locked} write={write} />}
@@ -105,24 +105,30 @@ function Guests({ snap, lock, locked, write }: { snap: MasterSnapshot; lock: boo
       {searchGuests(guests, q).map((g) => (
         <div class={`guest ${g.arrived ? "arrived" : ""}`} key={g.id}>
           <span class="guest-name">{g.name}</span>
-          <span class="guest-table">{g.table} 桌</span>
-          {g.note && <span class="note">{g.note}</span>}
+          <span class="guest-table">{tableText(g.table)}</span>
           <button disabled={lock} onClick={() => void write({ path: "/api/guests/arrive", guestId: g.id, arrived: !g.arrived })}>
             {g.arrived ? "已報到 ✔" : "報到"}
           </button>
+          {g.note && <span class="note">{g.note}</span>}
         </div>
       ))}
-      <div class="label">貼上名單（從試算表複製：姓名、桌號、備註，一行一位）</div>
-      <textarea
-        rows={6}
-        value={text}
-        placeholder={"陳大文\t5\t素食\n林阿姨\t主桌\t輪椅"}
-        onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)}
-      />
-      <button class="confirm" disabled={lock || locked || started || text.trim() === ""} onClick={() => void replace()}>
-        匯入（取代整份名單）
-      </button>
-      {(locked || started) && <div class="reason">{locked ? "活動日當天不能整份取代名單" : "已經有賓客報到，不能再整份取代"}</div>}
+      {/* US-RC-1.4: once it cannot be replaced, the paste box is not shown at all. */}
+      {locked || started ? (
+        <div class="hint">{locked ? "活動日當天不能更換整份名單" : "已經有賓客報到，不能更換整份名單"}</div>
+      ) : (
+        <>
+          <div class="label">貼上名單（從試算表複製：姓名、桌號、備註，一行一位）</div>
+          <textarea
+            rows={6}
+            value={text}
+            placeholder={"例如：\n陳大文\t5\t素食\n林阿姨\t主桌\t輪椅"}
+            onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)}
+          />
+          <button class="confirm" disabled={lock || text.trim() === ""} onClick={() => void replace()}>
+            匯入（取代整份名單）
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -149,21 +155,26 @@ function ChecklistEditor({ snap, lock, locked, write }: { snap: MasterSnapshot; 
           {it.done && it.doneBy && <small>{it.doneBy}</small>}
         </label>
       ))}
-      <div class="label">檢核項目（一行一項，最多 30 項）</div>
-      <textarea
-        rows={6}
-        value={text}
-        placeholder={"總金額確認\n簽名確認\n鑰匙交給："}
-        onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)}
-      />
-      <button
-        class="confirm"
-        disabled={lock || locked || started || text.trim() === ""}
-        onClick={() => window.confirm("以這份內容取代檢核表？") && void write({ path: "/api/checklist/items", text })}
-      >
-        儲存檢核表
-      </button>
-      {(locked || started) && <div class="reason">{locked ? "活動日當天不能整份取代檢核表" : "已經有項目完成，不能再整份取代"}</div>}
+      {locked || started ? (
+        <div class="hint">{locked ? "活動日當天不能更換檢核表" : "已經有項目完成，不能更換檢核表"}</div>
+      ) : (
+        <>
+          <div class="label">檢核項目（一行一項，最多 30 項）</div>
+          <textarea
+            rows={6}
+            value={text}
+            placeholder={"例如：\n總金額確認\n簽名確認\n鑰匙交給："}
+            onInput={(e) => setText((e.currentTarget as HTMLTextAreaElement).value)}
+          />
+          <button
+            class="confirm"
+            disabled={lock || text.trim() === ""}
+            onClick={() => window.confirm("以這份內容取代檢核表？") && void write({ path: "/api/checklist/items", text })}
+          >
+            儲存檢核表
+          </button>
+        </>
+      )}
     </div>
   );
 }

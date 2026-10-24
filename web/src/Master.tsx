@@ -347,7 +347,7 @@ function ShiftPanel({ snap, tz, from, delta, disabled, preview, apply, close }: 
         </div>
       )}
       <div class="shift-actions">
-        <button onClick={close}>取消</button>
+        <button class="secondary" onClick={close}>取消</button>
         <button
           class="confirm"
           disabled={disabled || typeof result !== "object" || result === null || tooEarly !== null || moves.size === 0}
