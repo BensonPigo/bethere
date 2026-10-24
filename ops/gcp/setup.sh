@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time project setup (tech-stack.md section 3): custom VPC, firewall,
-# static IP, VM service account, release bucket. Safe to re-run.
+# static IP, VM service account, release and backup buckets. Safe to re-run.
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 
@@ -38,5 +38,14 @@ exists gc storage buckets describe "gs://$RELEASE_BUCKET" ||
 # The VM may only read releases, never write them (tech-stack.md section 3).
 gc storage buckets add-iam-policy-binding "gs://$RELEASE_BUCKET" \
   --member "serviceAccount:$SA_EMAIL" --role roles/storage.objectViewer >/dev/null
+
+# Backups (tech-stack.md 2.1「資料刪除」): no soft delete, no object
+# versioning, no lifecycle rules, so a deleted backup is really gone.
+exists gc storage buckets describe "gs://$BACKUP_BUCKET" ||
+  gc storage buckets create "gs://$BACKUP_BUCKET" --location "$REGION" \
+    --uniform-bucket-level-access --public-access-prevention --soft-delete-duration 0
+gc storage buckets update "gs://$BACKUP_BUCKET" --clear-soft-delete --no-versioning --clear-lifecycle >/dev/null
+gc storage buckets add-iam-policy-binding "gs://$BACKUP_BUCKET" \
+  --member "serviceAccount:$SA_EMAIL" --role roles/storage.objectAdmin >/dev/null
 
 echo "static IP: $(gc compute addresses describe "$ADDRESS" --region "$REGION" --format='value(address)')"

@@ -6,6 +6,14 @@
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 
+# A backup means this is not the first deployment: a new database here would
+# take over the backup's place and hide the real data (US-O-1).
+gc storage buckets describe "gs://$BACKUP_BUCKET" >/dev/null
+if [ -n "$(gc storage ls "gs://$BACKUP_BUCKET/bethere/" 2>/dev/null)" ]; then
+  echo "refusing: gs://$BACKUP_BUCKET/bethere/ already has a backup; restore it instead" >&2
+  exit 1
+fi
+
 gc compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --command '
   set -e
   sudo systemctl stop bethere
