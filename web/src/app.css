@@ -236,3 +236,5 @@ button.theme-toggle { min-height: 44px; padding: 8px 12px; font-size: 15px; whit
 .glance-head > span { margin-right: auto; }
 .panel-head .theme-toggle { margin-left: auto; }
 .stylist > .theme-toggle { position: absolute; right: 12px; bottom: 12px; z-index: 6; }
+.move.fixed { color: var(--muted); }
+.move.fixed .mark { text-align: center; }

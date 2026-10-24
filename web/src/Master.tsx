@@ -10,7 +10,7 @@ import { dayStarted } from "./controls";
 import { AddRoleDialog, RolePreview } from "./RoleDialogs";
 import { ImportDialog, RundownEditor } from "./RundownEditor";
 import type { NewLink } from "./session";
-import { OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
+import { heldFixed, OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
 import { OriginalTime } from "./OriginalTime";
 import { ThemeToggle } from "./theme";
 
@@ -325,18 +325,29 @@ function ShiftPanel({ snap, tz, from, delta, disabled, preview, apply, close }: 
         </div>
       )}
       <div class="moves">
-        {(candidates ?? []).map((id) => {
-          const c = byId.get(String(id));
-          const m = moves.get(String(id));
-          const ticked = !excluded.some((x) => String(x) === String(id));
-          return (
-            <label class="move" key={String(id)}>
-              <input type="checkbox" checked={ticked} onChange={() => toggle(id)} />
-              <span class="title">{c?.title}</span>
-              <span class="times">{m ? `${formatHM(m.fromStart, tz)} → ${formatHM(m.toStart, tz)}` : "不移動"}</span>
-            </label>
-          );
-        })}
+        {candidates !== null &&
+          [...candidates.map((id) => byId.get(String(id))).filter((c): c is MasterCue => !!c), ...heldFixed(snap.cues, from)]
+            .sort((a, b) => a.seq - b.seq)
+            .map((c) => {
+              if (c.isFixed) {
+                return (
+                  <div class="move fixed" key={String(c.id)}>
+                    <span class="mark">■</span>
+                    <span class="title">{c.title}</span>
+                    <span class="times">{formatHM(c.effectiveStart, tz)} 固定，不移動</span>
+                  </div>
+                );
+              }
+              const m = moves.get(String(c.id));
+              const ticked = !excluded.some((x) => String(x) === String(c.id));
+              return (
+                <label class="move" key={String(c.id)}>
+                  <input type="checkbox" checked={ticked} onChange={() => toggle(c.id)} />
+                  <span class="title">{c.title}</span>
+                  <span class="times">{m ? `${formatHM(m.fromStart, tz)} → ${formatHM(m.toStart, tz)}` : "不移動"}</span>
+                </label>
+              );
+            })}
         {candidates !== null && candidates.length === 0 && <div class="reason">沒有會移動的環節</div>}
       </div>
       {conflicts.length > 0 && (

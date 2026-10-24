@@ -109,6 +109,14 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
     await expect(master.locator(".current .cue-title")).toHaveText("新娘化妝");
   });
 
+  await test.step("預覽列出不會移動的固定環節（US-M-2.1）", async () => {
+    await master.getByRole("button", { name: "+10", exact: true }).click();
+    const panel = master.getByRole("dialog");
+    await expect(panel.locator(".move.fixed")).toHaveText(/一進預備.*固定，不移動/);
+    await panel.getByRole("button", { name: "取消" }).click();
+    await expect(panel).toBeHidden();
+  });
+
   await test.step("延後 10 分再復原（US-M-2、US-M-4.6）", async () => {
     await shift(master, "+10");
     await expect(cueRow(master, "迎賓").locator(".original")).toBeVisible();
