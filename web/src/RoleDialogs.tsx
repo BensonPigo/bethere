@@ -95,7 +95,7 @@ export function AddRoleDialog({ lock, addRole, close }: AddRoleProps) {
         </>
       )}
       <div class="shift-actions">
-        <button onClick={close}>關閉</button>
+        <button class="secondary" onClick={close}>關閉</button>
       </div>
     </div>
   );

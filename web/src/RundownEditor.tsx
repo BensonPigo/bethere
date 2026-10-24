@@ -35,7 +35,7 @@ export function RundownEditor({ snap, tz, today, lock, write, openCue, insertAft
         <button disabled={lock || live || dayStarted(snap.event.date, today)} onClick={openImport}>
           貼上匯入
         </button>
-        <button onClick={close}>關閉</button>
+        <button class="secondary" onClick={close}>關閉</button>
       </div>
       <div class="editor-help">
         每一列改完後按該列的「儲存」才會生效；誰負責這個環節、給他們的備註，按「指派」設定。存好後，相關的人不用重新整理就會看到。
@@ -201,7 +201,7 @@ export function ImportDialog({ snap, lock, importPreview, write, close }: Import
     <div class="editor" role="dialog">
       <div class="editor-head">
         <span class="shift-title">貼上匯入（取代整份流程表）</span>
-        <button onClick={close}>取消</button>
+        <button class="secondary" onClick={close}>取消</button>
       </div>
       <div class="label">
         從 Excel 或 Google 試算表複製整份流程表貼上。第一列必須是欄位名稱（英文），之後每列一個環節：

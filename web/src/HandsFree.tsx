@@ -86,6 +86,7 @@ export function HandsFree({ snap, now, skew, change, offline, write, readOnly }:
             我已就位
           </button>
           <button
+            class="secondary"
             onClick={() => {
               ask.done();
               void wake.request();

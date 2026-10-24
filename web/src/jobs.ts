@@ -13,6 +13,11 @@ export function searchGuests(guests: Guest[], query: string): Guest[] {
     .slice(0, MAX_GUEST_RESULTS);
 }
 
+// tableText adds 桌 to a table number only: 主桌 or Head Table stay as written.
+export function tableText(label: string): string {
+  return /^\d+$/.test(label) ? `${label} 桌` : label;
+}
+
 export function arrivedCount(guests: Guest[]): { arrived: number; total: number } {
   return { arrived: guests.filter((g) => g.arrived).length, total: guests.length };
 }

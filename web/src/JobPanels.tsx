@@ -3,7 +3,7 @@
 // guest search and call for help, the cashier's checklist.
 import { useState } from "preact/hooks";
 import type { Guest, RoleSnapshot, Task, WriteRequest } from "./api";
-import { callRunnerTitle, doneCount, searchGuests, TASK_STATE_TEXT } from "./jobs";
+import { callRunnerTitle, doneCount, searchGuests, tableText, TASK_STATE_TEXT } from "./jobs";
 
 type Write = (w: WriteRequest) => Promise<boolean>;
 type Props = { snap: RoleSnapshot; lock: boolean; write: Write };
@@ -87,22 +87,24 @@ function Reception({ snap, lock, write }: Props) {
           {t.claimedBy && t.state !== "open" ? `（${t.claimedBy}）` : ""}
         </div>
       ))}
+      <div class="label">{guests.length ? `找賓客（${guests.length} 位）` : "還沒有賓客名單"}</div>
       <input
         class="guest-search"
         type="search"
         inputMode="search"
-        placeholder={guests.length ? `找賓客（${guests.length} 位）：輸入姓名或桌號` : "還沒有賓客名單"}
+        aria-label="找賓客"
+        placeholder="姓名或桌號"
         value={q}
         onInput={(e) => setQ((e.currentTarget as HTMLInputElement).value)}
       />
       {found.map((g) => (
         <div class={`guest ${g.arrived ? "arrived" : ""}`} key={g.id}>
           <span class="guest-name">{g.name}</span>
-          <span class="guest-table">{g.table} 桌</span>
-          {g.note && <span class="note">{g.note}</span>}
+          <span class="guest-table">{tableText(g.table)}</span>
           <button disabled={lock} onClick={() => arrive(g)}>
             {g.arrived ? "已報到 ✔" : "報到"}
           </button>
+          {g.note && <span class="note">{g.note}</span>}
         </div>
       ))}
       {q.trim() !== "" && found.length === 0 && <div class="empty">找不到「{q.trim()}」</div>}
