@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/BensonPigo/bethere/internal/domain"
@@ -241,13 +242,20 @@ func (s *Store) UpdateCue(ctx context.Context, eventID, expectVersion int64, u C
 		if c.OffsetMin != 0 {
 			return errDraftOffset
 		}
+		// What it was, so a leaked Master link's edits on the event day can
+		// be traced and undone by hand (M2c verification).
+		var before *string
+		if err := tx.QueryRowContext(ctx, `SELECT note_public FROM cues WHERE id = ?`, u.CueID).Scan(&before); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE cues SET scheduled_start = ?, duration_min = ?, is_fixed = ?, title = ?, note_public = ?
 			WHERE id = ? AND event_id = ?`,
 			toNS(u.Start), u.DurationMin, boolInt(u.IsFixed), title, nullNote(u.NotePublic), u.CueID, eventID); err != nil {
 			return err
 		}
-		if err := logAction(ctx, tx, eventID, actor, logUpdate,
-			map[string]any{"cueId": u.CueID, "byTokenId": actor.tokenID}, now); err != nil {
+		if err := logAction(ctx, tx, eventID, actor, logUpdate, map[string]any{"cueId": u.CueID, "byTokenId": actor.tokenID,
+			"before": map[string]any{"scheduledStart": c.ScheduledStart, "durationMin": c.DurationMin, "isFixed": c.IsFixed,
+				"title": c.Title, "notePublic": before}}, now); err != nil {
 			return err
 		}
 		_, err = bumpVersion(ctx, tx, eventID)
@@ -398,7 +406,9 @@ func CheckImport(e domain.Event, rows []ImportRow, roles []RoleInfo, cues int) I
 // ReplaceRundown replaces a draft event's whole rundown before its day
 // (US-M-12.3, US-M-12.4, US-M-12.6, ADR-0032): newRoles must name exactly
 // the roles the rows mention that do not exist yet, and are created
-// without links. All or nothing; one log holding everything replaced.
+// without links. All or nothing; one log holding everything replaced. No
+// rows (a text that could not be read, or a header alone) is an invalid
+// import, told only after the version, draft and event-day checks.
 func (s *Store) ReplaceRundown(ctx context.Context, eventID, expectVersion int64, rows []ImportRow, newRoles []NewRole,
 	actor Actor, now time.Time) error {
 	return s.write(ctx, func(tx *sql.Tx) error {
@@ -413,6 +423,9 @@ func (s *Store) ReplaceRundown(ctx context.Context, eventID, expectVersion int64
 		if err != nil {
 			return err
 		}
+		if len(rows) == 0 {
+			return ErrInvalidImport
+		}
 		v := validateRows(e, rows, roles, true)
 		for _, p := range v.problems {
 			if len(p) > 0 {
@@ -420,16 +433,20 @@ func (s *Store) ReplaceRundown(ctx context.Context, eventID, expectVersion int64
 			}
 		}
 		// The names checked by the preview may be stale: another device
-		// may have added a role since (api.md section 3).
+		// may have added a role since (api.md section 3). The set is
+		// compared first, then each new role is checked.
 		names := make([]string, len(newRoles))
+		for i, nr := range newRoles {
+			names[i] = strings.TrimSpace(nr.Name)
+		}
+		if !sameNames(names, v.missing) {
+			return ErrInvalidImport
+		}
 		types := make([]domain.RoleType, len(newRoles))
 		for i, nr := range newRoles {
 			if names[i], types[i], err = nr.check(true); err != nil {
 				return err
 			}
-		}
-		if !sameNames(names, v.missing) {
-			return ErrInvalidImport
 		}
 		if err := checkNewNames(ctx, tx, eventID, names); err != nil {
 			return err

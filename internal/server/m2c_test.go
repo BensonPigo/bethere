@@ -550,19 +550,28 @@ func TestUS_M_14_PreviewIsTheRolesOwnSnapshot(t *testing.T) {
 	mediaTok := e.addRole("攝影", "Glance", true).body["token"].(string)
 	media := int64(e.snap(e.master)["roles"].([]any)[3].(map[string]any)["id"].(float64))
 	hostTok := e.addRoleWithToken(domain.Host)
-	var host int64
+	var host, av int64
 	e.db().QueryRow(`SELECT id FROM roles WHERE type = 'Host'`).Scan(&host)
+	avTok := e.addRoleWithToken(domain.StageAV)
+	e.db().QueryRow(`SELECT id FROM roles WHERE type = 'StageAV'`).Scan(&av)
 	e.skip(e.cue["迎賓"]).wantResult(t, "ok")
 	for name, c := range map[string]struct {
 		id  int64
 		tok string
-	}{"stylist": {e.stylistRole, e.stylist}, "media": {media, mediaTok}, "host": {host, hostTok}} {
+	}{"stylist": {e.stylistRole, e.stylist}, "media": {media, mediaTok}, "stageAV": {av, avTok}, "host": {host, hostTok}} {
 		logs := e.count(`SELECT count(*) FROM action_logs`)
+		e.get(c.tok)
 		before := e.roleItem(t, e.snap(e.master), c.id)["lastSeenAt"]
+		// A preview minutes later must not move the target's last use.
+		e.setClock(e.clock().Add(3 * time.Minute))
 		r := e.post(pathPreviewRole, e.master, map[string]any{"roleId": c.id})
 		r.wantResult(t, "ok")
 		wantKeys(t, name+" preview response", r.body, "result", "preview")
 		preview := r.body["preview"].(map[string]any)
+		// Before the role's own read below, which marks it seen itself.
+		if after := e.roleItem(t, e.snap(e.master), c.id)["lastSeenAt"]; after != before || before == nil {
+			t.Errorf("%s: lastSeenAt %v → %v", name, before, after)
+		}
 		own := e.snap(c.tok)
 		delete(preview, "serverTime")
 		delete(own, "serverTime")
@@ -572,8 +581,11 @@ func TestUS_M_14_PreviewIsTheRolesOwnSnapshot(t *testing.T) {
 		if e.count(`SELECT count(*) FROM action_logs`) != logs {
 			t.Errorf("%s: the preview wrote a log", name)
 		}
-		_ = before
 	}
+	// Renaming and previewing a role whose link is revoked: never "invalid".
+	e.post(pathRevoke, e.master, map[string]any{"roleId": e.stylistB}).wantResult(t, "ok")
+	e.post(pathPreviewRole, e.master, map[string]any{"roleId": e.stylistB}).wantResult(t, "ok")
+	e.post(pathRename, e.master, map[string]any{"roleId": e.stylistB, "name": "新秘C"}).wantResult(t, "ok")
 	// The target is not marked seen: a role never opened stays never seen.
 	never := e.addRole("伴娘", "HandsFree", true)
 	id := int64(never.body["roleId"].(float64))
@@ -690,5 +702,63 @@ func TestM2cWritesLogTheMastersLink(t *testing.T) {
 	e.db().QueryRow(`SELECT group_concat(payload, ';') FROM action_logs`).Scan(&logs)
 	if l := leaks(logs, e.master, e.stylist, e.stylistBTok); len(l) > 0 {
 		t.Errorf("credential in the log: %v", l)
+	}
+}
+
+// A header alone, or a text that cannot be read, never replaces the
+// rundown with nothing, and the draft and event-day checks come first
+// (M2c verification P1, P2).
+func TestUS_M_12_EmptyOrUnreadableImportChangesNothing(t *testing.T) {
+	e := newEnv(t)
+	e.dayBefore()
+	for _, text := range []string{"seq,title,start,duration_min\n", "seq\ttitle\tstart\tduration_min", "garbage"} {
+		p := e.post(pathImportPreview, e.master, map[string]any{"text": text}).body["preview"].(map[string]any)
+		if p["fileError"] == nil {
+			t.Errorf("%q: no fileError", text)
+		}
+		e.post(pathImport, e.master, e.importBody(text)).wantError(t, http.StatusUnprocessableEntity, "invalid_import")
+	}
+	if got := e.seqs(); len(got) != 4 {
+		t.Errorf("cues = %v", got)
+	}
+	e.setClock(at(9, 0))
+	e.post(pathImport, e.master, e.importBody("garbage")).wantError(t, http.StatusUnprocessableEntity, "locked_on_event_day")
+	e.live()
+	e.post(pathImport, e.master, e.importBody("garbage")).wantError(t, http.StatusUnprocessableEntity, "not_draft")
+}
+
+// An origin given empty is not left out: it is refused (M2c verification P1).
+func TestUS_M_13_EmptyOriginIsRefused(t *testing.T) {
+	e := newEnv(t)
+	e.post(pathAddRole, e.master, map[string]any{"name": "伴娘", "view": "Glance", "checksIn": true, "origin": ""}).
+		wantError(t, http.StatusBadRequest, "bad_request")
+	e.post(pathReissue, e.master, map[string]any{"roleId": e.stylistRole, "origin": ""}).wantError(t, http.StatusBadRequest, "bad_request")
+	if n := e.count(`SELECT count(*) FROM roles WHERE name = '伴娘'`); n != 0 {
+		t.Errorf("%d roles created", n)
+	}
+	e.get(e.stylist).wantResult(t, "ok")
+}
+
+// The import is unlocked until 23:59 the day before, and replacing makes
+// an earlier skip stale (api.md section 3).
+func TestUS_M_12_ImportUntilTheDayBeforeAndUndoStale(t *testing.T) {
+	e := newEnv(t)
+	e.setClock(at(0, 0).Add(-time.Minute))
+	e.skip(e.cue["迎賓"]).wantResult(t, "ok")
+	e.post(pathImport, e.master, e.importBody("seq,title,start,duration_min\n1,a,08:00,10\n")).wantResult(t, "ok")
+	if u := e.snap(e.master)["undo"].(map[string]any); u["available"] != false {
+		t.Errorf("undo = %v", u)
+	}
+	e.write(pathUndo, e.master).wantError(t, http.StatusUnprocessableEntity, "undo_stale")
+}
+
+// An update logs what the cue was, so edits made with a leaked link on the
+// event day can be traced (M2c verification).
+func TestUS_M_10_2_UpdateLogsTheCueBefore(t *testing.T) {
+	e := newEnv(t)
+	e.post(pathUpdate, e.master, updateBody(e.version(), e.cue["迎賓"], at(10, 40), "改了")).wantResult(t, "ok")
+	b := e.lastLog("rundown.update")["before"].(map[string]any)
+	if b["title"] != "迎賓" || b["durationMin"] != 30.0 || b["notePublic"] != "賓客入場" || b["isFixed"] != false {
+		t.Errorf("before = %v", b)
 	}
 }

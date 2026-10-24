@@ -38,11 +38,12 @@ func (a *API) deleteCue(ctx context.Context, o store.TokenOwner, b body, now tim
 }
 
 // importRundown replaces the whole rundown with the pasted text. A text
-// that cannot be read at all is the same invalid import as a bad row.
+// that cannot be read at all goes to the store with no rows, so the
+// version, draft and event-day checks still come first (api.md section 3).
 func (a *API) importRundown(ctx context.Context, o store.TokenOwner, b body, now time.Time) (link, error) {
 	rows, err := rundown.ParseText(b.text)
 	if err != nil {
-		return link{}, store.ErrInvalidImport
+		rows = nil
 	}
 	return link{}, a.store.ReplaceRundown(ctx, o.EventID, b.version, rows, b.newRoles, o.Actor, now)
 }
@@ -55,7 +56,7 @@ func (a *API) addRole(ctx context.Context, o store.TokenOwner, b body, now time.
 	if err != nil {
 		return link{}, err
 	}
-	qr, err := linkQR(b.origin, token)
+	qr, err := linkQR(b.origin, true, token)
 	if err != nil {
 		return link{}, err
 	}
@@ -124,10 +125,11 @@ func checkOrigin(origin string) bool {
 var errQR = errors.New("qr code could not be made")
 
 // linkQR is the PNG data URI of origin + "/#t=" + token, the very link
-// the screen shows as text; "" when no origin was given. It is made in
-// memory and never stored (US-M-13.2).
-func linkQR(origin, token string) (string, error) {
-	if origin == "" {
+// the screen shows as text; "" when the origin was left out of a reissue.
+// An origin that is given, an empty one included, must be this site's
+// (M2c verification P1). It is made in memory and never stored (US-M-13.2).
+func linkQR(origin string, given bool, token string) (string, error) {
+	if !given {
 		return "", nil
 	}
 	if !checkOrigin(origin) {

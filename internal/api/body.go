@@ -30,13 +30,14 @@ type body struct {
 	notePublic  *string
 	roles       []store.Assignment
 	// The preparation (api.md section 3, M2c).
-	isFixed  bool
-	name     string
-	view     string
-	checksIn bool
-	origin   string // "" when left out
-	text     string
-	newRoles []store.NewRole
+	isFixed     bool
+	name        string
+	view        string
+	checksIn    bool
+	origin      string
+	originGiven bool // origin is in the body, even as ""
+	text        string
+	newRoles    []store.NewRole
 }
 
 type fieldKind int
@@ -210,7 +211,7 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 			case "view":
 				b.view = s
 			case "origin":
-				b.origin = s
+				b.origin, b.originGiven = s, true
 			case "text":
 				b.text = s
 			}

@@ -77,6 +77,10 @@ func ParseText(text string) ([]store.ImportRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A header alone would replace the rundown with nothing (M2c verification P1).
+	if len(rows) == 0 {
+		return nil, errors.New("沒有任何環節列；第一列是欄位名稱，之後每列一個環節")
+	}
 	if len(rows) > MaxTextRows {
 		return nil, fmt.Errorf("最多 %d 列環節", MaxTextRows)
 	}
