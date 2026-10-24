@@ -1,6 +1,6 @@
 # 需求釐清清單 (Requirements Clarification)
 
-> **歸檔，不再維護**（ADR-0017）。每題的去向見 `glossary.md` 第 3 節；範圍以 `requirements/scope.md` 為準。
+> **歸檔，不再維護**（ADR-0017）。每題的去向見 `archive/retired-ids.md`；範圍以 `requirements/scope.md` 為準。
 
 > 狀態欄：`☐` 待確認　`☑` 已確認（採用預設）　`✎` 已確認（修改）　`⏸` 延後
 > 每題的「建議預設」是為了讓你能快速拍板，不同意就直接改。

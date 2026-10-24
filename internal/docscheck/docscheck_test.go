@@ -9,11 +9,10 @@ import (
 )
 
 // Files that keep retired IDs or old paths on purpose (docs/glossary.md
-// section 2): archived records, the ID mapping itself, the ADR describing the
-// change, and a released migration that must not be edited (ADR-0019).
+// section 2): archived records (including the ID mapping), the ADR describing
+// the change, and a released migration that must not be edited (ADR-0019).
 var exempt = []string{
 	"docs/archive/",
-	"docs/glossary.md",
 	"docs/adr/0017-documentation-structure-and-id-scheme.md",
 	"internal/store/migrations/0001_init.sql",
 	"internal/docscheck/docscheck_test.go", // names the retired patterns
@@ -135,7 +134,7 @@ func TestMarkdownReferencesExist(t *testing.T) {
 	}
 }
 
-// Retired IDs (docs/glossary.md section 3). The kept IDs are not listed:
+// Retired IDs (docs/archive/retired-ids.md). The kept IDs are not listed:
 // milestones M0–M3, priorities P0–P2, principles V1–V5, Sev, NFR, RISK, ADR
 // and story IDs such as US-M-1.C2. M1–M3 of the old data-model list collide
 // with milestones and cannot be told apart, so they are not checked.
@@ -169,7 +168,7 @@ func TestNoRetiredIDs(t *testing.T) {
 				break
 			}
 			start, end := pos+m[4], pos+m[5]
-			t.Errorf("%s:%d: retired ID %q; see docs/glossary.md section 3 for where it went",
+			t.Errorf("%s:%d: retired ID %q; see docs/archive/retired-ids.md for where it went",
 				f, lineOf(text, start), text[start:end])
 			pos = end
 		}

@@ -8,7 +8,7 @@
 
 | 文件 | 內容 |
 | --- | --- |
-| [glossary.md](glossary.md) | 術語、代號規則、舊代號對照表 |
+| [glossary.md](glossary.md) | 術語與代號規則 |
 
 ## product/ 產品
 
@@ -26,7 +26,7 @@
 | [stories/m2a.md](requirements/stories/m2a.md) | M2a 平移與第一次實測的故事與驗收條件（已驗收） |
 | [stories/m2b.md](requirements/stories/m2b.md) | M2b 現場補齊的故事與驗收條件（已驗收） |
 | [stories/m2c.md](requirements/stories/m2c.md) | M2c 婚前準備的故事與驗收條件（已驗收） |
-| [stories/m3a.md](requirements/stories/m3a.md) | M3a 資料與維運的故事與驗收條件（草稿；US-O-1 備份先做，ADR-0033） |
+| [stories/m3a.md](requirements/stories/m3a.md) | M3a 資料與維運的故事與驗收條件（US-O-1 完成，其餘為草稿，ADR-0033） |
 
 ## design/ 設計
 
@@ -70,14 +70,16 @@
 
 | 文件 | 內容 |
 | --- | --- |
-| [clarification.md](archive/clarification.md) | 初期的需求釐清問答；每題的去向見 `glossary.md` 第 3 節 |
+| [clarification.md](archive/clarification.md) | 初期的需求釐清問答；每題的去向見 `retired-ids.md` |
+| [retired-ids.md](archive/retired-ids.md) | ADR-0017 之前的舊代號與去向（原 `glossary.md` 第 3 節，ADR-0034） |
+| [process-history.md](archive/process-history.md) | 開發流程改成輕量版的理由與當時的對應（原 `process/development-process.md` 第 7～9 節，ADR-0034） |
 
 ## 狀態
 
 > 只寫現況；歷史見 git log。
 
 - **目前工作**：持續備份與開機還原（`requirements/stories/m3a.md` US-O-1）已在正式專案啟用，2026-10-24 雲端演練通過（寫入 3 秒後強制停機並移走資料庫 → 錯誤的備份位置時拒絕啟動 → 正確位置時自動還原、資料完整、權限 0600）；其他新功能暫停（ADR-0033）；M3a 其餘項目與 M3b 等備份完成後依「最小可用」重新決定。人工試用只在最後做一次完整彩排，排在決定日前，日期與參加者尚未確定。M2c 已於 2026-10-24、M2b 已於 2026-10-23 經 PO 驗收。
-- **文件整合**：ADR-0017 的六個步驟已完成；文件規則由 `internal/docscheck` 的測試在 CI 檢查。
+- **文件整合**：ADR-0017 的六個步驟已完成；2026-10-24 依 ADR-0034 再收斂一次（過期內容改為現況，舊代號表與流程歷史移到 `archive/`）。文件規則由 `internal/docscheck` 的測試在 CI 檢查。
 - **決定日**：2027-04-15，未通過完整彩排就改用紙本 + LINE 群組。
 - **已知問題**：無。
 - **尚未完成**：見 `requirements/scope.md` 的功能清單。
@@ -89,7 +91,7 @@
 | RISK-1 | Android（Chrome、LINE、主畫面）實機驗證未做；`#t=` 是否保留若不成立，要重審 ADR-0002 | M3b |
 | RISK-2 | 延遲預算沒有緩衝（`design/sync-and-offline.md` 第 7 節） | M3b 負載測試；必要時把輪詢縮到 1～1.5 秒 |
 | RISK-3 | 單一 VM 單點故障；整個 `asia-east1` 故障時不切換區域 | 刻意接受；離線快取、紙本、15 分鐘恢復 |
-| RISK-4 | 當天維運腳本未寫、未演練（`operations/runbook.md` 仍為要求草案） | M3a；寫成腳本，在暫存專案演練（先以 PO 帳號，人選決定後由本人再演練，ADR-0030） |
+| RISK-4 | 故障重建腳本未寫、未演練（`operations/runbook.md` 第 2 節除備份外仍為要求草案）；`ops/gcp/env.sh` 的專案預設為正式專案，對暫存專案演練時漏設 `PROJECT` 就會打到正式環境 | M3a；寫成腳本，在暫存專案演練（先以 PO 帳號，人選決定後由本人再演練，ADR-0030） |
 | RISK-5 | 備援操作者與當天總召未定；未定期間復原碼只有開發者保管（ADR-0018） | 每個里程碑檢查；備援操作者須符合 `operations/runbook.md` 第 2 節的條件（不在婚禮工作組、帶已登入 gcloud 的筆電與熱點）；找不到就接受當天只剩離線快取與紙本（ADR-0013） |
 | RISK-6 | 正式網域尚未購買（原型用 `sslip.io`） | 發出任何真實連結前處理 |
 | RISK-7 | iOS 會清除 7 天未互動網站的本機資料與 Service Worker | 活動前一天請所有人再開一次連結（`operations/runbook.md` 第 3 節） |

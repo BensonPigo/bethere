@@ -51,7 +51,7 @@ flowchart TB
     bethere -- "ACME 簽發憑證" --> le
 ```
 
-**範圍外**：賓客、推播、通訊錄撥號（P2）；婚顧公司的多租戶（ADR-0016）。
+**範圍外**：推播、通訊錄撥號（P2）；賓客（暫停，ADR-0033）；婚顧公司的多租戶（ADR-0016）。
 
 ## 3. 容器（C4 模型第 2 層）
 
@@ -109,7 +109,7 @@ flowchart TB
                 prep["prepare.sh bethere<br/>每次啟動前：讀 metadata、比對版本、下載發行版"]
                 caddyP["prepare.sh caddy"]
                 caddyU["caddy.service"]
-                betU["bethere.service<br/>原型：bethere serve<br/>正式：litestream replicate -exec bethere serve"]
+                betU["bethere.service<br/>litestream replicate -exec bethere serve<br/>空磁碟時先 litestream restore"]
                 disk[("10 GB pd-balanced<br/>刪 VM 時保留")]
                 prep --> betU
                 caddyP --> caddyU
@@ -118,7 +118,7 @@ flowchart TB
         end
         sa["服務帳號 bethere-vm"]
         rel[("bethere-prod-0606-releases<br/>bethere/版本/、caddy/版本/")]
-        bak[("備份 bucket（規劃中）<br/>soft delete 關閉")]
+        bak[("bethere-prod-0606-backups<br/>soft delete 關閉")]
     end
 
     internet --> ip --> fw --> caddyU --> betU

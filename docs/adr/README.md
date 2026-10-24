@@ -6,7 +6,7 @@
 
 - **ADR 回答「為什麼」**：背景、取捨與後果。決定一旦接受就不改寫內容；要推翻時新增一份 ADR，並把舊的狀態改為「被 ADR-NNNN 取代」。
 - **設計文件回答「是什麼」**：`docs/design/` 的欄位、規則與數字才是實作依據。ADR 只摘要，細節以設計文件為準。
-- 新的決定一律寫成 ADR，設計文件不再開決定表（ADR-0017）。每份 ADR 的「對應」列出相關的設計章節；舊的決定代號（M、S、P、U、T 等）已退役，意思見 `glossary.md` 第 3 節。
+- 新的決定一律寫成 ADR，設計文件不再開決定表（ADR-0017）。每份 ADR 的「對應」列出相關的設計章節；舊的決定代號（M、S、P、U、T 等）已退役，意思見 `archive/retired-ids.md`。
 
 ## 格式
 
@@ -51,3 +51,4 @@
 | [0031](0031-pre-event-setup-and-more-roles-before-m3a.md) | M3a 之前先做婚前準備（M2c）與更多角色（M2d），第一版處理賓客 | 已接受（M2d 由 0033 暫停） |
 | [0032](0032-destructive-edits-logged-and-locked-on-event-day.md) | 破壞性修改完整記錄，活動日當天鎖住匯入取代與刪除角色 | 已接受 |
 | [0033](0033-converge-on-a-minimum-usable-version.md) | 收斂到最小可用版本：先做備份，新功能暫停，人工試用只在最後做一次 | 已接受 |
+| [0034](0034-converge-documents-to-current-state.md) | 文件再收斂：只留現況，舊代號表與流程歷史歸檔 | 提議中 |

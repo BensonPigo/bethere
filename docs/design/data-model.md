@@ -223,7 +223,7 @@ sequenceDiagram
 | --- | --- | --- |
 | Master | 全部 | 推進、略過、平移、復原、代打卡、重發非 Master 的 Token、編輯 Rundown（Live 時限縮，見 `access-control.md` 第 4 節） |
 | Stylist / Media / StageAV | 自己有 CueRole 的 Cue + 該 Cue 的 `roleNote` | 自己的就位打卡 |
-| 其餘 P1 角色 | 同上 | 各自動作（P1 再定義） |
+| 其餘角色（暫停，ADR-0033） | 同上 | 各自動作（恢復時再定義） |
 
 ### 4.5 領域服務
 
