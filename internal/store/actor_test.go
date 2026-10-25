@@ -59,7 +59,7 @@ func TestMasterLinkChangesOnlyWithItsRecoveryCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.IssueToken(ctx, f.master, hash("new-master"), otherCode, at(1, 0)); !errors.Is(err, ErrCrossEvent) {
+	if err := f.s.replaceMasterLink(ctx, otherCode, f.eventID, hash("new-master"), at(1, 0)); !errors.Is(err, ErrCrossEvent) {
 		t.Errorf("another event's recovery code: err = %v, want ErrCrossEvent", err)
 	}
 	if _, _, err := f.s.LookupRecoveryCode(ctx, hash("wrong")); !errors.Is(err, ErrInvalidRecoveryCode) {
@@ -72,7 +72,10 @@ func TestMasterLinkChangesOnlyWithItsRecoveryCode(t *testing.T) {
 	if err := f.s.RevokeToken(ctx, f.master, code, at(1, 0)); !errors.Is(err, ErrMasterRole) {
 		t.Errorf("revoking the Master link alone: err = %v, want ErrMasterRole", err)
 	}
-	if err := f.s.IssueToken(ctx, f.master, hash("new-master"), code, at(1, 0)); err != nil {
+	if err := f.s.IssueToken(ctx, f.master, hash("new-master"), code, at(1, 0)); !errors.Is(err, ErrMasterRole) {
+		t.Errorf("IssueToken on the Master with the code: err = %v, want ErrMasterRole", err)
+	}
+	if err := f.s.ReplaceMasterLink(ctx, hash("recovery"), hash("new-master"), at(1, 0)); err != nil {
 		t.Fatalf("recovery code reissue: %v", err)
 	}
 	if _, err := f.s.LookupToken(ctx, hash("master"), at(12, 0)); !errors.Is(err, ErrInvalidToken) {
@@ -153,7 +156,7 @@ func TestActorNeedsAValidCredential(t *testing.T) {
 	if nextMaster.RoleID == f.master {
 		t.Errorf("role id %d was given again after the purge", nextMaster.RoleID)
 	}
-	if err := f.s.IssueToken(ctx, nextMaster.RoleID, hash("taken"), code, e.PurgeAt()); err == nil {
+	if err := f.s.replaceMasterLink(ctx, code, next, hash("taken"), e.PurgeAt()); err == nil {
 		t.Error("old recovery code took over the new event's Master link")
 	}
 	if _, err := f.s.AddRole(ctx, next, "x", domain.Media, f.masterBy, e.PurgeAt()); err == nil {
@@ -182,7 +185,7 @@ func TestRecoveryCodeScope(t *testing.T) {
 	if _, err := f.s.w.Exec(`UPDATE events SET recovery_code_hash = ? WHERE id = ?`, hash("reset"), f.eventID); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.IssueToken(ctx, f.master, hash("new-master"), code, at(1, 0)); !errors.Is(err, ErrInvalidRecoveryCode) {
+	if err := f.s.replaceMasterLink(ctx, code, f.eventID, hash("new-master"), at(1, 0)); !errors.Is(err, ErrInvalidRecoveryCode) {
 		t.Errorf("after reset: err = %v, want ErrInvalidRecoveryCode", err)
 	}
 }

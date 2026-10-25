@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { App } from "./App";
 import { PrintPage } from "./PrintPage";
+import { RecoverPage } from "./Recover";
 import { applyTheme, deviceStorage, readTheme } from "./theme";
 import "./style.css";
 import "./app.css";
@@ -10,6 +11,8 @@ function Root() {
   switch (location.pathname) {
     case "/print":
       return <PrintPage />;
+    case "/recover":
+      return <RecoverPage />;
     default:
       return <App />;
   }

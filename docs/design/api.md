@@ -46,7 +46,7 @@
 | 403 | `forbidden` | Token 有效，但角色類型沒有這個端點的權限（第 4 節） |
 | 409 | `version_conflict` | 寫入帶的 `version` 不是目前版本；回應另附 `snapshot`（最新快照），客戶端更新畫面並提示「畫面已更新，請重新確認」 |
 | 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節） |
-| 422 | `not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
+| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
 
 ## 3. 端點
@@ -75,6 +75,7 @@
 | `POST /api/roles/rename` | Token | Master | `{"roleId":n,"name":"…"}` | `ok` + 新的 Master 快照（US-M-11.4） |
 | `POST /api/roles/delete` | Token | Master | `{"version":n,"roleId":n}` | `ok` + 新的 Master 快照；只限 Draft（US-M-11.5） |
 | `POST /api/roles/preview` | Token | Master | `{"roleId":n}` | `{"result":"ok","preview":{…}}`：`preview` 是目標角色自己會拿到的快照（US-M-14） |
+| `POST /api/recover/master` | 復原碼（只在本文） | — | `{"recoveryCode":"…"}` | `{"result":"ok","token":"<22 字元>"}`：新的 Master 連結，不附快照（US-O-3） |
 | `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料 |
 
 - 沒有 `POST /api/event/start`：活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。
@@ -82,7 +83,7 @@
 - Master 的寫入都要帶 `version`（`sync-and-offline.md` 第 3 節）；寫入成功的回應直接附上新快照（`sync-and-offline.md` 第 1 節），總召不必等下一次輪詢。
 - **略過、新增、指派、編輯、打卡、撤銷、重發的共通規則**：
   - 改到 Cue 的寫入（略過、新增、指派、編輯）帶 `version`、成功後 `eventVersion` + 1。就位打卡、撤銷、重發**不帶** `version`、**不改** `eventVersion`（ADR-0023）；本文有 `version` 欄位視為未知欄位（400）。
-  - 只有略過是「復原上一步」的步驟（`cue.skip`）；其他寫入的操作紀錄型別為 `rundown.insert`、`rundown.assign`、`rundown.edit`、`checkin.set`、`token.reissue`、`token.revoke`，不以 `cue.` 開頭（ADR-0021）。操作紀錄不含 Token 或其雜湊。
+  - 只有略過是「復原上一步」的步驟（`cue.skip`）；其他寫入的操作紀錄型別為 `rundown.insert`、`rundown.assign`、`rundown.edit`、`checkin.set`、`token.reissue`、`token.revoke`（以復原碼換發 Master 為 `token.recover`），不以 `cue.` 開頭（ADR-0021）。操作紀錄不含 Token 或其雜湊。
   - 活動階段：這些寫入在 Draft 與 Live 都可以，因為活動日當天第一次推進前活動仍是 Draft（ADR-0020），總召可能需要在開始前臨時取消或加環節（US-M-6.3）。`POST /api/cues/undo` 因此在 Draft 也可用（Draft 階段唯一的 Cue 操作是略過）；推進與平移的階段規則不變。
 - **略過**：目標須為 Pending（否則 `not_pending`）。
 - **新增**：`start` 為 UTC 時間，須落在活動日 00:00（活動時區）到 `endsAt` 之間；`durationMin` 0～1440；`title` 1～100 字（去除前後空白後）；`notePublic`、`roleNote` 最多 500 字；不合格回 `invalid_cue`。插入位置之後的 Cue 都必須是 Pending 或 Skipped，也就是不能插在進行中或已完成的 Cue 前面（否則 `invalid_position`）。`afterCueId` 必填，所以新 Cue 不會成為第一個。
@@ -122,6 +123,12 @@
   - `preview` 由第 7 節第 2 條的同一個快照產生函式，以**目標角色**的身分組出，內容與目標角色自己 `GET /api/snapshot` 拿到的相同（`serverTime` 除外），以測試比對；目標是 Host 時為彙總快照。目標為 Master 回 `master_role`。
   - 預覽只讀：不寫入任何資料與操作紀錄，不更新**目標**的 `lastSeenAt`（呼叫者自己的照常更新），不需要也不讀取目標的 Token。
   - 實作上，store 的預覽函式分開回傳「呼叫者的 `TokenOwner`」與「以目標組出的快照資料」；目標那一份的 `TokenID` 為 0、`Actor` 為零值（不帶任何憑證），API 層只對呼叫者呼叫 `seen`。目標是不開放的類型時回 404（與不存在相同），不回 500。前端預覽時不處理 `notice`，不寫入任何「已看過的提示」標記。
+- **以復原碼換發 Master 連結**（`access-control.md` 第 2 節，US-O-3）：
+  - 不讀取 `Authorization` 標頭，只認本文的 `recoveryCode`；比對前忽略空白、連字號與大小寫。
+  - 復原碼不正確、格式不符、查無活動都回同一個 422 `wrong_recovery_code`，不透露活動是否存在。復原碼正確但活動已結束時回 422 `event_ended`；入口沒有 Token，所以不用 `result: ended`（第 2.1 節）。資料庫錯誤、逾時與取消一律 500，絕不回 `wrong_recovery_code`。
+  - 單一交易內：再確認一次復原碼 → 活動未結束 → 撤銷 Master 的有效 Token、建立新的 → 操作紀錄 `token.recover`（actor 為復原碼，只記角色 id）。與重發相同，不改 `eventVersion`（ADR-0023）。
+  - 舊 Master 連結的裝置在下一次輪詢收到 `invalid`。新 Token 的明文只出現在這一次回應；`/recover` 頁面以文字加「複製」顯示，不做成可點的連結，不讀取網址片段，也不寫入任何儲存。
+  - 不限頻（`access-control.md` 3.3：復原碼 128 位元）。維護模式實作後，這是唯一放行的復原碼請求（`tech-stack.md` 2.1）。
 - **沒有 `POST /api/report`**：不提供不需憑證、會寫入日誌的回報端點。Android 驗證以截圖與手動紀錄。
 
 ## 4. 權限
@@ -246,6 +253,8 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 活動日當天的匯入取代或刪除角色 | 422 `locked_on_event_day`（ADR-0032） |
 | 本文的角色 id 不在呼叫者的活動裡 | 404 `not_found`，不帶 `result`（與 Cue id 相同） |
 | `domain.ErrCueNotFound` | 404 `not_found`，不帶 `result` |
+| 復原碼格式不符（`auth.ErrRecoveryCodeFormat`）或查無活動（`store.ErrInvalidRecoveryCode`） | 422 `wrong_recovery_code` |
+| 復原碼正確但活動已結束 | 422 `event_ended` |
 | `store.ErrNoActor`、`store.ErrCrossEvent`、`store.ErrNotFound` | 500 `internal`（端點先以呼叫者的活動查詢目標，查不到已回 404；這三者出現即為程式錯誤） |
 | `domain.ErrMultipleInProgress`、`store.ErrUnknownOp`、資料庫錯誤、逾時 | 500 `internal` |
 | 其他 | 500 `internal` |

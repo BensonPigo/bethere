@@ -64,26 +64,20 @@ func (s *Store) AddRoleWithView(ctx context.Context, eventID int64, name string,
 	return roleID, err
 }
 
-// IssueToken gives a role a new link, revoking its current one in the same
-// transaction (access-control.md 3.1). The Master's link is replaced only
-// by someone holding that event's recovery code (access-control.md section 2); other permission
-// checks belong to the caller.
+// IssueToken gives a non-Master role a new link, revoking its current one
+// in the same transaction (access-control.md 3.1). The Master's link is
+// replaced only with ReplaceMasterLink; other permission checks belong to
+// the caller.
 func (s *Store) IssueToken(ctx context.Context, roleID int64, tokenHash []byte, actor Actor, now time.Time) error {
 	return s.write(ctx, func(tx *sql.Tx) error {
 		eventID, typ, err := roleOf(ctx, tx, roleID)
 		if err != nil {
 			return err
 		}
-		// The Master's link only with the recovery code; any other link
-		// only by a role (access-control.md section 2).
-		kind := actorRole
 		if typ == domain.Master {
-			if actor.kind != actorRecoveryCode {
-				return ErrMasterRole
-			}
-			kind = actorRecoveryCode
+			return ErrMasterRole
 		}
-		if _, _, err := guardAs(ctx, tx, eventID, actor, kind, now); err != nil {
+		if _, _, err := guard(ctx, tx, eventID, actor, now); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
@@ -209,12 +203,62 @@ func (s *Store) LookupRecoveryCode(ctx context.Context, codeHash []byte) (Actor,
 	var eventID int64
 	err := s.r.QueryRowContext(ctx, `SELECT id FROM events WHERE recovery_code_hash = ?`, codeHash).Scan(&eventID)
 	if errors.Is(err, sql.ErrNoRows) {
+		// As in resolveToken: a miss that raced with a cancellation is not trusted.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Actor{}, 0, ctxErr
+		}
 		return Actor{}, 0, ErrInvalidRecoveryCode
 	}
 	if err != nil {
 		return Actor{}, 0, err
 	}
 	return Actor{kind: actorRecoveryCode, eventID: eventID, cred: credential(codeHash)}, eventID, nil
+}
+
+// ReplaceMasterLink is the recovery code's first use (access-control.md
+// section 2, US-O-3.3): the event of that code gets a new Master link and
+// its old one stops working, in one transaction. The code is proved
+// before the end is checked, so only its holder learns the event ended.
+// Like ReissueLink it leaves the event version alone (api.md section 3)
+// and logs as token.*. ErrInvalidRecoveryCode only when no event has this
+// code.
+func (s *Store) ReplaceMasterLink(ctx context.Context, codeHash, tokenHash []byte, now time.Time) error {
+	actor, eventID, err := s.LookupRecoveryCode(ctx, codeHash)
+	if err != nil {
+		return err
+	}
+	return s.replaceMasterLink(ctx, actor, eventID, tokenHash, now)
+}
+
+// replaceMasterLink is the write, with the actor proved before it: the
+// code is checked again inside, so one reset in between is refused.
+func (s *Store) replaceMasterLink(ctx context.Context, actor Actor, eventID int64, tokenHash []byte, now time.Time) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
+		if err := checkActor(ctx, tx, eventID, actor, actorRecoveryCode); err != nil {
+			return err
+		}
+		e, _, err := loadEvent(ctx, tx, eventID)
+		if err != nil {
+			return err
+		}
+		if e.Ended(now) {
+			return domain.ErrEnded
+		}
+		var roleID int64
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM roles WHERE event_id = ? AND type = ?`, eventID, domain.Master).
+			Scan(&roleID); err != nil {
+			return notFound(err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
+			toNS(now), roleID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
+			roleID, tokenHash, toNS(now)); err != nil {
+			return err
+		}
+		return logAction(ctx, tx, eventID, actor, "token.recover", map[string]any{"roleId": roleID}, now)
+	})
 }
 
 // credential keeps its own copy, so the caller changing the slice later

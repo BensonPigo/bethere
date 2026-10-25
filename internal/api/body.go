@@ -236,7 +236,7 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 				b.view = s
 			case "origin":
 				b.origin, b.originGiven = s, true
-			case "text":
+			case "text", "recoveryCode":
 				b.text = s
 			case "job":
 				b.job = s

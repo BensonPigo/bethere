@@ -62,6 +62,8 @@ type Store interface {
 	SetArrived(ctx context.Context, eventID, guestID int64, arrived bool, actor store.Actor, now time.Time) error
 	ReplaceChecklist(ctx context.Context, eventID int64, titles []string, actor store.Actor, now time.Time) error
 	CheckItem(ctx context.Context, eventID, itemID int64, done bool, actor store.Actor, now time.Time) error
+	// The recovery code (access-control.md section 2).
+	ReplaceMasterLink(ctx context.Context, codeHash, tokenHash []byte, now time.Time) error
 }
 
 const (
@@ -134,6 +136,8 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/guests/arrive", a.write(capArrive, arriveFields, a.arrive))
 	mux.HandleFunc("POST /api/checklist/items", a.write(capManageJobs, checklistFields, a.replaceChecklist))
 	mux.HandleFunc("POST /api/checklist/check", a.write(capCheckItem, checkItemFields, a.checkItem))
+	// The recovery code, without a token (US-O-3).
+	mux.HandleFunc("POST /api/recover/master", a.recoverMaster)
 }
 
 // LastSeen returns when the link with this access_tokens.id last passed

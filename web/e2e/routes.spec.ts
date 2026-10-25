@@ -204,7 +204,7 @@ test("廠商收到變更：打卡、平移與新增環節的提示、目前環�
 
 // ---------------------------------------------------------------- 連結外流
 
-test("連結外流：重發後舊連結失效、新連結可用、撤銷", async ({ browser }) => {
+test("連結外流：重發後舊連結失效、新連結可用、撤銷、以復原碼換發總召連結", async ({ browser }) => {
   const links = event(2);
   const master = await open(browser, links, "總召");
   const media = await open(browser, links, "攝影");
@@ -239,6 +239,36 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷", async
     await expect(master.locator(".role-row", { hasText: "攝影" })).toContainText("連結未發或已撤銷", { timeout: PROPAGATE_MS });
     const page = contexts[contexts.length - 1].pages()[0];
     await expect(page.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS });
+  });
+
+  await test.step("備援操作者以復原碼換發總召連結，舊的總召連結失效（US-O-3）", async () => {
+    // Opened with another role's link in the address: the entry must not use it (US-O-3.1).
+    const ctx = await browser.newContext({ ...IPHONE, baseURL: loadState().baseURL });
+    contexts.push(ctx);
+    const op = await ctx.newPage();
+    const snapshots: string[] = [];
+    op.on("request", (r) => r.url().includes("/api/snapshot") && snapshots.push(r.url()));
+    await op.goto(`/recover#t=${links.新秘}`);
+    const field = op.getByLabel("復原碼");
+    await field.fill("AAAA-BBBB-CCCC-DDDD-EEEE-FFFF-GG");
+    await op.getByRole("button", { name: "換發總召連結" }).click();
+    await expect(op.getByRole("alert")).toHaveText("復原碼不正確");
+
+    // Typed from paper: lower case and spaces.
+    await field.fill(links.復原碼.toLowerCase().replaceAll("-", " "));
+    await field.press("Enter");
+    const text = op.locator(".link-text");
+    await expect(text).toHaveValue(/#t=[A-Za-z0-9_-]{22}$/);
+    await expect(op.locator("main a")).toHaveCount(0); // text, never a link to tap
+    await expect(op.getByText("若是外流，請總召到角色清單檢查並重發可疑的連結")).toBeVisible();
+    expect(op.url()).not.toContain(links.復原碼.slice(0, 4).toLowerCase());
+    expect(snapshots).toEqual([]);
+
+    await timed("換發 → 舊總召連結失效", () =>
+      expect(master.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS }),
+    );
+    const fresh = await open(browser, { ...links, 總召: (await text.inputValue()).split("#t=")[1] }, "總召");
+    await expect(fresh.getByRole("button", { name: "推進", exact: true })).toBeVisible();
   });
 });
 
