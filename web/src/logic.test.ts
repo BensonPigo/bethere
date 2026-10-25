@@ -7,6 +7,7 @@ import { addSkewSample, currentSkew, median, remainingMs } from "./clock";
 import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./controls";
 import { readTheme, saveTheme } from "./theme";
+import { recoverOutcome } from "./recoverCode";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -523,5 +524,20 @@ describe("the shift preview's fixed cues (US-M-2.1; data-model.md 4.2)", () => {
     expect(heldFixed(cues, cues[1]).map((x) => x.id)).toEqual([3, 6]);
     expect(heldFixed(cues, cues[4]).map((x) => x.id)).toEqual([6]);
     expect(heldFixed(cues, cues[5]).map((x) => x.id)).toEqual([6]);
+  });
+});
+
+describe("recover (US-O-3)", () => {
+  it("only a well-formed ok carries the new link", () => {
+    expect(recoverOutcome(200, { result: "ok", token: "A".repeat(22) })).toEqual({ kind: "ok", token: "A".repeat(22) });
+    expect(recoverOutcome(200, { result: "ok", token: "short" }).kind).toBe("failure");
+    expect(recoverOutcome(200, { result: "invalid" }).kind).toBe("failure");
+  });
+  it("a server error is never a wrong code (US-O-3.4)", () => {
+    expect(recoverOutcome(422, { error: "wrong_recovery_code" }).kind).toBe("wrong");
+    expect(recoverOutcome(422, { error: "event_ended" }).kind).toBe("ended");
+    expect(recoverOutcome(500, { error: "internal" }).kind).toBe("failure");
+    expect(recoverOutcome(400, { error: "bad_request" }).kind).toBe("failure");
+    expect(recoverOutcome(502, undefined).kind).toBe("failure");
   });
 });

@@ -238,3 +238,11 @@ button.theme-toggle { min-height: 44px; padding: 8px 12px; font-size: 15px; whit
 .stylist > .theme-toggle { position: absolute; right: 12px; bottom: 12px; z-index: 6; }
 .move.fixed { color: var(--muted); }
 .move.fixed .mark { text-align: center; }
+
+/* `/recover`: one field and one button, the new link shown once (US-O-3). */
+.recover { max-width: 560px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.recover .panel-head { display: flex; align-items: center; gap: 8px; }
+.recover h1 { font-size: 24px; color: var(--fg); margin: 0; }
+.recovery-code { min-height: 52px; font-size: 20px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--field); background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.05em; width: 100%; box-sizing: border-box; }
+.recover button.confirm { min-height: 52px; font-size: 20px; }
+.recover .bad { color: var(--bad); font-weight: 600; margin: 0; }

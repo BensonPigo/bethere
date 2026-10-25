@@ -25,7 +25,7 @@ export function LinkResult({ link }: { link: NewLink }) {
   };
   return (
     <div class="link-result">
-      <div>新連結（只顯示這一次，請用 LINE 傳給對方，或讓對方掃描）：</div>
+      <div>新連結（只顯示這一次，請用 LINE 傳給對方{link.qr ? "，或讓對方掃描" : ""}）：</div>
       <input class="link-text" readOnly value={url} onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
       <button class="confirm" onClick={() => void copy()}>
         {copied ? "已複製 ✔" : "複製"}

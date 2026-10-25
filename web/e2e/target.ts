@@ -17,7 +17,7 @@ export const ROOT = resolve(HERE, "../..");
 export const TZ = "Asia/Taipei";
 export const ROLES = ["總召", "新秘", "攝影", "音控", "新人", "領班", "機動組", "接待", "禮金"] as const;
 export type RoleName = (typeof ROLES)[number];
-export type Links = Record<RoleName, string>; // tokens of one test event
+export type Links = Record<RoleName, string> & { 復原碼: string }; // tokens and the recovery code of one test event
 
 const STATE = join(tmpdir(), "bethere-e2e-state.json");
 const LOCAL_PORT = 18090;
@@ -81,10 +81,11 @@ function parseLinks(out: string, count: number): Links[] {
   const events: Partial<Links>[] = Array.from({ length: count }, () => ({}));
   for (const line of out.split("\n")) {
     const [i, name, tok] = line.trim().split(" ");
-    if (i && name && tok) events[Number(i) - 1][name as RoleName] = tok;
+    if (i && name && tok) events[Number(i) - 1][name as RoleName | "復原碼"] = tok;
   }
   for (const e of events) {
     for (const r of ROLES) if (!e[r] || e[r]!.length !== 22) throw new Error(`seeding gave no link for ${r}:\n${out}`);
+    if (!/^[0-9A-Z]{4}(-[0-9A-Z]{1,4}){6}$/.test(e.復原碼 ?? "")) throw new Error(`seeding gave no recovery code:\n${out}`);
   }
   return events as Links[];
 }

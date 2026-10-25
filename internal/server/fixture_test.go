@@ -309,12 +309,8 @@ func (e *env) addRoleWithToken(typ domain.RoleType) string {
 func (e *env) replaceMasterLink() string {
 	e.t.Helper()
 	h, _ := auth.HashRecoveryCode(e.recovery)
-	code, _, err := e.st.LookupRecoveryCode(bg, h)
-	if err != nil {
-		e.t.Fatal(err)
-	}
 	tok := newToken(e.t)
-	if err := e.st.IssueToken(bg, e.masterRole, auth.HashToken(tok), code, e.clock()); err != nil {
+	if err := e.st.ReplaceMasterLink(bg, h, auth.HashToken(tok), e.clock()); err != nil {
 		e.t.Fatal(err)
 	}
 	return tok

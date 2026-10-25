@@ -191,6 +191,10 @@ func checkActor(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kin
 	var one int
 	err := tx.QueryRowContext(ctx, query, args...).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
+		// As in resolveToken: a miss that raced with a cancellation is not trusted.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return invalid
 	}
 	return err
