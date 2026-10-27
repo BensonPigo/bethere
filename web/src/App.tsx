@@ -23,7 +23,18 @@ export function App() {
   // note, never a request to switch browsers.
   const lineBanner = line && <div class="line-note">斷網時可能打不開，可改用 Safari／Chrome 開啟</div>;
 
-  if (!token) return <Full>{lineBanner}<div class="msg">找不到連結資訊，請使用總召給你的完整連結開啟</div></Full>;
+  if (!token) {
+    return (
+      <Full>
+        {lineBanner}
+        <div class="msg">找不到連結資訊，請使用總召給你的完整連結開啟</div>
+        {/* US-M-17.2: the vendor's message stays first; the way in for a new event is below it. */}
+        <p class="invite-note">
+          想為自己的活動使用 BeThere？<a href="/new">用邀請碼建立</a>
+        </p>
+      </Full>
+    );
+  }
   if (s.phase === "invalid") return <Full>{lineBanner}<div class="msg">連結已失效，請向總召索取新連結</div></Full>;
   if (s.phase === "ended") return <Full>{lineBanner}<div class="msg">活動已結束，感謝你的協助</div></Full>;
 

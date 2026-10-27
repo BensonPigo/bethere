@@ -65,6 +65,8 @@ type Store interface {
 	CheckItem(ctx context.Context, eventID, itemID int64, done bool, actor store.Actor, now time.Time) error
 	// The recovery code (access-control.md section 2).
 	ReplaceMasterLink(ctx context.Context, codeHash, tokenHash []byte, now time.Time) error
+	// An invited event (US-M-17).
+	CreateEvent(ctx context.Context, ne store.NewEvent, now time.Time) (int64, error)
 }
 
 const (
@@ -147,6 +149,8 @@ func (a *API) Register(mux *http.ServeMux) {
 	handle("POST /api/checklist/check", a.write(capCheckItem, checkItemFields, a.checkItem))
 	// The recovery code, without a token (US-O-3).
 	handle("POST /api/recover/master", a.recoverMaster)
+	// An invited event, without a token (US-M-17).
+	handle("POST /api/events", a.createEvent)
 }
 
 // Routes lists the patterns Register added, so tests can try every one.

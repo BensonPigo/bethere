@@ -37,6 +37,7 @@ type body struct {
 	origin      string
 	originGiven bool // origin is in the body, even as ""
 	text        string
+	date        string // an invited event's YYYY-MM-DD (US-M-17)
 	newRoles    []store.NewRole
 	// The four jobs (api.md section 9).
 	job     string
@@ -236,8 +237,10 @@ func readBody(w http.ResponseWriter, r *http.Request, fields fieldSet) (body, bo
 				b.view = s
 			case "origin":
 				b.origin, b.originGiven = s, true
-			case "text", "recoveryCode":
+			case "text", "recoveryCode", "inviteCode":
 				b.text = s
+			case "date":
+				b.date = s
 			case "job":
 				b.job = s
 			case "state":

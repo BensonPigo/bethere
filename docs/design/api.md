@@ -46,9 +46,9 @@
 | 403 | `forbidden` | Token 有效，但角色類型沒有這個端點的權限（第 4 節） |
 | 409 | `version_conflict` | 寫入帶的 `version` 不是目前版本；回應另附 `snapshot`（最新快照），客戶端更新畫面並提示「畫面已更新，請重新確認」 |
 | 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節） |
-| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
+| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`wrong_invite_code`、`invalid_event`（只有建立活動，見第 3 節）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
-| 503 | `maintenance` | 維護模式下，Master 與復原碼換發以外的所有 `/api/` 請求（第 8 節） |
+| 503 | `maintenance` | 維護模式下，Master 與復原碼換發以外的所有 `/api/` 請求，以及任何人的建立活動（第 8 節） |
 
 ## 3. 端點
 
@@ -77,6 +77,7 @@
 | `POST /api/roles/delete` | Token | Master | `{"version":n,"roleId":n}` | `ok` + 新的 Master 快照；只限 Draft（US-M-11.5） |
 | `POST /api/roles/preview` | Token | Master | `{"roleId":n}` | `{"result":"ok","preview":{…}}`：`preview` 是目標角色自己會拿到的快照（US-M-14） |
 | `POST /api/recover/master` | 復原碼（只在本文） | — | `{"recoveryCode":"…"}` | `{"result":"ok","token":"<22 字元>"}`：新的 Master 連結，不附快照（US-O-3） |
+| `POST /api/events` | 邀請碼（只在本文） | — | `{"inviteCode":"…","name":"…","date":"YYYY-MM-DD"}` | `{"result":"ok","token":"<22 字元>","recoveryCode":"…"}`：新活動的 Master 連結與復原碼，不附快照（US-M-17） |
 | `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料；維護模式下回 503 `maintenance`，`ops/gcp/maintenance.sh` 以此從外部確認模式 |
 
 - 沒有 `POST /api/event/start`：活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。
@@ -130,6 +131,13 @@
   - 單一交易內：再確認一次復原碼 → 活動未結束 → 撤銷 Master 的有效 Token、建立新的 → 操作紀錄 `token.recover`（actor 為復原碼，只記角色 id）。與重發相同，不改 `eventVersion`（ADR-0023）。
   - 舊 Master 連結的裝置在下一次輪詢收到 `invalid`。新 Token 的明文只出現在這一次回應；`/recover` 頁面以文字加「複製」顯示，不做成可點的連結，不讀取網址片段，也不寫入任何儲存。
   - 不限頻（`access-control.md` 3.3：復原碼 128 位元）。維護模式下照常放行，是唯一放行的復原碼請求（`tech-stack.md` 2.1）。
+- **以邀請碼建立活動**（`access-control.md` 第 2 節，US-M-17，ADR-0036）：
+  - 不讀取 `Authorization` 標頭，只認本文的 `inviteCode`；比對規則與復原碼相同。
+  - 先檢查名稱（1～50 字，沒有控制字元與隱形字元）與日期（`YYYY-MM-DD`，台灣的今天到兩年後），不合格回 422 `invalid_event`，不碰邀請碼。再檢查邀請碼：不正確、格式不符、已用、已過期都回同一個 422 `wrong_invite_code`。資料庫錯誤、逾時與取消一律 500，絕不回 `wrong_invite_code`。
+  - 先以唯讀查詢確認邀請碼未過期，查無時不開寫入交易；符合時在單一交易內刪除邀請碼（已被別的請求刪掉時回 `wrong_invite_code`）→ 建立 Draft 活動（時區 `Asia/Taipei`）、Master 角色「總召」與其 Token、復原碼雜湊 → 操作紀錄 `create-event`（actor 為 `server`，只記 `inviteId`）。兩個請求同時用同一組碼，只有一個刪得到。
+  - 建立最多處理 10 秒，逾時回 500 且不寫入；`/new` 等回應 20 秒，所以已寫入的建立幾乎都等得到回應。
+  - Token 與復原碼的明文只出現在這一次回應；`/new` 頁面不讀取網址片段，也不寫入任何儲存。
+  - 不限頻：邀請碼 128 位元，猜錯只走唯讀查詢。維護模式下一律回 503 `maintenance`，即使帶著 Master 的 Token（第 8 節）。
 - **沒有 `POST /api/report`**：不提供不需憑證、會寫入日誌的回報端點。Android 驗證以截圖與手動紀錄。
 
 ## 4. 權限
@@ -257,6 +265,8 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | `domain.ErrCueNotFound` | 404 `not_found`，不帶 `result` |
 | 復原碼格式不符（`auth.ErrRecoveryCodeFormat`）或查無活動（`store.ErrInvalidRecoveryCode`） | 422 `wrong_recovery_code` |
 | 復原碼正確但活動已結束 | 422 `event_ended` |
+| 建立活動的名稱或日期不合格 | 422 `invalid_event` |
+| 邀請碼格式不符（`auth.ErrRecoveryCodeFormat`）、查無、已用或已過期（`store.ErrInvalidInvite`） | 422 `wrong_invite_code` |
 | `store.ErrNoActor`、`store.ErrCrossEvent`、`store.ErrNotFound` | 500 `internal`（端點先以呼叫者的活動查詢目標，查不到已回 404；這三者出現即為程式錯誤） |
 | `domain.ErrMultipleInProgress`、`store.ErrUnknownOp`、資料庫錯誤、逾時 | 500 `internal` |
 | 其他 | 500 `internal` |
@@ -273,13 +283,13 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 6. **所有寫入**都帶 store 的 `Actor`，在同一交易內重新確認憑證並寫入操作紀錄。
 7. **指令（`bethere` 子命令）**：
    - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫，ADR-0012）。
-   - `create-event`、`add-role`、`import-rundown` 一律以「不建立新資料庫」的方式開啟；連結與復原碼只印到終端機（stdout），不經過結構化日誌。
+   - `create-event`、`add-role`、`import-rundown`、`create-invite` 一律以「不建立新資料庫」的方式開啟；連結、復原碼與邀請碼只印到終端機（stdout），不經過結構化日誌。
    - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經 `LookupToken` 取得操作者（不留在 shell 歷史與程序清單）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
    - `import-rundown` 在單一交易內寫入全部 Cue 與指派，任一列不合法就整份不寫入（US-M-0.2）。
 
 ## 8. 安全邊界相關的限制
 
-- **維護模式**（`tech-stack.md` 2.1「維護模式」，US-O-2）：所有路由之前的單一關卡。路徑（整理後）在 `/api` 底下時，只放行 `POST /api/recover/master`，以及 Bearer Token 查得到、類型為 Master 的請求；其他一律回 503 `maintenance`，包括其他角色、查無或已結束的連結、沒有或格式不符的標頭、資料庫錯誤、`/api/ping` 與不存在的路徑，絕不回 `invalid` 或 `ended`（還原後不存在的連結因此不會清掉裝置資料）。被擋的請求不到處理函式，不更新 `lastSeenAt`。放行的 Master 請求由處理函式再查一次 Token；兩次之間 Master 連結剛好被換發時回 `invalid`，與平常相同。
+- **維護模式**（`tech-stack.md` 2.1「維護模式」，US-O-2）：所有路由之前的單一關卡。路徑（整理後）在 `/api` 底下時，只放行 `POST /api/recover/master`，以及 Bearer Token 查得到、類型為 Master 的請求；其他一律回 503 `maintenance`，包括其他角色、查無或已結束的連結、沒有或格式不符的標頭、資料庫錯誤、`/api/ping` 與不存在的路徑，絕不回 `invalid` 或 `ended`（還原後不存在的連結因此不會清掉裝置資料）。被擋的請求不到處理函式，不更新 `lastSeenAt`。放行的 Master 請求由處理函式再查一次 Token；兩次之間 Master 連結剛好被換發時回 `invalid`，與平常相同。`POST /api/events` 不看 Token，由處理函式自己在維護模式下回 503 `maintenance`，所以帶著 Master 的 Token 也建立不了活動。
 - 第 2、4、6 節屬於「Token 權限與資料外洩」邊界：實作完成後由獨立審查依第 4 節權限表的**每一格**、第 6 節的**每一列**與第 5 節的鍵集合驗證。
 - 必要的測試：
   - 資料庫中直接插入未開放的角色類型，每個端點都回 403。
@@ -288,6 +298,13 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
   - 404、405、本文過大、400、403、409、500 的回應都有 `no-store` 且不帶 `result`。
   - `POST /api/report` 回 404 或 405。
   - `BETHERE_INIT` 為 `0`、`true`、` 1`、`yes` 時拒絕啟動。
+  - 建立活動（US-M-17）：
+    - 維護模式下，不帶 Token 與帶 Master 的 Token 都回 503 `maintenance`，邀請碼仍可用。
+    - 不正確、格式不符、已用、已過期的邀請碼都回同一個 422 `wrong_invite_code`；取消的請求與資料庫錯誤不回 `wrong_invite_code`。
+    - 猜錯的邀請碼在寫入連線被佔用時仍立即回 `wrong_invite_code`（不等寫入）。
+    - 多個請求同時用同一組碼，只建立一場活動。
+    - 名稱或日期不合格回 `invalid_event`，之後同一組碼仍可建立；台灣時間 00:30 時前一天的日期被拒。
+    - 日誌與操作紀錄不含邀請碼、Token、復原碼或它們的雜湊；指令印出的邀請碼送進 HTTP 處理器可以建立活動。
   - Cue 指派、打卡、撤銷、重發、ETag：
     - 第 4 節新增的每一格（含 Host 與未開放類型呼叫每個新端點都回 403）。
     - 本人打卡無法指定別的角色（本文帶 `roleId` 為 400）；代打卡、撤銷、重發、指派帶別的活動的角色 id 回 404 且不帶 `result`，帶別的**已結束**活動的角色 id 也一樣。

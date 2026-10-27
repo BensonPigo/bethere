@@ -159,11 +159,20 @@ id 永不重用（AUTOINCREMENT）。規則見 `api.md` 9.4。
 
 id 永不重用。規則見 `api.md` 9.6。
 
+### Invite（邀請碼）
+| 欄位 | 型別 | 說明 |
+| --- | --- | --- |
+| id | ID | 永不重用；建立活動的操作紀錄以它記下是哪一組 |
+| codeHash | text | 邀請碼的雜湊，規則與復原碼相同（`access-control.md` 第 2 節） |
+| expiresAt | timestamp | 產生後 30 天 |
+
+不屬於任何活動。建立活動時在同一交易內刪除，過期的由每日刪除清掉，所以表中只有還能用的邀請碼（ADR-0036）。
+
 ### 平移紀錄
 不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。
 
 ### ActionLog（操作紀錄）
-`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（4.1）。`actor` 為 Role，或「復原碼」。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（P1，`requirements/scope.md`）。
+`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（4.1）。`actor` 為 Role、「復原碼」，或建立活動時的「伺服器」（以邀請碼建立時 `payload` 只記邀請碼的 id）。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（P1，`requirements/scope.md`）。
 
 ## 4. 核心行為規則
 

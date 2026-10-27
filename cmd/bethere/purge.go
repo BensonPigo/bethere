@@ -49,6 +49,6 @@ func purgeOnce(ctx context.Context, purge purgeFunc, now time.Time, logger *slog
 	// While shutting down the error is the cancellation; the next start runs
 	// the cleanup again.
 	if err != nil && ctx.Err() == nil {
-		logger.Error("purge failed; the next run tries again (an unreadable event stays until fixed by hand)", "err", err)
+		logger.Error("purge failed; the next run tries again (an unreadable event stays until fixed by hand; expired invites are only retried)", "err", err)
 	}
 }
