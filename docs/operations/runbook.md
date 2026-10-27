@@ -10,6 +10,7 @@
 - 部署：`ops/gcp/release.sh` 上傳發行版 → `ops/gcp/deploy.sh <版本>` 改 metadata、依本機的 `ops/gcp/vm-startup.sh` 重新佈置啟動腳本與服務設定，再重啟服務；最後在 VM 上確認版本，並從外部確認網站處於服務啟動時的模式（開放或維護）。回退是同一個指令帶上一版。
 - 維護模式（規則見 `requirements/stories.md` US-O-2）：`ops/gcp/maintenance.sh on|off|status`。`on` 開啟並重啟；`off` 解除、刪除還原標記並重啟；`status` 顯示 metadata、還原標記與服務實際的模式。三者最後都從外部確認：維護中 `/api/ping` 回 503 `maintenance`，開放時回 200。從備份還原的資料庫會一直維持維護模式，直到 `off`。維護中只能部署支援維護模式的版本，要回退到更舊的版本先 `off`。
 - 重建：`ops/gcp/create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台；新 VM 一律帶 `bethere-maintenance=1`。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原，並以維護模式啟動。第一次部署時以 `ops/gcp/init-db.sh` 建立空資料庫後，執行 `ops/gcp/maintenance.sh off`。
+- 邀請碼（ADR-0036）：`ops/gcp/invite.sh` 在正式資料庫產生一組邀請碼，印出編號與邀請碼各一次，交給受邀的人在 `/new` 建立活動（不支援的舊版會回 `unknown command`）。記下編號給了誰：建立活動的操作紀錄只記編號。
 - 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
 - 活動前 7 天起凍結部署。
 
@@ -65,6 +66,8 @@ sequenceDiagram
      4. 請總召用 Master 連結確認 Rundown 與 Cue 狀態是最新的，並在角色與連結管理畫面確認各角色的連結狀態（未發／有效／已撤銷）。此時其他角色仍被擋、`lastSeenAt` 已歸零，「最近有人在用」必定是空的，不必核對。
         - 資料略舊：總召在維護模式下直接補登（Master 可寫入）。
         - 一律由備援操作者以復原碼在 `/recover` **再換發一次** Master 連結，傳給總召：備份時間點之後若曾換發，還原後舊的 Master 連結又會有效。
+        - 以邀請碼建立的活動沒有備援操作者：開發者通知那些建立者，若備份時間點之後曾以復原碼換發總召連結，請自己在 `/recover` 再換發一次。
+        - 備份時間點之後用掉的邀請碼又能用、之後才產生的邀請碼不見了，那段時間以邀請碼建立的活動也不在了：請那些建立者用原本的邀請碼重建，或發新的邀請碼。
         - 總召核對備份時間點之後重發或新增的連結：還原後這些連結不存在，解除維護時那些裝置會收到「連結已失效」並清除資料，要重發。
         - 資料明顯錯誤或是空的：**不解除維護模式**，當天改靠離線快取與紙本。
      5. 執行 `ops/gcp/maintenance.sh off`（改 metadata、刪除還原標記並重啟，最後從外部確認已開放）；各端短暫離線後自動恢復。以備援操作者專用的**測試角色連結**確認 API 正常回應，並請總召確認維護橫幅已消失（`/healthz` 在維護模式下也正常，不能用來判斷）。目標 15 分鐘內恢復。

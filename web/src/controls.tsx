@@ -13,11 +13,22 @@ export function dayStarted(eventDate: string, today: string): boolean {
 // for a phone held next to the tablet; never a link that opens here
 // (api.md section 3).
 export function LinkResult({ link }: { link: NewLink }) {
-  const url = `${location.origin}/#t=${link.token}`;
+  return (
+    <CopyBox
+      label={`新連結（只顯示這一次，請用 LINE 傳給對方${link.qr ? "，或讓對方掃描" : ""}）：`}
+      value={`${location.origin}/#t=${link.token}`}
+      qr={link.qr}
+    />
+  );
+}
+
+// CopyBox shows a secret once as text with a copy button, never as a
+// link to tap.
+export function CopyBox(props: { label: string; value: string; qr?: string | null }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(props.value);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -25,12 +36,12 @@ export function LinkResult({ link }: { link: NewLink }) {
   };
   return (
     <div class="link-result">
-      <div>新連結（只顯示這一次，請用 LINE 傳給對方{link.qr ? "，或讓對方掃描" : ""}）：</div>
-      <input class="link-text" readOnly value={url} onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
+      <div>{props.label}</div>
+      <input class="link-text" readOnly value={props.value} onFocus={(e) => (e.currentTarget as HTMLInputElement).select()} />
       <button class="confirm" onClick={() => void copy()}>
         {copied ? "已複製 ✔" : "複製"}
       </button>
-      {link.qr && <img class="qr" src={link.qr} alt="連結的 QR Code" width={220} height={220} />}
+      {props.qr && <img class="qr" src={props.qr} alt="連結的 QR Code" width={220} height={220} />}
     </div>
   );
 }

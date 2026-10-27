@@ -5,6 +5,7 @@
 //	bethere create-event   -db <path> -name <name> -date YYYY-MM-DD -tz <zone> -master-name <name> -base-url https://<host>
 //	bethere add-role       -db <path> -name <name> -type Stylist|Host [-view HandsFree|Glance] -base-url https://<host>
 //	bethere import-rundown -db <path> -file rundown.csv
+//	bethere create-invite  -db <path>
 //	bethere version
 //	bethere features
 //
@@ -45,7 +46,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|version|features> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -77,6 +78,8 @@ func run(args []string, c cli) int {
 		err = addRole(args[1:], c)
 	case "import-rundown":
 		err = importRundown(args[1:], c)
+	case "create-invite":
+		err = createInvite(args[1:], c)
 	case "version":
 		fmt.Fprintln(c.stdout, version)
 		return 0
@@ -289,6 +292,43 @@ func createEvent(args []string, c cli) error {
 	fmt.Fprintf(c.stdout, "Created event %d (%s, %s, %s), status Draft.\n", eventID, *name, *date, *tz)
 	fmt.Fprintf(c.stdout, "Master link (shown only this once):\n  %s\n", link(base, token))
 	fmt.Fprintf(c.stdout, "Recovery code (shown only this once; keep it apart from the link, e.g. on paper):\n  %s\n", code)
+	return nil
+}
+
+// createInvite makes an invite code for /new (US-M-17.1): one event, within
+// store.InviteLife. The code is printed once with its number, the one the
+// event's create-event log names; only its hash is stored.
+func createInvite(args []string, c cli) error {
+	fs := flag.NewFlagSet("create-invite", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "database file (required)")
+	if err := parseFlags(fs, args, c); err != nil {
+		return err
+	}
+	if err := required("db", *dbPath); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	st, err := openExisting(ctx, *dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	code, err := auth.NewRecoveryCode()
+	if err != nil {
+		return err
+	}
+	codeHash, err := auth.HashRecoveryCode(code)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	id, err := st.CreateInvite(ctx, codeHash, now)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.stdout, "Invite %d, for one event, until %s.\n", id, now.Add(store.InviteLife).UTC().Format(time.RFC3339))
+	fmt.Fprintf(c.stdout, "Invite code (shown only this once; the event is created at /new):\n  %s\n", code)
 	return nil
 }
 

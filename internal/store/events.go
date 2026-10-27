@@ -66,10 +66,15 @@ type NewEvent struct {
 	MasterName       string
 	MasterTokenHash  []byte
 	RecoveryCodeHash []byte
+	// InviteHash, when set, is the invite code that pays for the event on
+	// /new (US-M-17.5): it must be unused and unexpired, and is deleted with
+	// the event's creation. The developer's create-event leaves it nil.
+	InviteHash []byte
 }
 
 // CreateEvent creates a draft event with its single Master role and that
-// role's token (access-control.md section 2).
+// role's token (access-control.md section 2). With an invite, a code that
+// is wrong, used or expired is ErrInvalidInvite and nothing is written.
 func (s *Store) CreateEvent(ctx context.Context, ne NewEvent, now time.Time) (int64, error) {
 	if !ne.Date.Valid() {
 		return 0, domain.ErrInvalidDate
@@ -77,8 +82,30 @@ func (s *Store) CreateEvent(ctx context.Context, ne NewEvent, now time.Time) (in
 	if !domain.SupportedTimeZone(ne.TimeZone) {
 		return 0, ErrTimeZone
 	}
+	if ne.InviteHash != nil {
+		// A miss is answered from the read pool, so guessing never takes
+		// the single writer the event day's writes need.
+		var one int
+		err := s.r.QueryRowContext(ctx, `SELECT 1 FROM invites WHERE code_hash = ? AND expires_at > ?`,
+			ne.InviteHash, toNS(now)).Scan(&one)
+		if err != nil {
+			return 0, inviteMiss(ctx, err)
+		}
+	}
 	var eventID int64
 	err := s.write(ctx, func(tx *sql.Tx) error {
+		var logged any
+		if ne.InviteHash != nil {
+			// The read above checked the expiry at this same now; deleting
+			// here is what lets only one of two requests with a code win.
+			var inviteID int64
+			err := tx.QueryRowContext(ctx, `DELETE FROM invites WHERE code_hash = ? RETURNING id`,
+				ne.InviteHash).Scan(&inviteID)
+			if err != nil {
+				return inviteMiss(ctx, err)
+			}
+			logged = map[string]int64{"inviteId": inviteID}
+		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO events
 			(name, event_date, timezone, status, recovery_code_hash, created_at)
 			VALUES (?, ?, ?, 'Draft', ?, ?)`,
@@ -103,7 +130,7 @@ func (s *Store) CreateEvent(ctx context.Context, ne NewEvent, now time.Time) (in
 			roleID, ne.MasterTokenHash, toNS(now)); err != nil {
 			return err
 		}
-		return logAction(ctx, tx, eventID, Actor{kind: actorServer}, "create-event", nil, now)
+		return logAction(ctx, tx, eventID, Actor{kind: actorServer}, "create-event", logged, now)
 	})
 	return eventID, err
 }
@@ -348,6 +375,11 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) 
 	})
 	if err != nil {
 		return nil, err
+	}
+	// Expired invite codes go too (US-M-17.11), in a write of their own so
+	// a failure here never keeps an event past its retention.
+	if _, err := s.w.ExecContext(ctx, `DELETE FROM invites WHERE expires_at <= ?`, toNS(now)); err != nil {
+		skipped = append(skipped, fmt.Errorf("invites: %w", err))
 	}
 	return deleted, errors.Join(skipped...)
 }

@@ -335,6 +335,34 @@ export function shouldWipeLocalData(outcome: Outcome): boolean {
 
 export const POLL_TIMEOUT_MS = 8000;
 
+// postNoToken sends a JSON body without a token (the recovery code and the
+// invite code) and returns the status and parsed body, or null when no
+// answer came within timeoutMs.
+export async function postNoToken(path: string, body: unknown, timeoutMs: number): Promise<{ status: number; body: unknown } | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: ctrl.signal,
+    });
+    let parsed: unknown;
+    try {
+      parsed = await res.json();
+    } catch {
+      parsed = undefined;
+    }
+    return { status: res.status, body: parsed };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // classifyNotModified is a 304: only with the server time header, else offline-like.
 export function classifyNotModified(serverTime: string | null): Outcome {
   return serverTime && Number.isFinite(Date.parse(serverTime)) ? { kind: "notModified", serverTime } : { kind: "failure" };

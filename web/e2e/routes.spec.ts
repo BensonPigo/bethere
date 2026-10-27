@@ -5,7 +5,7 @@
 // stay with real people on real phones.
 import { devices, expect, test } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { loadState, startServer, stopServer, target } from "./target";
+import { createInvite, loadState, startServer, stopServer, target, tomorrow } from "./target";
 import type { Links, RoleName } from "./target";
 
 // NFR-2 is 3 seconds for 95% of devices; one poll is 2 seconds. A route
@@ -507,6 +507,65 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await timed("刪除角色 → 手機", () =>
       expect(phone.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS }),
     );
+  });
+});
+
+// ---------------------------------------------------------------- 用邀請碼建立活動
+
+test("用邀請碼建立活動：首頁 → 建立 → 進入總召畫面，上一頁回不到復原碼，同一組碼不能再用", async ({ browser }) => {
+  const code = createInvite();
+  const ctx = await browser.newContext({ ...IPHONE, baseURL: loadState().baseURL });
+  contexts.push(ctx);
+  const page = await ctx.newPage();
+
+  await test.step("/new 不讀網址上的連結：帶著總召連結開也只是建立頁（US-M-17.3）", async () => {
+    await page.goto(`/new#t=${event(0)["總召"]}`);
+    await expect(page.getByRole("heading", { name: "建立活動" })).toBeVisible();
+    await expect(page.getByLabel("邀請碼")).toHaveValue("");
+  });
+
+  await test.step("首頁沒有連結：廠商的提示在上，下面才是建立活動的入口（US-M-17.2）", async () => {
+    await page.goto("/");
+    await expect(page.locator(".msg")).toHaveText("找不到連結資訊，請使用總召給你的完整連結開啟");
+    await expect(page.locator(".msg ~ .invite-note")).toBeVisible();
+    await page.getByRole("link", { name: "用邀請碼建立" }).click();
+    await expect(page).toHaveURL(/\/new$/);
+  });
+
+  await test.step("輸入邀請碼、名稱與日期建立，拿到總召連結與復原碼（US-M-17.3、17.8）", async () => {
+    await page.getByLabel("邀請碼").fill(code.toLowerCase());
+    await page.getByLabel("活動名稱").fill("受邀的活動");
+    await page.getByLabel("活動日期").fill(tomorrow());
+    await page.getByRole("button", { name: "建立活動" }).click();
+    await expect(page.getByRole("heading", { name: "活動已建立" })).toBeVisible();
+    await expect(page.locator(".link-text").nth(1)).toHaveValue(/^[0-9A-Z]{4}(-[0-9A-Z]{1,4}){6}$/);
+    const link = await page.locator(".link-text").nth(0).inputValue();
+    const token = link.split("#t=")[1];
+    const recovery = await page.locator(".link-text").nth(1).inputValue();
+    const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+    expect(token).toHaveLength(22);
+    expect(stored).not.toContain(token);
+    expect(stored).not.toContain(recovery);
+  });
+
+  await test.step("進入總召畫面；上一頁回不到建立結果（US-M-17.8）", async () => {
+    await page.getByRole("button", { name: "進入總召畫面" }).click();
+    await expect(page.getByRole("button", { name: "編輯流程表" })).toBeVisible();
+    await page.goBack();
+    // Safari may restore a page from its back-forward cache as it was; the
+    // creation result must not be in the history at all.
+    await expect(page).not.toHaveURL(/\/new$/);
+    await expect(page.getByRole("heading", { name: "活動已建立" })).toBeHidden();
+    await expect(page.locator(".link-text")).toHaveCount(0);
+  });
+
+  await test.step("同一組邀請碼再用一次被拒（US-M-17.6）", async () => {
+    await page.goto("/new");
+    await page.getByLabel("邀請碼").fill(code);
+    await page.getByLabel("活動名稱").fill("第二場");
+    await page.getByLabel("活動日期").fill(tomorrow());
+    await page.getByRole("button", { name: "建立活動" }).click();
+    await expect(page.getByRole("alert")).toHaveText("邀請碼不正確或已失效");
   });
 });
 

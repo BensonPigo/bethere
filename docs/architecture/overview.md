@@ -32,7 +32,8 @@
 flowchart TB
     master["總召 Master<br/>平板，推進與平移"]
     staff["角色工作人員<br/>新秘、攝影、音控等<br/>手機，看倒數與打卡"]
-    dev["開發者<br/>建立活動、部署"]
+    dev["開發者<br/>建立活動、發邀請碼、部署"]
+    invited["受邀的人<br/>以邀請碼自己建立活動"]
     ops["備援操作者<br/>當天故障時退版或重建"]
 
     bethere(["BeThere<br/>婚宴現場即時協同網頁"])
@@ -43,6 +44,7 @@ flowchart TB
 
     master -- "HTTPS：快照輪詢、寫入操作" --> bethere
     staff -- "HTTPS：快照輪詢、就位打卡" --> bethere
+    invited -- "HTTPS：/new 建立活動，之後成為總召" --> bethere
     master -. "以 LINE 傳連結" .-> line
     line -. "點連結開啟" .-> staff
     dev -- "伺服器端指令、部署" --> gcp

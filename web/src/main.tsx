@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { App } from "./App";
 import { PrintPage } from "./PrintPage";
+import { NewEventPage } from "./NewEvent";
 import { RecoverPage } from "./Recover";
 import { applyTheme, deviceStorage, readTheme } from "./theme";
 import "./style.css";
@@ -13,6 +14,8 @@ function Root() {
       return <PrintPage />;
     case "/recover":
       return <RecoverPage />;
+    case "/new":
+      return <NewEventPage />;
     default:
       return <App />;
   }

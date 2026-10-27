@@ -1,6 +1,6 @@
 // The recovery code's request (US-O-3; api.md section 3): the code in the
 // body only, never a token, nothing kept anywhere.
-import { POLL_TIMEOUT_MS } from "./api";
+import { POLL_TIMEOUT_MS, postNoToken } from "./api";
 
 export type RecoverOutcome = { kind: "ok"; token: string } | { kind: "wrong" } | { kind: "ended" } | { kind: "failure" };
 
@@ -17,26 +17,6 @@ export function recoverOutcome(status: number, body: unknown): RecoverOutcome {
 }
 
 export async function postRecover(code: string): Promise<RecoverOutcome> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), POLL_TIMEOUT_MS);
-  try {
-    const res = await fetch("/api/recover/master", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ recoveryCode: code }),
-      cache: "no-store",
-      signal: ctrl.signal,
-    });
-    let parsed: unknown;
-    try {
-      parsed = await res.json();
-    } catch {
-      parsed = undefined;
-    }
-    return recoverOutcome(res.status, parsed);
-  } catch {
-    return { kind: "failure" };
-  } finally {
-    clearTimeout(timer);
-  }
+  const r = await postNoToken("/api/recover/master", { recoveryCode: code }, POLL_TIMEOUT_MS);
+  return r ? recoverOutcome(r.status, r.body) : { kind: "failure" };
 }

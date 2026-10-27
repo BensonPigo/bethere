@@ -8,6 +8,7 @@ import { isLineBrowser, tokenFromHash } from "./env";
 import { dayStarted } from "./controls";
 import { readTheme, saveTheme } from "./theme";
 import { recoverOutcome } from "./recoverCode";
+import { createOutcome, dateRange } from "./createEvent";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -551,5 +552,31 @@ describe("recover (US-O-3)", () => {
     expect(recoverOutcome(500, { error: "internal" }).kind).toBe("failure");
     expect(recoverOutcome(400, { error: "bad_request" }).kind).toBe("failure");
     expect(recoverOutcome(502, undefined).kind).toBe("failure");
+  });
+});
+
+describe("create an event with an invite (US-M-17)", () => {
+  const tok = "A".repeat(22);
+  it("only a well-formed ok carries the link and the recovery code", () => {
+    expect(createOutcome(200, { result: "ok", token: tok, recoveryCode: "ABCD" })).toEqual({
+      kind: "ok",
+      token: tok,
+      recoveryCode: "ABCD",
+    });
+    expect(createOutcome(200, { result: "ok", token: tok }).kind).toBe("failure");
+    expect(createOutcome(200, { result: "ok", token: "short", recoveryCode: "ABCD" }).kind).toBe("failure");
+  });
+  it("a server error is never a wrong code (US-M-17.6)", () => {
+    expect(createOutcome(422, { error: "wrong_invite_code" }).kind).toBe("wrong");
+    expect(createOutcome(422, { error: "invalid_event" }).kind).toBe("invalid");
+    expect(createOutcome(503, { error: "maintenance" }).kind).toBe("maintenance");
+    expect(createOutcome(500, { error: "internal" }).kind).toBe("failure");
+    expect(createOutcome(400, { error: "bad_request" }).kind).toBe("failure");
+    expect(createOutcome(502, undefined).kind).toBe("failure");
+  });
+  it("dates run from today in Taipei to two years ahead (US-M-17.7)", () => {
+    // 2027-06-05 16:30 UTC is 2027-06-06 00:30 in Taipei.
+    expect(dateRange(new Date(Date.UTC(2027, 5, 5, 16, 30)))).toEqual({ min: "2027-06-06", max: "2029-06-06" });
+    expect(dateRange(new Date(Date.UTC(2028, 1, 29, 4)))).toEqual({ min: "2028-02-29", max: "2030-03-01" });
   });
 });

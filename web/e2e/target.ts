@@ -213,3 +213,15 @@ export async function startServer(maintenance = false) {
   }
   await waitUp(s.baseURL, true);
 }
+
+// createInvite makes an invite code as the developer does (US-M-17.1).
+export function createInvite(): string {
+  const s = loadState();
+  const out =
+    target === "vm"
+      ? vm(`sudo -u bethere ${VM_BIN} create-invite -db ${VM_DB}`)
+      : execFileSync(s.local!.bin, ["create-invite", "-db", join(s.local!.dir, "e2e.db")], { encoding: "utf8" });
+  const code = out.match(/\b[0-9A-Z]{4}(?:-[0-9A-Z]{1,4}){6}\b/);
+  if (!code) throw new Error(`create-invite printed no code:\n${out}`);
+  return code[0];
+}

@@ -128,6 +128,46 @@ func TestF5_CreateEventLinkWorksThroughTheHandler(t *testing.T) {
 	}
 }
 
+// US-M-17.1: the printed invite code, sent through the HTTP handler,
+// creates one event; it is shown once, only on standard output.
+func TestUS_M_17_1_CreateInviteCodeWorksThroughTheHandler(t *testing.T) {
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	db := newDB(t)
+	r := runWith("", nil, "create-invite", "-db", db)
+	if r.code != 0 {
+		t.Fatalf("%d %s", r.code, r.stderr)
+	}
+	code := codeRE.FindStringSubmatch(r.stdout)
+	if code == nil || strings.Count(r.stdout, code[1]) != 1 || !strings.Contains(r.stdout, "Invite 1,") {
+		t.Fatalf("stdout %q", r.stdout)
+	}
+	if strings.Contains(r.stderr+logs.String(), code[1]) {
+		t.Errorf("the code left standard output: %q %q", r.stderr, logs.String())
+	}
+	h := handler(t, db)
+	post := func() *httptest.ResponseRecorder {
+		body := `{"inviteCode":"` + code[1] + `","name":"婚宴","date":"` + eventDate() + `"}`
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/events", strings.NewReader(body)))
+		return rec
+	}
+	rec := post()
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if got := getSnapshot(t, h, body["token"].(string)); got["result"] != "ok" {
+		t.Errorf("new Master link: %v", got)
+	}
+	if rec := post(); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("second use: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestUS_M_0_1_CreateEventShowsLinkAndCodeOnlyAndStoresOnlyHashes(t *testing.T) {
 	var logs bytes.Buffer
 	prev := slog.Default()
@@ -367,6 +407,7 @@ func TestEverySubcommandRequiresDB(t *testing.T) {
 		{"create-event", "-name", "x", "-date", "2027-06-06", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
 		{"add-role", "-name", "x", "-type", "Stylist", "-base-url", base},
 		{"import-rundown", "-file", "x.csv"},
+		{"create-invite"},
 	} {
 		r := runWith("", nil, args...)
 		if r.code != 2 || !strings.Contains(r.stderr, "-db") {
@@ -383,6 +424,7 @@ func TestCommandsNeverCreateADatabase(t *testing.T) {
 		{"serve", "-db", missing, "-addr", "127.0.0.1:0"},
 		{"create-event", "-db", missing, "-name", "x", "-date", "2027-06-06", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
 		{"add-role", "-db", missing, "-name", "x", "-type", "Stylist", "-base-url", base},
+		{"create-invite", "-db", missing},
 	} {
 		if r := runWith("", nil, args...); r.code != 1 {
 			t.Errorf("%v: exit %d", args, r.code)
