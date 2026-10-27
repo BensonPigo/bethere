@@ -9,6 +9,7 @@ import { dayStarted } from "./controls";
 import { readTheme, saveTheme } from "./theme";
 import { recoverOutcome } from "./recoverCode";
 import { createOutcome, dateRange } from "./createEvent";
+import { prep, prepDone } from "./prepGuide";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -578,5 +579,28 @@ describe("create an event with an invite (US-M-17)", () => {
     // 2027-06-05 16:30 UTC is 2027-06-06 00:30 in Taipei.
     expect(dateRange(new Date(Date.UTC(2027, 5, 5, 16, 30)))).toEqual({ min: "2027-06-06", max: "2029-06-06" });
     expect(dateRange(new Date(Date.UTC(2028, 1, 29, 4)))).toEqual({ min: "2028-02-29", max: "2030-03-01" });
+  });
+});
+
+describe("the preparation checklist (US-M-18)", () => {
+  const master = { id: 1, name: "總召", type: "Master", checkedIn: false, lastSeenAt: null, hasLink: true };
+  const role = (id: number, hasLink: boolean) => ({ id, name: `r${id}`, type: "Stylist", checkedIn: false, lastSeenAt: null, hasLink });
+  const snap = (cues: number, roles: ReturnType<typeof role>[]) =>
+    ({ cues: Array.from({ length: cues }, (_, i) => ({ id: i })), roles: [master, ...roles] }) as unknown as MasterSnapshot;
+
+  it("a new event has nothing ticked", () => {
+    const p = prep(snap(0, []));
+    expect([p.rundown, p.roles, p.links, prepDone(p)]).toEqual([false, false, false, false]);
+    expect(p.firstRole).toBeNull();
+  });
+  it("the Master alone is not a role, and links need every role (US-M-18.2)", () => {
+    const p = prep(snap(3, [role(2, true), role(3, false), role(4, false)]));
+    expect([p.rundown, p.roles, p.links]).toEqual([true, true, false]);
+    expect(p.firstWithoutLink?.id).toBe(3);
+    expect(p.firstRole?.id).toBe(2);
+  });
+  it("all three ticked is done (US-M-18.4)", () => {
+    expect(prepDone(prep(snap(1, [role(2, true)])))).toBe(true);
+    expect(prepDone(prep(snap(0, [role(2, true)])))).toBe(false);
   });
 });

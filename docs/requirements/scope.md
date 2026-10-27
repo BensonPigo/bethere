@@ -45,6 +45,7 @@
 | 維護模式（ADR-0012） | 完成 |
 | `reset-recovery-code` 指令 | 未做（M3a） |
 | 受邀的人以邀請碼在 `/new` 自己建立活動（ADR-0036） | 完成 |
+| 總召主控台的婚前準備清單 | 完成 |
 | 復原碼入口（`/recover`）：換發總召連結 | 完成 |
 | 備援 Rundown 列印 | 完成 |
 | 主持看得到整體延誤（ADR-0035） | 完成 |
@@ -131,6 +132,7 @@
 | 同上 | 貼上 CSV 匯入 | Rundown 編輯器／`rundown/import/preview`、`rundown/import` | 完成 |
 | 同上 | 新增角色、產生連結與 QR Code、撤銷與重發 | 角色與連結管理／`roles/add`、`roles/rename`、`roles/delete`、`roles/reissue`、`roles/revoke` | 完成 |
 | 同上 | 以某角色預覽畫面 | 角色與連結管理／`roles/preview` | 完成 |
+| 第一次拿到總召連結的人知道下一步（V1） | 婚前準備清單，依快照自動打勾 | 總召主控台（只有前端） | 完成 |
 | 從 LINE 點開就能用（`product/vision.md` V2） | LINE 內建瀏覽器中完整可用 | 所有畫面（只有前端） | 完成 |
 | 斷線時不變成空白（V4） | 離線唯讀：本機存最後一份快照 | 共通狀態層（只有前端） | 完成 |
 | 主機壞掉資料不見（V4） | 持續備份與開機還原 | 無畫面，在主機上執行（`ops/gcp/`） | 完成 |
