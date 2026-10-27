@@ -12,6 +12,7 @@
 - 維護模式（規則見 `requirements/stories.md` US-O-2）：`ops/gcp/maintenance.sh on|off|status`。`on` 開啟並重啟；`off` 解除、刪除還原標記並重啟；`status` 顯示 metadata、還原標記與服務實際的模式。三者最後都從外部確認：維護中 `/api/ping` 回 503 `maintenance`，開放時回 200。從備份還原的資料庫會一直維持維護模式，直到 `off`。維護中只能部署支援維護模式的版本，要回退到更舊的版本先 `off`。
 - 重建：`ops/gcp/rebuild.sh`（第 2 節程序 2）刪掉舊 VM 後呼叫 `ops/gcp/create-vm.sh`；`create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台，每次都建一顆名稱不重複的新開機磁碟；新 VM 一律帶 `bethere-maintenance=1`。重建後測試服務的網域不會沿用，要再執行一次 `ops/gcp/e2e-setup.sh`。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原，並以維護模式啟動。第一次部署時以 `ops/gcp/init-db.sh` 建立空資料庫後，執行 `ops/gcp/maintenance.sh off`。
 - 邀請碼（ADR-0036）：`ops/gcp/invite.sh` 在正式資料庫產生一組邀請碼，印出編號與邀請碼各一次，交給受邀的人在 `/new` 建立活動（不支援的舊版會回 `unknown command`）。記下編號給了誰：建立活動的操作紀錄只記編號。
+- 監控（US-O-7）：`ALERT_EMAIL=<信箱> ops/gcp/monitoring.sh` 建立外部探測與告警，網站打不開時約 3～5 分鐘後寄信，恢復時再寄一封。開發期主機平時關機，一律以 `ops/gcp/power.sh on|off` 開關，告警跟著開關；在 Cloud 網頁主控台直接關機，告警會一直寄信。`ops/gcp/power.sh status` 顯示主機與告警的狀態；重建或主機狀態不明時先看它，告警沒開就執行 `ops/gcp/power.sh on`（主機已開也可以，只會打開告警）。凍結期起主機一直開著，**不要**執行 `power.sh off`：它會連告警一起關掉。
 - 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
 - 活動前 7 天起凍結部署。
 
@@ -137,7 +138,7 @@ sequenceDiagram
   - GCP 帳單：付款用的信用卡效期涵蓋到 2027-09；設定預算告警。
   - 網域：續約到婚禮後一年以上，開啟 registrar lock。
   - 帳號：另開一個只屬於開發者本人的 Google 帳號，設為專案的第二位 Owner，以實體安全金鑰或印出的備用碼保護，平時不登入、不交給任何人；只在主帳號被鎖時使用。不把備援操作者設為 Owner，以免他的權限失去到期時間。
-- 凍結期開始時（活動前 7 天）：把 Uptime Check 的告警改為只通知備援操作者（手機推播加簡訊），並觸發一次測試告警確認收得到（ADR-0024）。
+- 凍結期開始時（活動前 7 天）：以 `ALERT_EMAIL=<備援操作者的信箱> ops/gcp/monitoring.sh` 把告警改為只寄給備援操作者，再在 Cloud 主控台替這個告警加上他的手機推播與簡訊通道（腳本只管 email；加完之後不要再執行 `monitoring.sh`，它會重建告警、拿掉這些通道），再在 Cloud 主控台直接關機（不用 `power.sh`，告警才會開著），等到收到告警信（約 3～5 分鐘），然後以 `ops/gcp/power.sh on` 開回，確認收到恢復通知（ADR-0024）。
 - 活動前一晚：總召在電腦上匯出並列印全部角色的紙本備援 Rundown。
 - 活動前一天：備援操作者經 IAP 登入正式 VM，從 GCS 實際還原一次到暫存檔，確認備份可用且內容是最新的（同時涵蓋「資料庫閒置時是否仍有可還原的快照」），**驗完立即刪除暫存檔**；確認備份 bucket 的 soft delete 仍為關閉。
 - 活動前一天：請所有工作人員用系統瀏覽器開一次連結，讓外殼與快照存到裝置上（iOS Safari 對 7 天沒互動的網站會清除本機資料與 Service Worker，太早開啟的快取可能已不在）。

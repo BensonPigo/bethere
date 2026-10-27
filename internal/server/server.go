@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -27,7 +28,15 @@ type Config struct {
 func New(cfg Config) http.Handler {
 	mux := http.NewServeMux()
 
+	// The external check (US-O-7) sees a database that does not answer.
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), api.ReadTimeout)
+		defer cancel()
+		if err := cfg.Store.Healthy(ctx); err != nil {
+			cfg.Logger.Error("healthz", "err", err)
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Write([]byte("ok\n"))
 	})
 

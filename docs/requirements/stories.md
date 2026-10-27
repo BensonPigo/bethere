@@ -774,7 +774,8 @@
 
 | 編號 | 驗收條件 |
 | --- | --- |
-| US-O-7.1 | Cloud Monitoring Uptime Check 從外部探測 `/healthz`，連續失敗時以 email 通知開發者；不在 VM 安裝代理程式 |
-| US-O-7.2 | 設定以腳本建立（`ops/gcp/`），可重複執行 |
+| US-O-7.1 | Cloud Monitoring Uptime Check 每分鐘從外部開 `https://<網域>/healthz`（含驗證 HTTPS 憑證）；兩個以上探測點失敗持續 2 分鐘就寄 email（實際約 3～5 分鐘後收到），恢復時再寄一封；不在 VM 安裝代理程式。`/healthz` 在 3 秒內以唯讀連線池查一次資料庫，失敗回 503 |
+| US-O-7.2 | `ALERT_EMAIL=<信箱> ops/gcp/monitoring.sh` 建立探測、email 通道與告警，可重複執行：VM 的網域變了就重建探測（這時舊告警先刪，中途失敗會說明要重跑）；告警每次先建新的再刪舊的，寄給 `ALERT_EMAIL`；VM 沒開時，告警建立為關閉 |
 | US-O-7.3 | 先以小型實驗確認 Litestream 能否提供「尚未複製的變動」；能就加 `/healthz/replica` 與第二個探測，不能就記下結果，改以「活動前一天實際還原一次」為唯一檢查（ADR-0024） |
+| US-O-7.4 | 開發期主機平時關機：`ops/gcp/power.sh on\|off\|status` 連同告警一起開關。`off` 先關告警再關機；`on` 開機後等 `/healthz` 回應才開告警，等不到就說明並讓告警維持關閉、提醒網站好了再執行一次 `on`；探測的網域與 VM 的不同時提出警告；讀不到告警時不關機；還沒有告警時只提出警告，照樣開關機 |
 | US-O-7.C1 | 演練：停掉服務，數分鐘內收到告警 email；恢復後收到恢復通知（待判定） |

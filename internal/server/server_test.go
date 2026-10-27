@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/BensonPigo/bethere/internal/api"
 )
 
 var fixedNow = time.Date(2027, 6, 6, 2, 30, 0, 0, time.UTC)
@@ -44,6 +47,21 @@ func TestHealthz(t *testing.T) {
 	rec := do(h, http.MethodGet, "/healthz", nil)
 	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "ok" {
 		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+// /healthz answers only when the database does, within the read timeout,
+// so the external check (US-O-7) sees a broken database too.
+func TestHealthzFailsWhenTheDatabaseDoes(t *testing.T) {
+	e := newEnv(t)
+	e.fs.healthErr = errors.New("disk I/O error")
+	h := New(Config{Static: fstest.MapFS{}, Store: e.fs, Now: func() time.Time { return fixedNow },
+		Version: "test-1", Logger: slog.New(slog.NewJSONHandler(io.Discard, nil))})
+	if rec := do(h, http.MethodGet, "/healthz", nil); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+	if d := e.fs.deadlines; len(d) != 1 || d[0] <= 0 || d[0] > api.ReadTimeout {
+		t.Fatalf("health read deadlines %v, want one within %v", d, api.ReadTimeout)
 	}
 }
 
