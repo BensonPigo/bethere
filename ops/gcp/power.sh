@@ -15,7 +15,9 @@ alert() {
     gc monitoring policies update "$p" "--$([ "$1" = on ] && echo enabled || echo no-enabled)" >/dev/null
     found=1
   done
-  [ -n "$found" ] || echo "warning: there is no alert yet; run ops/gcp/monitoring.sh" >&2
+  if [ -n "$found" ]; then alert_state="alert $1"; else
+    alert_state="no alert"; echo "warning: there is no alert yet; run ops/gcp/monitoring.sh" >&2
+  fi
 }
 status() { gc compute instances describe "$VM" --zone "$ZONE" --format='value(status)'; }
 
@@ -35,12 +37,12 @@ case "${1:-}" in
     checked="$(gc monitoring uptime list-configs --filter="displayName=bethere-healthz" --format='value(monitoredResource.labels.host)')"
     [ -z "$checked" ] || [ "$checked" = "$domain" ] ||
       echo "warning: the check opens $checked, not $domain; run ops/gcp/monitoring.sh" >&2
-    echo "on: https://$domain/ (alert on)" ;;
+    echo "on: https://$domain/ ($alert_state)" ;;
   off)
     # The alert goes off first: the other way round, stopping mails an alert.
     alert off
     gc compute instances stop "$VM" --zone "$ZONE" >/dev/null
-    echo "off: VM $(status) (alert off)" ;;
+    echo "off: VM $(status) ($alert_state)" ;;
   status)
     echo "VM: $(status)"
     echo "alert enabled: $(gc monitoring policies list --filter="displayName=\"$POLICY\"" --format='value(enabled)' | tr '\n' ' ')" ;;
