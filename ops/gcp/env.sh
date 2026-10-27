@@ -15,3 +15,31 @@ LITESTREAM_VERSION="0.5.17"
 IAP_RANGE="35.235.240.0/20"
 
 gc() { gcloud --project "$PROJECT" --quiet "$@"; }
+
+# vm_ssh runs a command on the VM; its errors stay visible, the IAP
+# tunnel's performance warnings do not.
+vm_ssh() {
+  gc compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --command "$1" \
+    2> >(grep -v -i -e numpy -e 'tcp_upload_bandwidth' -e '^WARNING:' -e '^$' >&2)
+}
+
+# probe_mode checks from outside that the site answers in mode $1 (0 open,
+# 1 maintenance): GET /api/ping is 200 when open and 503 "maintenance"
+# when not. It waits up to a minute for the restart to finish.
+probe_mode() {
+  local want="$1" domain code body
+  domain="$(gc compute instances describe "$VM" --zone "$ZONE" \
+    --format='value(metadata.items.bethere-domain)')"
+  body="$(mktemp)"
+  for _ in $(seq 1 30); do
+    code="$(curl -s -m 5 -o "$body" -w '%{http_code}' "https://$domain/api/ping" || true)"
+    if [ "$want" = 0 ] && [ "$code" = 200 ]; then rm -f "$body"; echo "open: https://$domain/"; return 0; fi
+    if [ "$want" = 1 ] && [ "$code" = 503 ] && grep -q '"maintenance"' "$body"; then
+      rm -f "$body"; echo "maintenance mode: https://$domain/"; return 0
+    fi
+    sleep 2
+  done
+  echo "https://$domain/api/ping answers $code, not $([ "$want" = 1 ] && echo 'maintenance' || echo 'open')" >&2
+  rm -f "$body"
+  return 1
+}

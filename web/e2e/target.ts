@@ -101,11 +101,12 @@ export type Counts = { today: number; later: number };
 
 // ---------------------------------------------------------------- local
 
-function localServe(s: NonNullable<State["local"]>, init: boolean): number {
+function localServe(s: NonNullable<State["local"]>, init: boolean, maintenance = false): number {
   // BETHERE_INIT=1 only for the very first start: a restart must reopen the database.
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.BETHERE_INIT;
   if (init) env.BETHERE_INIT = "1";
+  env.BETHERE_MAINTENANCE = maintenance ? "1" : "0";
   const p = spawn(s.bin, ["serve", "-db", join(s.dir, "e2e.db"), "-addr", `127.0.0.1:${LOCAL_PORT}`], {
     env, stdio: ["ignore", "ignore", "inherit"], detached: true,
   });
@@ -201,11 +202,13 @@ export async function stopServer() {
   await waitUp(s.baseURL, false);
 }
 
-export async function startServer() {
+// maintenance starts the local server in maintenance mode (US-O-2); the
+// VM's test service has no such switch, so that route runs locally only.
+export async function startServer(maintenance = false) {
   const s = loadState();
   if (target === "vm") vm("sudo systemctl start bethere-e2e");
   else {
-    s.local!.pid = localServe(s.local!, false);
+    s.local!.pid = localServe(s.local!, false, maintenance);
     saveState(s);
   }
   await waitUp(s.baseURL, true);

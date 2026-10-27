@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Create the single VM (tech-stack.md section 3). Usage: create-vm.sh <bethere-version>
+# It starts in maintenance mode: after a restore only the Master gets in
+# until ops/gcp/maintenance.sh off (US-O-2, operations/runbook.md section 2).
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 VERSION="${1:?usage: create-vm.sh <bethere-version>}"
@@ -21,7 +23,7 @@ gc compute instances create "$VM" --zone "$ZONE" \
   --service-account "$SA_EMAIL" --scopes cloud-platform \
   --maintenance-policy MIGRATE --restart-on-failure \
   --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring \
-  --metadata "bethere-version=$VERSION,caddy-version=$CADDY_VERSION,litestream-version=$LITESTREAM_VERSION,release-bucket=$RELEASE_BUCKET,backup-bucket=$BACKUP_BUCKET,bethere-domain=$DOMAIN" \
+  --metadata "bethere-version=$VERSION,caddy-version=$CADDY_VERSION,litestream-version=$LITESTREAM_VERSION,release-bucket=$RELEASE_BUCKET,backup-bucket=$BACKUP_BUCKET,bethere-domain=$DOMAIN,bethere-maintenance=1" \
   --metadata-from-file startup-script="$(dirname "$0")/vm-startup.sh"
 
 echo "https://$DOMAIN/"

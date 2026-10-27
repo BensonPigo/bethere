@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyNotModified, classifyResponse, shouldWipeLocalData, writeBody } from "./api";
+import { classifyNotModified, classifyResponse, inMaintenance, shouldWipeLocalData, writeBody } from "./api";
 import type { Guest, HostSnapshot, MasterCue, MasterSnapshot, RoleCue, RoleSnapshot } from "./api";
 import { printRows } from "./print";
 import { arrivedCount, callRunnerTitle, searchGuests, tableText } from "./jobs";
@@ -136,8 +136,20 @@ describe("local data wipe rules (access-control 3.3, api section 7)", () => {
     expect(o.kind).toBe("ok");
     expect(shouldWipeLocalData(o)).toBe(false);
   });
-  it("401/403/500 never wipe, even with result in the body", () => {
-    for (const st of [401, 403, 500]) {
+  it("maintenance mode's 503 is offline, never a wipe (US-O-2.2)", () => {
+    const o = classifyResponse(503, JSON_CT, { error: "maintenance" });
+    expect(o.kind).toBe("failure");
+    expect(shouldWipeLocalData(o)).toBe(false);
+  });
+  it("only the Master's snapshot with the flag shows the maintenance banner (US-M-9.1)", () => {
+    const m = { role: { type: "Master" } } as unknown as MasterSnapshot;
+    expect(inMaintenance({ ...m, maintenance: true })).toBe(true);
+    expect(inMaintenance({ ...m, maintenance: false })).toBe(false);
+    expect(inMaintenance(m)).toBe(false);
+    expect(inMaintenance({ role: { type: "Stylist" }, maintenance: true } as unknown as RoleSnapshot)).toBe(false);
+  });
+  it("401/403/500/503 never wipe, even with result in the body", () => {
+    for (const st of [401, 403, 500, 503]) {
       expect(wipes(st, JSON_CT, { result: "invalid" })).toBe(false);
       expect(wipes(st, JSON_CT, { error: "internal" })).toBe(false);
     }

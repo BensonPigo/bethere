@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/BensonPigo/bethere/internal/api"
@@ -21,6 +20,8 @@ type Config struct {
 	Now     func() time.Time // serve passes time.Now only (api.md section 1)
 	Version string
 	Logger  *slog.Logger
+	// Maintenance lets only the Master into /api/ (api.Gate, US-O-2).
+	Maintenance bool
 }
 
 func New(cfg Config) http.Handler {
@@ -41,7 +42,8 @@ func New(cfg Config) http.Handler {
 
 	// The token-authenticated API (api.md section 3). The prototype's
 	// POST /api/report is gone (api.md section 3).
-	api.New(api.Config{Store: cfg.Store, Now: cfg.Now, Logger: cfg.Logger}).Register(mux)
+	a := api.New(api.Config{Store: cfg.Store, Now: cfg.Now, Logger: cfg.Logger, Maintenance: cfg.Maintenance})
+	a.Register(mux)
 
 	index := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
@@ -71,10 +73,10 @@ func New(cfg Config) http.Handler {
 		files.ServeHTTP(w, r)
 	})
 
-	return securityHeaders(noStoreAPI(mux))
+	return securityHeaders(noStoreAPI(a.Gate(mux)))
 }
 
-func isAPI(r *http.Request) bool { return strings.HasPrefix(r.URL.Path, "/api/") }
+func isAPI(r *http.Request) bool { return api.IsAPIPath(r) }
 
 // noStoreAPI sets Cache-Control: no-store on every /api/ response before
 // any handler runs, so router 404 and 405 responses, body errors and 500s

@@ -74,6 +74,7 @@ export type MasterSnapshot = SnapshotBase & {
   tasks?: Task[];
   guests?: Guest[];
   checklist?: CheckItem[];
+  maintenance?: boolean; // only the Master gets through (US-O-2.5); absent in older snapshots
 };
 
 // The role types that read their own cues, check in and can be assigned
@@ -136,6 +137,11 @@ export type Snapshot = MasterSnapshot | RoleSnapshot | HostSnapshot;
 
 export function isMasterSnapshot(s: Snapshot): s is MasterSnapshot {
   return s.role.type === "Master";
+}
+
+// inMaintenance: the Master's banner while the other roles are kept out (US-M-9.1).
+export function inMaintenance(s: Snapshot): boolean {
+  return isMasterSnapshot(s) && s.maintenance === true;
 }
 
 export function isHostSnapshot(s: Snapshot): s is HostSnapshot {

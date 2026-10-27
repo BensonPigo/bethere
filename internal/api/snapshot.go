@@ -61,6 +61,8 @@ type masterSnapshot struct {
 	Tasks     []taskView  `json:"tasks"`
 	Guests    []guestView `json:"guests"`
 	Checklist []checkView `json:"checklist"`
+	// Maintenance mode is on: only the Master gets through (US-O-2.5).
+	Maintenance bool `json:"maintenance"`
 }
 
 // taskView, guestView and checkView are api.md 9.4–9.6; roles by name,
@@ -228,7 +230,7 @@ func optTime(t time.Time) *string {
 func (a *API) buildSnapshot(d store.SnapshotData, now time.Time) (any, error) {
 	switch {
 	case d.Owner.RoleType == domain.Master:
-		return buildMaster(d, now, a.LastSeen)
+		return buildMaster(d, now, a.LastSeen, a.maintenance)
 	case d.Owner.RoleType.HasOwnCues():
 		return buildRole(d, now), nil
 	case d.Owner.RoleType == domain.Host:
@@ -283,8 +285,9 @@ func buildHost(d store.SnapshotData, now time.Time) hostSnapshot {
 	return s
 }
 
-func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int64) (time.Time, bool)) (masterSnapshot, error) {
+func buildMaster(d store.SnapshotData, now time.Time, lastSeen func(tokenID int64) (time.Time, bool), maintenance bool) (masterSnapshot, error) {
 	s := masterSnapshot{
+		Maintenance:  maintenance,
 		EventVersion: d.Version,
 		ServerTime:   FormatTime(now),
 		EventStatus:  d.Event.Status,

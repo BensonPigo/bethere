@@ -20,4 +20,5 @@ gc compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --command '
   sudo /opt/bethere/prepare.sh bethere   # install the release in metadata first
   sudo -u bethere env BETHERE_INIT=1 timeout 10 /opt/bethere/bethere serve -db /var/lib/bethere/bethere.db -addr 127.0.0.1:18081 || true
   test -s /var/lib/bethere/bethere.db
+  sudo rm -f /var/lib/bethere/maintenance.forced   # a new, empty database has nothing to check
   sudo systemctl start bethere && systemctl is-active bethere'

@@ -20,6 +20,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -79,14 +80,18 @@ type Config struct {
 	Store  Store
 	Now    func() time.Time
 	Logger *slog.Logger
+	// Maintenance lets only the Master through (Gate, US-O-2).
+	Maintenance bool
 }
 
 // API holds the handlers and the in-memory lastSeenAt of every token
 // (tech-stack.md 2.1「lastSeenAt」).
 type API struct {
-	store  Store
-	now    func() time.Time
-	logger *slog.Logger
+	store       Store
+	now         func() time.Time
+	logger      *slog.Logger
+	maintenance bool
+	routes      []string
 
 	mu sync.Mutex
 	// lastSeen is keyed by access_tokens.id, never the hash: the Master's
@@ -99,46 +104,53 @@ func New(cfg Config) *API {
 	if cfg.Store == nil || cfg.Now == nil || cfg.Logger == nil {
 		panic("api: Store, Now and Logger are required")
 	}
-	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, lastSeen: map[int64]time.Time{}}
+	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, maintenance: cfg.Maintenance, lastSeen: map[int64]time.Time{}}
 }
 
 // Register adds the endpoints to mux (api.md section 3).
 func (a *API) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/snapshot", a.getSnapshot)
-	mux.HandleFunc("POST /api/cues/advance", a.write(capAdvance, versionOnly, a.advance))
-	mux.HandleFunc("POST /api/cues/undo", a.write(capUndo, versionOnly, a.undo))
-	mux.HandleFunc("POST /api/cues/shift", a.write(capShift, shiftFields(true), a.shift))
-	mux.HandleFunc("POST /api/cues/shift/preview", a.previewShift)
-	mux.HandleFunc("POST /api/checkin", a.write(capCheckIn, ownCheckInFields, a.checkIn))
-	mux.HandleFunc("POST /api/roles/checkin", a.write(capProxyCheckIn, proxyCheckInFields, a.proxyCheckIn))
-	mux.HandleFunc("POST /api/cues/skip", a.write(capEditRundown, skipFields, a.skip))
-	mux.HandleFunc("POST /api/cues/insert", a.write(capEditRundown, insertFields, a.insert))
-	mux.HandleFunc("POST /api/cues/roles", a.write(capEditRundown, assignFields, a.assign))
-	mux.HandleFunc("POST /api/cues/edit", a.write(capEditRundown, editFields, a.edit))
-	mux.HandleFunc("POST /api/roles/reissue", a.write(capLinks, reissueFields, a.reissue))
-	mux.HandleFunc("POST /api/roles/revoke", a.write(capLinks, linkFields, a.revoke))
+	handle := func(pattern string, h http.HandlerFunc) {
+		a.routes = append(a.routes, pattern)
+		mux.HandleFunc(pattern, h)
+	}
+	handle("GET /api/snapshot", a.getSnapshot)
+	handle("POST /api/cues/advance", a.write(capAdvance, versionOnly, a.advance))
+	handle("POST /api/cues/undo", a.write(capUndo, versionOnly, a.undo))
+	handle("POST /api/cues/shift", a.write(capShift, shiftFields(true), a.shift))
+	handle("POST /api/cues/shift/preview", a.previewShift)
+	handle("POST /api/checkin", a.write(capCheckIn, ownCheckInFields, a.checkIn))
+	handle("POST /api/roles/checkin", a.write(capProxyCheckIn, proxyCheckInFields, a.proxyCheckIn))
+	handle("POST /api/cues/skip", a.write(capEditRundown, skipFields, a.skip))
+	handle("POST /api/cues/insert", a.write(capEditRundown, insertFields, a.insert))
+	handle("POST /api/cues/roles", a.write(capEditRundown, assignFields, a.assign))
+	handle("POST /api/cues/edit", a.write(capEditRundown, editFields, a.edit))
+	handle("POST /api/roles/reissue", a.write(capLinks, reissueFields, a.reissue))
+	handle("POST /api/roles/revoke", a.write(capLinks, linkFields, a.revoke))
 	// The preparation (M2c).
-	mux.HandleFunc("POST /api/cues/update", a.write(capEditRundown, updateFields, a.updateCue))
-	mux.HandleFunc("POST /api/cues/move", a.write(capEditRundown, moveFields, a.moveCue))
-	mux.HandleFunc("POST /api/cues/delete", a.write(capEditRundown, deleteCueFields, a.deleteCue))
-	mux.HandleFunc("POST /api/rundown/import/preview", a.previewImport)
-	mux.HandleFunc("POST /api/rundown/import", a.write(capEditRundown, importFields, a.importRundown))
-	mux.HandleFunc("POST /api/roles/add", a.write(capLinks, addRoleFields, a.addRole))
-	mux.HandleFunc("POST /api/roles/rename", a.write(capLinks, renameFields, a.renameRole))
-	mux.HandleFunc("POST /api/roles/delete", a.write(capLinks, deleteRoleFields, a.deleteRole))
-	mux.HandleFunc("POST /api/roles/preview", a.previewRole)
+	handle("POST /api/cues/update", a.write(capEditRundown, updateFields, a.updateCue))
+	handle("POST /api/cues/move", a.write(capEditRundown, moveFields, a.moveCue))
+	handle("POST /api/cues/delete", a.write(capEditRundown, deleteCueFields, a.deleteCue))
+	handle("POST /api/rundown/import/preview", a.previewImport)
+	handle("POST /api/rundown/import", a.write(capEditRundown, importFields, a.importRundown))
+	handle("POST /api/roles/add", a.write(capLinks, addRoleFields, a.addRole))
+	handle("POST /api/roles/rename", a.write(capLinks, renameFields, a.renameRole))
+	handle("POST /api/roles/delete", a.write(capLinks, deleteRoleFields, a.deleteRole))
+	handle("POST /api/roles/preview", a.previewRole)
 	// The four jobs (api.md section 9).
-	mux.HandleFunc("POST /api/cues/ack", a.write(capAck, ackFields, a.ack))
-	mux.HandleFunc("POST /api/tasks/add", a.write(capAddTask, addTaskFields, a.addTask))
-	mux.HandleFunc("POST /api/tasks/set", a.write(capSetTask, setTaskFields, a.setTask))
-	mux.HandleFunc("POST /api/tasks/delete", a.write(capManageJobs, deleteTaskFields, a.deleteTask))
-	mux.HandleFunc("POST /api/guests/import", a.write(capManageJobs, guestImportFields, a.importGuests))
-	mux.HandleFunc("POST /api/guests/arrive", a.write(capArrive, arriveFields, a.arrive))
-	mux.HandleFunc("POST /api/checklist/items", a.write(capManageJobs, checklistFields, a.replaceChecklist))
-	mux.HandleFunc("POST /api/checklist/check", a.write(capCheckItem, checkItemFields, a.checkItem))
+	handle("POST /api/cues/ack", a.write(capAck, ackFields, a.ack))
+	handle("POST /api/tasks/add", a.write(capAddTask, addTaskFields, a.addTask))
+	handle("POST /api/tasks/set", a.write(capSetTask, setTaskFields, a.setTask))
+	handle("POST /api/tasks/delete", a.write(capManageJobs, deleteTaskFields, a.deleteTask))
+	handle("POST /api/guests/import", a.write(capManageJobs, guestImportFields, a.importGuests))
+	handle("POST /api/guests/arrive", a.write(capArrive, arriveFields, a.arrive))
+	handle("POST /api/checklist/items", a.write(capManageJobs, checklistFields, a.replaceChecklist))
+	handle("POST /api/checklist/check", a.write(capCheckItem, checkItemFields, a.checkItem))
 	// The recovery code, without a token (US-O-3).
-	mux.HandleFunc("POST /api/recover/master", a.recoverMaster)
+	handle("POST /api/recover/master", a.recoverMaster)
 }
+
+// Routes lists the patterns Register added, so tests can try every one.
+func (a *API) Routes() []string { return slices.Clone(a.routes) }
 
 // LastSeen returns when the link with this access_tokens.id last passed
 // authentication; 0 (no link) is never seen.

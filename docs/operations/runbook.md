@@ -1,14 +1,15 @@
 # 維運手冊 (Runbook)
 
 > 部署、回退、故障重建與活動前後的檢查。伺服器與主機的技術選擇見 `design/tech-stack.md` 第 3 節；理由見 ADR-0009、ADR-0012、ADR-0013。
-> 持續備份與開機還原已在正式專案啟用並演練通過。維護模式、刪除舊 VM 的腳本、`create-vm.sh` 帶 `bethere-maintenance` 都還沒有；第 2 節因此仍是要求草案（RISK-4、RISK-9）。
+> 持續備份與開機還原已在正式專案啟用並演練通過；維護模式已實作。刪除舊 VM 的腳本還沒有，第 2 節因此仍是要求草案（RISK-4）。
 
 ---
 
 ## 1. 部署與回退
 
-- 部署：`ops/gcp/release.sh` 上傳發行版 → `ops/gcp/deploy.sh <版本>` 改 metadata 並重啟服務。回退是同一個指令帶上一版。
-- 重建：`ops/gcp/create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原。
+- 部署：`ops/gcp/release.sh` 上傳發行版 → `ops/gcp/deploy.sh <版本>` 改 metadata、依本機的 `ops/gcp/vm-startup.sh` 重新佈置啟動腳本與服務設定，再重啟服務；最後在 VM 上確認版本，並從外部確認網站處於服務啟動時的模式（開放或維護）。回退是同一個指令帶上一版。
+- 維護模式（規則見 `requirements/stories.md` US-O-2）：`ops/gcp/maintenance.sh on|off|status`。`on` 開啟並重啟；`off` 解除、刪除還原標記並重啟；`status` 顯示 metadata、還原標記與服務實際的模式。三者最後都從外部確認：維護中 `/api/ping` 回 503 `maintenance`，開放時回 200。從備份還原的資料庫會一直維持維護模式，直到 `off`。維護中只能部署支援維護模式的版本，要回退到更舊的版本先 `off`。
+- 重建：`ops/gcp/create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台；新 VM 一律帶 `bethere-maintenance=1`。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原，並以維護模式啟動。第一次部署時以 `ops/gcp/init-db.sh` 建立空資料庫後，執行 `ops/gcp/maintenance.sh off`。
 - 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
 - 活動前 7 天起凍結部署。
 
@@ -56,15 +57,17 @@ sequenceDiagram
   - 紙本手冊寫給總召：看到「離線中」時，先用自己的行動網路開一次連結；仍然離線就打給備援操作者。備援操作者收到告警或電話後，以自己的行動網路開 `/healthz` 判斷是伺服器還是會場網路的問題。
 - **權限**：`roles/compute.instanceAdmin.v1`、對 VM 服務帳號的 `roles/iam.serviceAccountUser`、`roles/iap.tunnelResourceAccessor` 與 `roles/compute.osAdminLogin`（供婚前還原測試；專案開啟 OS Login 時需要）。這些權限可以改 VM 的啟動腳本並登入主機，**等同完全接管**，因此以 IAM 條件設定**到期時間**（婚禮後數天自動失效），並列入 `access-control.md` 的威脅表。
 - 操作手冊只涵蓋兩件事，**由他本人在婚前演練一次**：
-  1. **退回上一個發行版**：把 metadata 的版本號改回上一版並重啟服務。
+  1. **退回上一個發行版**：`ops/gcp/deploy.sh <上一版>`。
   2. **VM 或磁碟故障**（啟動門檻：服務中斷超過約 10 分鐘仍未自行恢復；放棄條件：開始後超過 30 分鐘、步驟 2～3 失敗兩次、舊 VM 刪不掉（靜態 IP 仍被佔用）或建不出新的 e2-micro，就停止並改靠離線快取與紙本）：
      1. 刪除舊 VM（保留舊磁碟，之後不再掛載），確認專案裡一台 VM 都不剩。
-     2. 以預先寫好的建立指令，在 `asia-east1` 的任一可用區建立恰好一台新 VM：**新的空開機磁碟**、沿用靜態 IP、metadata 帶**已記錄的目前版本號**與 `bethere-maintenance=1`；啟動腳本自動從 GCS 還原。
+     2. 以 `ops/gcp/create-vm.sh <已記錄的目前版本號>`（必須是支援維護模式的版本，否則還原後服務不會啟動）（`ZONE` 可指定 `asia-east1` 的任一可用區）建立恰好一台新 VM：**新的空開機磁碟**、沿用靜態 IP、`bethere-maintenance=1`；啟動腳本自動從 GCS 還原，服務以維護模式啟動。
      3. 檢查點：專案裡恰好 1 台 VM、使用的是新磁碟、`/healthz` 正常、HTTPS 憑證有效。不符時刪除這台 VM，回到步驟 2。
      4. 請總召用 Master 連結確認 Rundown 與 Cue 狀態是最新的，並在角色與連結管理畫面確認各角色的連結狀態（未發／有效／已撤銷）。此時其他角色仍被擋、`lastSeenAt` 已歸零，「最近有人在用」必定是空的，不必核對。
-        - 資料略舊：總召在維護模式下直接補登（Master 可寫入）；故障前若曾以復原碼換發 Master，再換發一次。
+        - 資料略舊：總召在維護模式下直接補登（Master 可寫入）。
+        - 一律由備援操作者以復原碼在 `/recover` **再換發一次** Master 連結，傳給總召：備份時間點之後若曾換發，還原後舊的 Master 連結又會有效。
+        - 總召核對備份時間點之後重發或新增的連結：還原後這些連結不存在，解除維護時那些裝置會收到「連結已失效」並清除資料，要重發。
         - 資料明顯錯誤或是空的：**不解除維護模式**，當天改靠離線快取與紙本。
-     5. 把 metadata 改為 `bethere-maintenance=0` 並重啟服務（開啟與解除用同一種機制，服務啟動時會重讀 metadata）；各端短暫離線後自動恢復。以備援操作者專用的**測試角色連結**確認 API 正常回應，並請總召確認維護橫幅已消失（`/healthz` 在維護模式下也正常，不能用來判斷）。目標 15 分鐘內恢復。
+     5. 執行 `ops/gcp/maintenance.sh off`（改 metadata、刪除還原標記並重啟，最後從外部確認已開放）；各端短暫離線後自動恢復。以備援操作者專用的**測試角色連結**確認 API 正常回應，並請總召確認維護橫幅已消失（`/healthz` 在維護模式下也正常，不能用來判斷）。目標 15 分鐘內恢復。
 - 以上步驟在實作時寫成腳本（版本號、可用區參數），並抄進紙本手冊。
 - **演練**在另一個暫存專案進行（同一套腳本、另一組 bucket 與 IAM、另一個子網域），於凍結期之前完成，不碰正式專案。以**備援操作者本人的帳號與權限**執行，確認權限足夠。必做項目：
   - 「空磁碟 → 資料回來」。
