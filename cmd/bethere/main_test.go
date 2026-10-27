@@ -433,6 +433,33 @@ func TestBETHERE_INITAcceptsOnlyOne(t *testing.T) {
 	}
 }
 
+// US-O-2.1: BETHERE_MAINTENANCE is "1", "0" or unset; anything else,
+// the unit's "unread" above all, refuses to start.
+func TestUS_O_2_1_BETHERE_MAINTENANCEAcceptsOnlyZeroOrOne(t *testing.T) {
+	for v, want := range map[string]bool{"": false, "0": false, "1": true} {
+		on, err := maintenanceFromEnv(func(string) (string, bool) { return v, true })
+		if err != nil || on != want {
+			t.Errorf("%q: %v %v", v, on, err)
+		}
+	}
+	db := newDB(t)
+	for _, v := range []string{"unread", "true", " 1", "1\n", "on", "2", "01"} {
+		r := runWith("", map[string]string{"BETHERE_MAINTENANCE": v}, "serve", "-db", db, "-addr", "127.0.0.1:0")
+		if r.code != 1 || !strings.Contains(r.stderr, "BETHERE_MAINTENANCE") {
+			t.Errorf("serve with BETHERE_MAINTENANCE=%q: exit %d %q", v, r.code, r.stderr)
+		}
+	}
+}
+
+// US-O-2.1: the start script asks the release whether it knows
+// maintenance mode before starting it in that mode.
+func TestUS_O_2_1_FeaturesListsMaintenance(t *testing.T) {
+	r := runWith("", nil, "features")
+	if r.code != 0 || r.stdout != "maintenance\n" {
+		t.Errorf("features: %d %q", r.code, r.stdout)
+	}
+}
+
 func TestTokenFromLink(t *testing.T) {
 	tok, _ := auth.NewToken()
 	for _, in := range []string{tok, " " + tok + "\n", base + "/#t=" + tok, "https://other.example/#t=" + tok} {

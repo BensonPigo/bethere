@@ -6,6 +6,7 @@
 //	bethere add-role       -db <path> -name <name> -type Stylist|Host [-view HandsFree|Glance] -base-url https://<host>
 //	bethere import-rundown -db <path> -file rundown.csv
 //	bethere version
+//	bethere features
 //
 // Every subcommand needs -db; there is no default, so a command can never
 // open a database other than the one named. Only serve with BETHERE_INIT=1
@@ -44,7 +45,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|version> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -78,6 +79,11 @@ func run(args []string, c cli) int {
 		err = importRundown(args[1:], c)
 	case "version":
 		fmt.Fprintln(c.stdout, version)
+		return 0
+	case "features":
+		// The VM's start script asks before starting in maintenance mode, so
+		// a release without it is refused rather than left open (US-O-2.1).
+		fmt.Fprintln(c.stdout, "maintenance")
 		return 0
 	default:
 		fmt.Fprintf(c.stderr, "unknown command %q\n%s\n", args[0], usage)
@@ -129,6 +135,21 @@ func initFromEnv(lookupEnv func(string) (string, bool)) (bool, error) {
 	return false, fmt.Errorf("BETHERE_INIT=%q: only 1 (create a new database on the very first deployment) or unset is accepted", v)
 }
 
+// maintenanceFromEnv reads BETHERE_MAINTENANCE (US-O-2.1): "1" is
+// maintenance mode, "0" or unset is open, and anything else refuses to
+// start. The VM's unit sets "unread" until its start script has read the
+// flag from metadata, so a flag that was never read never means open.
+func maintenanceFromEnv(lookupEnv func(string) (string, bool)) (bool, error) {
+	v, _ := lookupEnv("BETHERE_MAINTENANCE")
+	switch v {
+	case "", "0":
+		return false, nil
+	case "1":
+		return true, nil
+	}
+	return false, fmt.Errorf("BETHERE_MAINTENANCE=%q: only 1 (maintenance mode) or 0 is accepted", v)
+}
+
 func serve(args []string, c cli) error {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	addr := fs.String("addr", "127.0.0.1:8080", "listen address (Caddy proxies to it)")
@@ -140,6 +161,10 @@ func serve(args []string, c cli) error {
 		return err
 	}
 	create, err := initFromEnv(c.lookupEnv)
+	if err != nil {
+		return err
+	}
+	maintenance, err := maintenanceFromEnv(c.lookupEnv)
 	if err != nil {
 		return err
 	}
@@ -156,11 +181,12 @@ func serve(args []string, c cli) error {
 	srv := &http.Server{
 		Addr: *addr,
 		Handler: server.New(server.Config{
-			Static:  web.Dist(),
-			Store:   st,
-			Now:     time.Now, // the system clock only (api.md section 1)
-			Version: version,
-			Logger:  logger,
+			Static:      web.Dist(),
+			Store:       st,
+			Now:         time.Now, // the system clock only (api.md section 1)
+			Version:     version,
+			Logger:      logger,
+			Maintenance: maintenance,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -174,10 +200,16 @@ func serve(args []string, c cli) error {
 		srv.Shutdown(shutdownCtx)
 	}()
 
-	// The daily cleanup (US-O-5) stops with the server, before the store closes.
+	// The daily cleanup (US-O-5) stops with the server, before the store
+	// closes. It waits out maintenance mode: nothing is deleted while the
+	// Master checks a restored database.
 	purged := make(chan struct{})
 	go func() {
 		defer close(purged)
+		if maintenance {
+			logger.Info("purge paused: maintenance mode")
+			return
+		}
 		purgeDaily(ctx, st.PurgeEnded, time.Now, 24*time.Hour, logger)
 	}()
 	defer func() {
@@ -185,7 +217,7 @@ func serve(args []string, c cli) error {
 		<-purged
 	}()
 
-	logger.Info("listening", "addr", *addr, "version", version)
+	logger.Info("listening", "addr", *addr, "version", version, "maintenance", maintenance)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

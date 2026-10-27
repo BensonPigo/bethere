@@ -1,6 +1,6 @@
 // `/` entry: pick the screen from the role's view in the snapshot
 // (tech-stack.md 2.2「路由」; ADR-0025).
-import { isHostSnapshot, isMasterSnapshot } from "./api";
+import { inMaintenance, isHostSnapshot, isMasterSnapshot } from "./api";
 import type { RoleSnapshot } from "./api";
 import { Dashboard } from "./Dashboard";
 import { isLineBrowser, tokenFromHash } from "./env";
@@ -54,6 +54,11 @@ export function App() {
         <div class="offline-banner">
           離線中，資料更新於 {formatHM(snap.serverTime, tz)}
           {s.lastOk !== null && offlineFor > OFFLINE_WARN_MS ? "・倒數可能不準" : ""}
+        </div>
+      )}
+      {inMaintenance(snap) && (
+        <div class="maintenance-banner" role="status">
+          維護中，其他角色無法連線
         </div>
       )}
       {notStarted && <div class="draft-strip">{notStarted}</div>}

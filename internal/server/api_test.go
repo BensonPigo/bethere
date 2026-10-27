@@ -588,7 +588,10 @@ func TestSnapshotKeySets(t *testing.T) {
 	wantKeys(t, "ok response", r.body, "result", "snapshot")
 	m := r.snapshot(t)
 	wantKeys(t, "Master snapshot", m, "eventVersion", "serverTime", "eventStatus", "role", "eventDay", "event", "cues",
-		"activeCueId", "undo", "roles", "conflicts", "overrunMin", "outOfOrder", "tasks", "guests", "checklist")
+		"activeCueId", "undo", "roles", "conflicts", "overrunMin", "outOfOrder", "tasks", "guests", "checklist", "maintenance")
+	if m["maintenance"] != false {
+		t.Errorf("maintenance = %v, want false", m["maintenance"])
+	}
 	wantKeys(t, "role", m["role"].(map[string]any), "type", "name", "view", "checksIn")
 	wantKeys(t, "eventDay", m["eventDay"].(map[string]any), "date", "timezone")
 	wantKeys(t, "event", m["event"].(map[string]any), "name", "date", "timezone")

@@ -141,7 +141,7 @@
 
 - 找不到資料庫就拒絕啟動；只有第一次部署設定 `BETHERE_INIT=1` 才建立。
 - 資料庫錯誤、逾時一律回伺服器錯誤；只有確實查無有效 Token 才回「無效」。
-- 維護模式：VM metadata `bethere-maintenance=1` 時只放行 Master，其他角色看到離線並保留快照；Master 畫面顯示「維護中」。讀不到 metadata 就不啟動。維護模式尚未實作（RISK-9）。
+- 維護模式：VM metadata `bethere-maintenance=1` 時只放行 Master，其他角色看到離線並保留快照；Master 畫面顯示「維護中」。讀不到 metadata 就不啟動；從備份還原的資料庫一律以維護模式啟動。
 - 理由：還原失敗時若悄悄開一個空庫，所有裝置會收到「無效」而清掉離線快取。
 
 ### ADR-0019 資料庫遷移只做向後相容的新增

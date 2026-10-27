@@ -536,3 +536,35 @@ test("伺服器停擺：各裝置顯示離線、恢復後自己更新", async ({
     await expect(media.locator(".current-line")).toHaveText(/^目前：迎賓・/, { timeout: PROPAGATE_MS });
   });
 });
+
+// ---------------------------------------------------------------- 維護模式（本機）
+
+test("維護模式：只有總召連得上，其他人離線但保留時程，解除後自己恢復", async ({ browser }) => {
+  test.skip(target === "vm", "the VM's test service has no maintenance switch; the drill covers the VM (US-O-2.C1)");
+  test.setTimeout(180 * 1000);
+  const links = event(5);
+  const master = await open(browser, links, "總召");
+  const media = await open(browser, links, "攝影");
+  await advance(master); // runs on its own too, not only after the outage route
+  await expect(media.locator(".current-line")).toBeVisible({ timeout: PROPAGATE_MS });
+  const before = await media.locator(".current-line").textContent();
+
+  await test.step("以維護模式重新啟動：總召看到橫幅並照常推進，攝影顯示離線、時程還在（US-O-2.C1 的自動部分）", async () => {
+    await stopServer();
+    await startServer(true);
+    await expect(master.locator(".maintenance-banner")).toHaveText("維護中，其他角色無法連線", { timeout: OFFLINE_MS });
+    await expect(master.locator(".offline-banner")).toBeHidden({ timeout: OFFLINE_MS });
+    await advance(master);
+    await expect(media.locator(".offline-banner")).toContainText("離線中", { timeout: OFFLINE_MS });
+    await expect(media.locator(".current-line")).toHaveText(before!);
+    await expect(media.locator(".next-card")).toBeVisible();
+  });
+
+  await test.step("解除維護後攝影自己恢復並收到推進，總召的橫幅消失", async () => {
+    await stopServer();
+    await startServer();
+    await expect(media.locator(".offline-banner")).toBeHidden({ timeout: OFFLINE_MS });
+    await expect(media.locator(".current-line")).not.toHaveText(before!, { timeout: PROPAGATE_MS });
+    await expect(master.locator(".maintenance-banner")).toBeHidden({ timeout: OFFLINE_MS });
+  });
+});

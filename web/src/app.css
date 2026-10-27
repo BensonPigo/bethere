@@ -9,6 +9,7 @@ html, body, #app { height: 100%; }
 }
 .line-note { font-size: 12px; opacity: 0.6; text-align: center; padding: 2px 8px; }
 .offline-banner { background: #8c1d18; color: #fff; }
+.maintenance-banner { flex: none; padding: 10px 16px; text-align: center; font-weight: 700; background: #8a5300; color: #fff; }
 .notice { background: #174ea6; color: #fff; }
 
 .master { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }

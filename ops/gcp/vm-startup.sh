@@ -56,9 +56,45 @@ YML
       # Leftovers of an earlier crash or interrupted restore; the .tmp may
       # hold a full copy of the data.
       rm -f "$db-wal" "$db-shm" "$db-journal" "$db.tmp"
+      # A restored database opens in maintenance mode until the Master has
+      # checked it (US-O-2). The marker is on disk before the restore, so a
+      # crash after it can never start the restored data open. It is removed
+      # by ops/gcp/maintenance.sh off, and by ops/gcp/init-db.sh for a new,
+      # empty database.
+      touch /var/lib/bethere/maintenance.forced
+      sync /var/lib/bethere/maintenance.forced /var/lib/bethere
       runuser -u bethere -- /opt/bethere/litestream restore -config /etc/litestream.yml -if-replica-exists -integrity-check quick "$db"
       if [ -e "$db" ]; then chmod 600 "$db"; fi
     fi ;;
+  # Maintenance mode (US-O-2.1): metadata bethere-maintenance 1 or the
+  # restore marker. A missing key is 0; any other failure, or a value other
+  # than exactly 0 or 1, stops the start rather than opening it. A release
+  # that does not know the mode is refused while it is on.
+  maintenance)
+    # A refused start leaves no mode behind for maintenance.sh status.
+    rm -f /run/bethere/maintenance.env
+    body="$(mktemp)"
+    code="$(curl -sS -o "$body" -w '%{http_code}' -H "Metadata-Flavor: Google" \
+      "http://metadata.google.internal/computeMetadata/v1/instance/attributes/bethere-maintenance")"
+    case "$code" in
+      200) m="$(cat "$body")" ;;
+      404) m=0 ;;
+      *) echo "bethere-maintenance: metadata answered $code" >&2; exit 1 ;;
+    esac
+    rm -f "$body"
+    if [ "$m" != 0 ] && [ "$m" != 1 ]; then
+      echo "bethere-maintenance: $m is not 0 or 1" >&2; exit 1
+    fi
+    if [ -e /var/lib/bethere/maintenance.forced ]; then m=1; fi
+    if [ "$m" = 1 ]; then
+      features="$(runuser -u bethere -- /opt/bethere/bethere features)" || features=""
+      if ! printf '%s\n' "$features" | grep -qx maintenance; then
+        echo "the installed release does not know maintenance mode; refusing to start" >&2; exit 1
+      fi
+    fi
+    mkdir -p /run/bethere
+    echo "BETHERE_MAINTENANCE=$m" > /run/bethere/maintenance.env.new
+    mv -f /run/bethere/maintenance.env.new /run/bethere/maintenance.env ;;
   caddy)
     v="$(md caddy-version)"; install_bin caddy "$v" "caddy/$v/caddy"
     printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$(md bethere-domain)" > /etc/caddy/Caddyfile
@@ -81,6 +117,10 @@ After=network-online.target
 User=bethere
 ExecStartPre=+/opt/bethere/prepare.sh bethere
 ExecStartPre=+/opt/bethere/prepare.sh backup
+ExecStartPre=+/opt/bethere/prepare.sh maintenance
+# "unread" refuses to start; the file written by the step above replaces it.
+Environment=BETHERE_MAINTENANCE=unread
+EnvironmentFile=-/run/bethere/maintenance.env
 # The database is never created here (tech-stack.md 2.1「不自動建庫」): the first
 # deployment creates it once with ops/gcp/init-db.sh. Litestream copies every
 # write to the backup bucket and stops when bethere stops.

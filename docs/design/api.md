@@ -48,6 +48,7 @@
 | 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節） |
 | 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
+| 503 | `maintenance` | 維護模式下，Master 與復原碼換發以外的所有 `/api/` 請求（第 8 節） |
 
 ## 3. 端點
 
@@ -76,7 +77,7 @@
 | `POST /api/roles/delete` | Token | Master | `{"version":n,"roleId":n}` | `ok` + 新的 Master 快照；只限 Draft（US-M-11.5） |
 | `POST /api/roles/preview` | Token | Master | `{"roleId":n}` | `{"result":"ok","preview":{…}}`：`preview` 是目標角色自己會拿到的快照（US-M-14） |
 | `POST /api/recover/master` | 復原碼（只在本文） | — | `{"recoveryCode":"…"}` | `{"result":"ok","token":"<22 字元>"}`：新的 Master 連結，不附快照（US-O-3） |
-| `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料 |
+| `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料；維護模式下回 503 `maintenance`，`ops/gcp/maintenance.sh` 以此從外部確認模式 |
 
 - 沒有 `POST /api/event/start`：活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。
 - 平移的本文與 `version` 一樣嚴格：欄位名稱完全相符、不可重複、只接受整數（不接受 `-0`、前導零、小數、字串）；`deltaMin` 可為負，範圍由領域規則檢查（±1440，否則 `invalid_delta`）；`excluded` 可省略，最多 200 個正整數，不在本活動的 id 會被忽略。預覽不帶 `version`。
@@ -128,7 +129,7 @@
   - 復原碼不正確、格式不符、查無活動都回同一個 422 `wrong_recovery_code`，不透露活動是否存在。復原碼正確但活動已結束時回 422 `event_ended`；入口沒有 Token，所以不用 `result: ended`（第 2.1 節）。資料庫錯誤、逾時與取消一律 500，絕不回 `wrong_recovery_code`。
   - 單一交易內：再確認一次復原碼 → 活動未結束 → 撤銷 Master 的有效 Token、建立新的 → 操作紀錄 `token.recover`（actor 為復原碼，只記角色 id）。與重發相同，不改 `eventVersion`（ADR-0023）。
   - 舊 Master 連結的裝置在下一次輪詢收到 `invalid`。新 Token 的明文只出現在這一次回應；`/recover` 頁面以文字加「複製」顯示，不做成可點的連結，不讀取網址片段，也不寫入任何儲存。
-  - 不限頻（`access-control.md` 3.3：復原碼 128 位元）。維護模式實作後，這是唯一放行的復原碼請求（`tech-stack.md` 2.1）。
+  - 不限頻（`access-control.md` 3.3：復原碼 128 位元）。維護模式下照常放行，是唯一放行的復原碼請求（`tech-stack.md` 2.1）。
 - **沒有 `POST /api/report`**：不提供不需憑證、會寫入日誌的回報端點。Android 驗證以截圖與手動紀錄。
 
 ## 4. 權限
@@ -180,6 +181,7 @@
 | `outOfOrder[]` | 時間倒序警告 `{"cueId","prevCueId"}`（`data-model.md` 4.2 第 5 步，US-M-8.6） |
 | `conflicts[]` | 固定環節衝突：`{"cueId","fixedCueId","overrunMin"}`（`data-model.md` 4.2） |
 | `overrunMin` | 超時分鐘（`data-model.md` 4.3，ADR-0022）；活動未開始時為 0 |
+| `maintenance` | 是否在維護模式（US-O-2.5）；一律帶，非維護時為 false |
 
 ### 5.3 角色快照（Stylist、Media、StageAV 與四種工作）
 
@@ -267,7 +269,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 2. **快照只有一個產生函式**：`GET`、寫入成功、409 三處都呼叫同一個函式，它在**單一唯讀交易**內查 Token 並組出**呼叫者自己角色**的快照，結果依第 6 節對照。在同一交易內查 Token 與組快照，撤銷與結束才會立即生效、沒有毫秒級的空窗；只有一個產生函式，避免 409 或寫入回應意外帶出 Master 快照。store 提供這個函式（`LookupToken` 自己開關交易，分兩次呼叫會留下空窗）；以「兩步之間撤銷或結束」的測試驗證。
 3. **處理順序**：解析標頭 → 查 Token → 權限（403）→ 解析本文（400）→ 寫入 → 重新讀取快照。409 只會在通過權限檢查後出現。
 4. **寫入成功後重新讀取的結果**：讀到 `ok` 回 200 與新快照；讀到 `invalid` 或 `ended`（例如寫入與讀取之間被撤銷）就回那個結果；資料庫錯誤回 500（寫入已生效，客戶端下一次輪詢會看到）。一個回應**絕不同時**帶 `error` 與 `result`；409 附的快照同樣依此處理，讀不到 `ok` 就改回對應的 `result` 或 500。
-5. **`lastSeenAt`**：只在 Token 驗證成功之後於記憶體更新（`tech-stack.md` 2.1「lastSeenAt」）；維護模式實作後，改為通過維護檢查之後才更新。以 **`access_tokens.id`** 為鍵（`TokenOwner` 帶出這個 id，不是雜湊）；Master 快照只對每個角色**目前有效的** Token 查詢，所以撤銷或重發後，舊連結的使用時間（包括撤銷前一刻才通過驗證的請求）不會算到新連結上，以復原碼換發的 Master 連結也一樣。
+5. **`lastSeenAt`**：只在 Token 驗證成功之後於記憶體更新（`tech-stack.md` 2.1「lastSeenAt」）；維護模式下被擋的請求到不了處理函式，所以不會更新。以 **`access_tokens.id`** 為鍵（`TokenOwner` 帶出這個 id，不是雜湊）；Master 快照只對每個角色**目前有效的** Token 查詢，所以撤銷或重發後，舊連結的使用時間（包括撤銷前一刻才通過驗證的請求）不會算到新連結上，以復原碼換發的 Master 連結也一樣。
 6. **所有寫入**都帶 store 的 `Actor`，在同一交易內重新確認憑證並寫入操作紀錄。
 7. **指令（`bethere` 子命令）**：
    - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫，ADR-0012）。
@@ -277,7 +279,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 
 ## 8. 安全邊界相關的限制
 
-- **維護模式**（`tech-stack.md` 2.1「維護模式」）尚未實作；實作前**正式環境不放入真實活動資料**（`process/development-process.md`）。
+- **維護模式**（`tech-stack.md` 2.1「維護模式」，US-O-2）：所有路由之前的單一關卡。路徑（整理後）在 `/api` 底下時，只放行 `POST /api/recover/master`，以及 Bearer Token 查得到、類型為 Master 的請求；其他一律回 503 `maintenance`，包括其他角色、查無或已結束的連結、沒有或格式不符的標頭、資料庫錯誤、`/api/ping` 與不存在的路徑，絕不回 `invalid` 或 `ended`（還原後不存在的連結因此不會清掉裝置資料）。被擋的請求不到處理函式，不更新 `lastSeenAt`。放行的 Master 請求由處理函式再查一次 Token；兩次之間 Master 連結剛好被換發時回 `invalid`，與平常相同。
 - 第 2、4、6 節屬於「Token 權限與資料外洩」邊界：實作完成後由獨立審查依第 4 節權限表的**每一格**、第 6 節的**每一列**與第 5 節的鍵集合驗證。
 - 必要的測試：
   - 資料庫中直接插入未開放的角色類型，每個端點都回 403。
