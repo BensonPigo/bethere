@@ -12,6 +12,8 @@ import { ImportDialog, RundownEditor } from "./RundownEditor";
 import type { NewLink } from "./session";
 import { heldFixed, OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
 import { OriginalTime } from "./OriginalTime";
+import { prep, prepDone } from "./prepGuide";
+import type { Prep } from "./prepGuide";
 import { ThemeToggle } from "./theme";
 
 const ICON: Record<CueStatus, string> = { Completed: "✔", InProgress: "▶", Pending: "○", Skipped: "⊘" };
@@ -105,6 +107,14 @@ export function Master(props: Props) {
           {nextPending && nextPending.offsetMin !== 0 && <span class="offset-all">・目前偏移 {signed(nextPending.offsetMin)} 分</span>}
           <ThemeToggle />
         </div>
+        {draft && (
+          <PrepGuide
+            p={prep(snap)}
+            editRundown={() => setEditing(true)}
+            addRole={() => setOpen({ kind: "addRole" })}
+            openRole={(r) => setOpen({ kind: "role", id: r.id })}
+          />
+        )}
         <div class="current">
           {draft ? (
             <>
@@ -262,6 +272,39 @@ export function Master(props: Props) {
           close={() => setShiftDelta(null)}
         />
       )}
+    </div>
+  );
+}
+
+// PrepGuide is the draft console's checklist (US-M-18): three steps ticked
+// from the snapshot, and a suggestion to preview.
+function PrepGuide(props: { p: Prep; editRundown: () => void; addRole: () => void; openRole: (r: MasterRole) => void }) {
+  const { p } = props;
+  if (prepDone(p)) return <div class="prep-guide done">婚前準備完成：活動日當天按「推進」開始</div>;
+  const step = (done: boolean, text: string, action: string, go: (() => void) | null) => (
+    <li class={done ? "done" : ""}>
+      <span class="mark">{done ? "✔" : "○"}</span>
+      <span class="text">{text}</span>
+      {go && (
+        <button onClick={go}>{action}</button>
+      )}
+    </li>
+  );
+  const withoutLink = p.firstWithoutLink;
+  const first = p.firstRole;
+  return (
+    <div class="prep-guide" role="region" aria-label="婚前準備">
+      <div class="label">婚前準備</div>
+      <ol>
+        {step(p.rundown, "建立流程表", p.rundown ? "修改" : "開始", props.editRundown)}
+        {step(p.roles, "新增角色（新秘、攝影…）", "新增", props.addRole)}
+        {step(p.links, "產生每個人的連結，用 LINE 傳出", "產生連結", withoutLink ? () => props.openRole(withoutLink) : null)}
+        <li class="tip">
+          <span class="mark">・</span>
+          <span class="text">建議：用角色預覽看看對方的畫面</span>
+          {first && <button onClick={() => props.openRole(first)}>預覽畫面</button>}
+        </li>
+      </ol>
     </div>
   );
 }

@@ -118,6 +118,15 @@ button.checkin.done { background: #0d652d; color: #fff; }
 /* M2b console: roles and dialogs (screen-design.md 3.3, section 7). */
 .panel { overflow-y: auto; }
 .roles-panel { background: var(--card); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+/* The draft console's checklist (US-M-18). */
+.prep-guide { background: var(--card); border-radius: 12px; padding: 12px; }
+.prep-guide ol { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.prep-guide li { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.prep-guide li .text { flex: 1; }
+.prep-guide li.done .text, .prep-guide li.tip .text { color: var(--muted); }
+.prep-guide li.done .mark { color: var(--ok); }
+.prep-guide li button { min-height: 44px; padding: 0 14px; }
+.prep-guide.done { color: var(--muted); }
 .roles-panel .label, .role-picker .label { color: var(--muted); font-size: 15px; }
 button.role-row { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 8px; min-height: 48px; text-align: left; background: none; color: var(--fg); }
 .role-row .in { color: var(--ok); font-weight: 700; }

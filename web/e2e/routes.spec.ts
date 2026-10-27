@@ -105,8 +105,10 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
   });
 
   await test.step("第一次推進即開始活動（US-M-3.6）", async () => {
+    await expect(master.locator(".prep-guide")).toBeVisible();
     await advance(master);
     await expect(master.locator(".current .cue-title")).toHaveText("新娘化妝");
+    await expect(master.locator(".prep-guide")).toHaveCount(0); // US-M-18.1
   });
 
   await test.step("預覽列出不會移動的固定環節（US-M-2.1）", async () => {
@@ -424,6 +426,8 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
   const master = await open(browser, links, "總召");
   const stylist = await open(browser, links, "新秘");
   await expect(stylist.locator(".preday")).toContainText("新娘化妝");
+  // Rundown, roles and every link are there: the checklist is one line (US-M-18.4).
+  await expect(master.locator(".prep-guide.done")).toHaveText("婚前準備完成：活動日當天按「推進」開始");
 
   await test.step("改環節標題，新秘自己看到（US-M-10.2、US-M-10.C2 的功能部分）", async () => {
     await master.getByRole("button", { name: "編輯流程表" }).click();
@@ -551,6 +555,21 @@ test("用邀請碼建立活動：首頁 → 建立 → 進入總召畫面，上�
   await test.step("進入總召畫面；上一頁回不到建立結果（US-M-17.8）", async () => {
     await page.getByRole("button", { name: "進入總召畫面" }).click();
     await expect(page.getByRole("button", { name: "編輯流程表" })).toBeVisible();
+    // A new event: the checklist shows what to do, nothing ticked (US-M-18.1, 18.2).
+    const guide = page.getByRole("region", { name: "婚前準備" });
+    await expect(guide.locator("li .mark")).toHaveText(["○", "○", "○", "・"]);
+    // Each step's button goes straight to the work (US-M-18.3).
+    await guide.getByRole("button", { name: "開始" }).click();
+    await expect(page.locator(".editor")).toBeVisible();
+    await page.locator(".editor").getByRole("button", { name: "關閉" }).click();
+    await guide.getByRole("button", { name: "新增" }).click();
+    const d = page.getByRole("dialog");
+    await d.getByLabel("名稱").fill("新秘");
+    await d.getByRole("radio", { name: /免手持/ }).check();
+    await d.getByRole("button", { name: "新增並產生連結" }).click();
+    await expect(d.locator(".link-text")).toBeVisible();
+    await d.getByRole("button", { name: "關閉" }).click();
+    await expect(guide.locator("li .mark")).toHaveText(["○", "✔", "✔", "・"]);
     await page.goBack();
     // Safari may restore a page from its back-forward cache as it was; the
     // creation result must not be in the history at all.
