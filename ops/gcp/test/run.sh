@@ -171,7 +171,9 @@ check "power off when the alert cannot be read: the VM keeps running" '! called 
 fresh; mon ALERT_EMAIL=dev@example.com; echo other.example > "$FAKE/meta.bethere-domain"; POWER=on power
 check "power on when the check opens another domain: warns" 'said "the check opens bethere.example, not other.example"'
 fresh; POWER=off power
-check "power off with no alert yet: warns, still stops the VM" 'said "no alert yet" && grep -q TERMINATED "$FAKE/vm.status"'
+check "power off with no alert yet: warns, still stops the VM" 'said "no alert yet" && grep -q TERMINATED "$FAKE/vm.status" && said "(no alert)"'
+POWER=on power
+check "power on with no alert yet: does not claim the alert is on" 'said "(no alert)" && ! said "alert on"'
 fresh; mon ALERT_EMAIL=dev@example.com; POWER=status power
 check "power status: VM and alert" 'said "VM: RUNNING" && said "alert enabled: True"'
 
