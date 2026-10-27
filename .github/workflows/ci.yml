@@ -37,6 +37,10 @@ jobs:
       # Windows checkouts may turn line endings into CRLF).
       - if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      # The ops scripts against a fake gcloud: every check of a rebuild stops
+      # before the old VM is deleted (US-O-6).
+      - if: runner.os == 'Linux'
+        run: ops/gcp/test/run.sh
       - run: go vet ./...
       - run: go test ./...
 

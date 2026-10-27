@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Answers /api/ping as a VM in the mode $FAKE/mode says: maintenance
+# (default), open, or down (not answering yet).
+out=""
+while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+case "$(cat "$FAKE/mode" 2>/dev/null)" in
+  open) echo '{}' > "$out"; printf 200 ;;
+  down) printf 000; exit 7 ;;
+  *) echo '{"error":"maintenance"}' > "$out"; printf 503 ;;
+esac

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# A stand-in for gcloud in ops/gcp/test/run.sh: logs every call and answers
+# from the state in $FAKE (vm, vm.zone, meta.<key>, missing, nobackup).
+echo "gcloud $*" >> "$FAKE/calls"
+args=" $* "
+has() { [[ "$args" == *"$1"* ]]; }
+vm_exists() { [ -e "$FAKE/vm" ]; }
+case "$args" in
+  *" compute instances list "*)
+    vm_exists || exit 0
+    if has "zone.basename(),status"; then echo "bethere-1 $(cat "$FAKE/vm.zone") RUNNING 2026-10-01T00:00:00"
+    elif has "--filter=name="; then cat "$FAKE/vm.zone"
+    else echo bethere-1; fi ;;
+  *" compute instances describe "*)
+    key="$(sed -n 's/.*metadata\.items\.\([a-z-]*\).*/\1/p' <<<"$args")"
+    cat "$FAKE/meta.$key" 2>/dev/null || true ;;
+  *" compute instances delete "*) [ -e "$FAKE/faildelete" ] && { echo "ERROR: timeout" >&2; exit 1; }; rm -f "$FAKE/vm" ;;
+  *" compute instances create "*) [ -e "$FAKE/failcreate" ] && { echo "ERROR: ZONE_RESOURCE_POOL_EXHAUSTED" >&2; exit 1; }; touch "$FAKE/vm"; sed -n 's/.*--zone \([a-z0-9-]*\).*/\1/p' <<<"$args" > "$FAKE/vm.zone" ;;
+  *" compute instances add-metadata "*) ;;
+  *" compute addresses describe "*) [ -e "$FAKE/noaddress" ] && { echo "ERROR: not found" >&2; exit 1; }; echo 10.0.0.1 ;;
+  *" compute machine-types describe "*)
+    has "--zone asia-east1-a " || has "--zone asia-east1-b " || has "--zone asia-east1-c " || exit 1 ;;
+  *" compute disks list "*) ;;
+  *" compute ssh "*) printf 'version=%s\nBETHERE_MAINTENANCE=0\n' "$(cat "$FAKE/deployed" 2>/dev/null)" ;;
+  *" storage objects describe "*)
+    for m in $(cat "$FAKE/missing" 2>/dev/null); do has "$m" && exit 1; done ;;
+  *" storage ls "*)
+    if has "-backups/bethere/"; then
+      if [ -e "$FAKE/nobackup" ]; then echo "ERROR: (gcloud.storage.ls) One or more URLs matched no objects." >&2; exit 1; fi
+      if [ -e "$FAKE/noperm" ]; then echo "ERROR: (gcloud.storage.ls) HTTPError 403: denied" >&2; exit 1; fi
+      echo "gs://x-backups/bethere/generations/"
+    else printf 'gs://x/bethere/aaa-20261001000000/\ngs://x/bethere/bbb-20261027000000/\n'; fi ;;
+esac
+exit 0
