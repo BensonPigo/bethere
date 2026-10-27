@@ -76,8 +76,8 @@
 | 服務啟動 | `bethere.service` 設 `After=`／`Wants=network-online.target`、`Restart=on-failure`（有退避間隔、不設次數上限；沒有資料庫時 `serve` 本來就不啟動，所以重試是安全的）。每次啟動（開機、重啟服務皆同）都先執行準備腳本，以 `set -e` **失敗即停**：向 metadata server 讀取版本號與維護旗標（讀不到就不啟動）→ 版本與本機已安裝的相同就跳過下載（GCS 暫時不通時仍能啟動），不同才從發行版 bucket 下載到暫存檔，以原子方式換上後才寫入「已安裝版本」標記 → 資料庫檔不存在時先刪除殘留的 `-wal`／`-shm`，再執行 `litestream restore -if-replica-exists`，失敗就不啟動 → 以 `litestream replicate -exec "bethere serve"` 啟動。即使還原「成功但沒有副本」，`serve` 也會因找不到資料庫而拒絕啟動（2.1「不自動建庫」） |
 | 部署與回退 | 部署＝把 VM metadata 的版本號改成新版並重啟服務；回退＝改回上一版並重啟服務。活動前 7 天起凍結部署 |
 | 作業系統更新 | 平時開啟 Debian `unattended-upgrades`（只套安全更新、不自動重開機）；凍結期開始時套用一次更新並重開機驗證，之後停用自動更新到活動結束 |
-| 健康檢查 | `/healthz` 執行一次唯讀查詢（走唯讀連線池，不受寫入鎖影響） |
-| 監控與告警 | Cloud Monitoring Uptime Check 從外部探測 `/healthz`；另一個探測看備份新鮮度端點（本機變動超過 5 分鐘未複製即失敗，尚待確認 Litestream 能否提供）；告警平時送開發者 email，凍結期改送備援操作者的手機推播與簡訊。不在 VM 安裝代理程式（ADR-0024） |
+| 健康檢查 | `/healthz` 執行一次唯讀查詢（走唯讀連線池，不受寫入鎖影響），3 秒內沒成功就回 503，外部監控因此看得到資料庫讀不到；寫不進去（例如磁碟滿）不在這個檢查內 |
+| 監控與告警 | Cloud Monitoring Uptime Check 從外部探測 `/healthz`；另一個探測看備份新鮮度端點（本機變動超過 5 分鐘未複製即失敗，尚待確認 Litestream 能否提供）；告警平時送開發者 email，凍結期改送備援操作者的手機推播與簡訊。開發期主機平時關機，告警以 `ops/gcp/power.sh` 跟著開關。不在 VM 安裝代理程式（ADR-0024） |
 
 **為什麼不用 Cloud Run**：容器的檔案系統是暫時的，平台可能隨時替換實例，部署時新舊實例還會短暫並存，SQLite 會出現兩個寫入者；要用就得改成 Cloud SQL，資料層要重新設計，成本也更高。**為什麼不用負載平衡器**：Google 的 HTTPS 負載平衡器每月約 US$18，對單一 VM 沒有必要，TLS 交給 Caddy。
 

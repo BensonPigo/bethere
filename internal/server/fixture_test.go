@@ -45,6 +45,7 @@ type faultStore struct {
 	// lookupErr / snapshotErr replace the result of every call when set.
 	lookupErr   error
 	snapshotErr error
+	healthErr   error
 	// writeErr is returned by every write instead of writing.
 	writeErr error
 	// writeCtx changes the context a write runs with.
@@ -65,6 +66,14 @@ func (f *faultStore) recordDeadline(ctx context.Context) {
 	} else {
 		f.deadlines = append(f.deadlines, -1)
 	}
+}
+
+func (f *faultStore) Healthy(ctx context.Context) error {
+	f.recordDeadline(ctx)
+	if f.healthErr != nil {
+		return f.healthErr
+	}
+	return f.Store.Healthy(ctx)
 }
 
 func (f *faultStore) LookupToken(ctx context.Context, h []byte, now time.Time) (store.TokenOwner, error) {

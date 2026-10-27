@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
-# Answers /api/ping as a VM in the mode $FAKE/mode says: maintenance
-# (default), open, or down (not answering yet).
+# Answers as a VM in the mode $FAKE/mode says: maintenance (default), open,
+# or down (not answering yet). /healthz answers in both modes. The
+# Monitoring API knows the email channel once it was posted.
+args=" $* "
+if [[ "$args" == *notificationChannels* ]]; then
+  echo "curl $*" >> "$FAKE/calls"
+  if [[ "$args" == *" -X POST "* ]]; then touch "$FAKE/channel"; fi
+  if [ -e "$FAKE/channel" ]; then echo '{"notificationChannels": [{"name": "projects/test-proj/notificationChannels/77"}]}'; else echo '{}'; fi
+  exit 0
+fi
 out=""
 while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
-case "$(cat "$FAKE/mode" 2>/dev/null)" in
+mode="$(cat "$FAKE/mode" 2>/dev/null)"
+[ "$mode" = down ] && { printf 000; exit 7; }
+if [[ "$args" == */healthz* ]]; then echo ok > "$out"; printf 200; exit 0; fi
+case "$mode" in
   open) echo '{}' > "$out"; printf 200 ;;
-  down) printf 000; exit 7 ;;
   *) echo '{"error":"maintenance"}' > "$out"; printf 503 ;;
 esac

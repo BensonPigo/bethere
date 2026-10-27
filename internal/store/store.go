@@ -134,6 +134,13 @@ func connect(ctx context.Context, abs string, init bool, fsys fs.FS) (*Store, er
 	return &Store{w: w, r: r}, nil
 }
 
+// Healthy runs one read-only query on the read pool, so the health check
+// is not held up by the writer (tech-stack.md 2.1「健康檢查」).
+func (s *Store) Healthy(ctx context.Context) error {
+	var n int
+	return s.r.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema").Scan(&n)
+}
+
 func (s *Store) Close() error {
 	return errors.Join(s.r.Close(), s.w.Close())
 }

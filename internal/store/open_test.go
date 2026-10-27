@@ -310,3 +310,15 @@ func TestOpenRefusesAReadOnlyDatabase(t *testing.T) {
 		t.Errorf("err = %v, want a not-writable error", err)
 	}
 }
+
+// /healthz asks the database through the read pool (tech-stack.md 2.1「健康檢查」).
+func TestHealthyReadsTheDatabase(t *testing.T) {
+	st, _ := newStore(t)
+	if err := st.Healthy(t.Context()); err != nil {
+		t.Fatalf("healthy store: %v", err)
+	}
+	st.r.Close()
+	if err := st.Healthy(t.Context()); err == nil {
+		t.Fatal("a closed read pool must not be healthy")
+	}
+}

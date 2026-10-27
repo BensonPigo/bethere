@@ -11,6 +11,33 @@ case "$args" in
     if has "zone.basename(),status"; then echo "bethere-1 $(cat "$FAKE/vm.zone") RUNNING 2026-10-01T00:00:00"
     elif has "--filter=name="; then cat "$FAKE/vm.zone"
     else echo bethere-1; fi ;;
+  *" auth print-access-token "*) echo token ;;
+  *" compute instances describe "*" --format=value(status) "*) cat "$FAKE/vm.status" 2>/dev/null || echo RUNNING ;;
+  *" compute instances start "*) echo RUNNING > "$FAKE/vm.status" ;;
+  *" compute instances stop "*) echo TERMINATED > "$FAKE/vm.status" ;;
+  # Monitoring: the check is one line "name host" in $FAKE/check; each alert
+  # is $FAKE/policies/<id> (its JSON) with its state in <id>.enabled.
+  *" monitoring uptime list-configs "*)
+    [ -e "$FAKE/nochecklist" ] && exit 1
+    if has "value(monitoredResource"; then sed 's/.* //' "$FAKE/check" 2>/dev/null; else cat "$FAKE/check" 2>/dev/null; fi; true ;;
+  *" monitoring uptime create "*)
+    [ -e "$FAKE/failcheck" ] && { echo "ERROR: quota" >&2; exit 1; }
+    echo "projects/test-proj/uptimeCheckConfigs/chk$RANDOM $(sed -n 's/.*host=\([^,]*\),.*/\1/p' <<<"$args")" > "$FAKE/check" ;;
+  *" monitoring uptime delete "*) rm -f "$FAKE/check" ;;
+  *" monitoring policies list "*)
+    [ -e "$FAKE/nolist" ] && exit 1
+    for f in "$FAKE"/policies/p*; do
+      case "$f" in *.enabled|*"p*") continue ;; esac
+      if has "value(enabled)"; then cat "$f.enabled"; else echo "projects/test-proj/alertPolicies/${f##*/}"; fi
+    done ;;
+  *" monitoring policies create "*)
+    mkdir -p "$FAKE/policies"; id="p$RANDOM"
+    cp "$(sed -n 's/.*--policy-from-file=\([^ ]*\).*/\1/p' <<<"$args")" "$FAKE/policies/$id"
+    grep -q '"enabled": true' "$FAKE/policies/$id" && echo True > "$FAKE/policies/$id.enabled" || echo False > "$FAKE/policies/$id.enabled" ;;
+  *" monitoring policies delete "*) id="$(sed -n 's#.*alertPolicies/\([a-z0-9]*\).*#\1#p' <<<"$args")"; rm -f "$FAKE/policies/$id" "$FAKE/policies/$id.enabled" ;;
+  *" monitoring policies update "*)
+    id="$(sed -n 's#.*alertPolicies/\([a-z0-9]*\).*#\1#p' <<<"$args")"
+    if has "--no-enabled"; then echo False; else echo True; fi > "$FAKE/policies/$id.enabled" ;;
   *" compute instances describe "*)
     key="$(sed -n 's/.*metadata\.items\.\([a-z-]*\).*/\1/p' <<<"$args")"
     cat "$FAKE/meta.$key" 2>/dev/null || true ;;

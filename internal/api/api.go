@@ -31,6 +31,7 @@ import (
 
 // Store is what the API needs from internal/store.
 type Store interface {
+	Healthy(ctx context.Context) error
 	LookupToken(ctx context.Context, tokenHash []byte, now time.Time) (store.TokenOwner, error)
 	Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (store.SnapshotData, error)
 	Advance(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time) (int64, domain.Op, error)

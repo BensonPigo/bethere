@@ -128,4 +128,51 @@ fresh; run env PROJECT=test-proj "$OPS/deploy.sh"
 check "deploy without a version lists, newest first, and changes nothing" \
   'said "previous: $P" && grep -A1 newest "$FAKE/out" | grep -q bbb-20261027000000 && ! called add-metadata'
 
+# Monitoring (US-O-7) and power.
+mon() { run env PROJECT=test-proj "$@" "$OPS/monitoring.sh"; }
+power() { run env PROJECT=test-proj "$@" "$OPS/power.sh" "$POWER"; }
+alerts() { cat "$FAKE"/policies/*.enabled 2>/dev/null | tr '\n' ' '; }
+policy() { cat "$(ls "$FAKE"/policies/p* | grep -v enabled)"; }
+line_of() { grep -n -- "$1" "$FAKE/calls" | head -1 | cut -d: -f1; }
+
+fresh; mon
+check "monitoring without ALERT_EMAIL: refused, nothing made" 'said "set ALERT_EMAIL" && ! called monitoring'
+fresh; mon ALERT_EMAIL='dev @example.com'
+check "monitoring with a bad address: refused" 'said "not an email address" && ! called monitoring'
+fresh; mon ALERT_EMAIL=dev@example.com; mon ALERT_EMAIL=dev@example.com
+check "monitoring: checks the VM's domain and its certificate, mails dev, on while the VM runs" \
+  'grep -q " bethere.example$" "$FAKE/check" && called "validate-ssl=true" && [ "$(alerts)" = "True " ] && said "alert: to dev@example.com, on"'
+check "monitoring run twice: one check, one alert, one channel" \
+  '[ "$(grep -c "uptime create" "$FAKE/calls")" = 1 ] && [ "$(grep -c "X POST" "$FAKE/calls")" = 1 ] && [ "$(alerts)" = "True " ]'
+check "monitoring: the alert names the channel and the check" \
+  'policy | grep -q "notificationChannels/77" && policy | grep -q "check_id=\\\\\"$(sed "s#.*/##; s/ .*//" "$FAKE/check")\\\\\""'
+fresh; echo TERMINATED > "$FAKE/vm.status"; mon ALERT_EMAIL=dev@example.com
+check "monitoring while the VM is off: the alert is made off" '[ "$(alerts)" = "False " ] && said "power.sh on"'
+fresh; mon ALERT_EMAIL=dev@example.com; echo other.example > "$FAKE/meta.bethere-domain"; mon ALERT_EMAIL=dev@example.com
+check "monitoring after the domain changed: check and alert remade for it" \
+  'grep -q " other.example$" "$FAKE/check" && [ "$(alerts)" = "True " ] && policy | grep -q other.example'
+fresh; mon ALERT_EMAIL=dev@example.com; echo other.example > "$FAKE/meta.bethere-domain"; touch "$FAKE/failcheck"; mon ALERT_EMAIL=dev@example.com
+check "monitoring: new check fails after the old alert went: says to run it again" 'said "run monitoring.sh again"'
+fresh; touch "$FAKE/nolist"; mon ALERT_EMAIL=dev@example.com
+check "monitoring when listing fails: stops, makes nothing" '! called "uptime create" && ! called "policies create"'
+fresh; touch "$FAKE/nochecklist"; mon ALERT_EMAIL=dev@example.com
+check "monitoring when listing checks fails: makes no second check" '! called "uptime create" && ! called "policies create"'
+
+fresh; mon ALERT_EMAIL=dev@example.com; POWER=off power
+check "power off: alert off before the VM stops" \
+  '[ "$(alerts)" = "False " ] && grep -q TERMINATED "$FAKE/vm.status" && [ "$(line_of "policies update")" -lt "$(line_of "instances stop")" ]'
+POWER=on power
+check "power on: VM started, alert on once the site answers" \
+  'grep -q RUNNING "$FAKE/vm.status" && [ "$(alerts)" = "True " ] && said "on: https://bethere.example/"'
+POWER=off power; echo down > "$FAKE/mode"; POWER=on power PROBE_SECONDS=1
+check "power on, site never answers: says so, alert stays off" '[ "$(alerts)" = "False " ] && said "run power.sh on again once it answers"'
+fresh; mon ALERT_EMAIL=dev@example.com; touch "$FAKE/nolist"; POWER=off power
+check "power off when the alert cannot be read: the VM keeps running" '! called "instances stop"'
+fresh; mon ALERT_EMAIL=dev@example.com; echo other.example > "$FAKE/meta.bethere-domain"; POWER=on power
+check "power on when the check opens another domain: warns" 'said "the check opens bethere.example, not other.example"'
+fresh; POWER=off power
+check "power off with no alert yet: warns, still stops the VM" 'said "no alert yet" && grep -q TERMINATED "$FAKE/vm.status"'
+fresh; mon ALERT_EMAIL=dev@example.com; POWER=status power
+check "power status: VM and alert" 'said "VM: RUNNING" && said "alert enabled: True"'
+
 exit $failed
