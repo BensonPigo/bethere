@@ -136,8 +136,8 @@ func TestActorNeedsAValidCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	e, _, _ := f.s.Event(ctx, f.eventID)
-	if n, err := f.s.PurgeEnded(ctx, e.PurgeAt()); err != nil || n != 1 {
-		t.Fatalf("purge: %d, %v", n, err)
+	if ids, err := f.s.PurgeEnded(ctx, e.PurgeAt()); err != nil || len(ids) != 1 {
+		t.Fatalf("purge: %v, %v", ids, err)
 	}
 	next, err := f.s.CreateEvent(ctx, NewEvent{
 		Name: "下一場", Date: domain.Date{Year: 2027, Month: time.December, Day: 1}, TimeZone: "Asia/Taipei",

@@ -174,6 +174,17 @@ func serve(args []string, c cli) error {
 		srv.Shutdown(shutdownCtx)
 	}()
 
+	// The daily cleanup (US-O-5) stops with the server, before the store closes.
+	purged := make(chan struct{})
+	go func() {
+		defer close(purged)
+		purgeDaily(ctx, st.PurgeEnded, time.Now, 24*time.Hour, logger)
+	}()
+	defer func() {
+		stop()
+		<-purged
+	}()
+
 	logger.Info("listening", "addr", *addr, "version", version)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err

@@ -304,12 +304,12 @@ func (s *Store) RescheduleEvent(ctx context.Context, actor Actor, to domain.Date
 }
 
 // PurgeEnded deletes every event whose retention ran out (tech-stack.md
-// tech-stack.md 2.1「資料刪除」) and returns how many. CreateEvent only stores dates and zones that
+// 2.1「資料刪除」) and returns their ids. CreateEvent only stores dates and zones that
 // read back, so an unreadable event means the database was edited by hand;
 // it is skipped and reported in the error while the others are deleted.
-func (s *Store) PurgeEnded(ctx context.Context, now time.Time) (int, error) {
+func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) {
 	var (
-		n       int
+		deleted []int64
 		skipped []error
 	)
 	err := s.write(ctx, func(tx *sql.Tx) error {
@@ -342,14 +342,14 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) (int, error) {
 			if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id); err != nil {
 				return err
 			}
-			n++
+			deleted = append(deleted, id)
 		}
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return n, errors.Join(skipped...)
+	return deleted, errors.Join(skipped...)
 }
 
 func bumpVersion(ctx context.Context, tx *sql.Tx, eventID int64) (int64, error) {

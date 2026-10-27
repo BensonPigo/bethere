@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -311,13 +312,13 @@ func TestPurgeEnded(t *testing.T) {
 	}
 	e, _, _ := f.s.Event(ctx, f.eventID)
 
-	n, err := f.s.PurgeEnded(ctx, e.PurgeAt().Add(-time.Second))
-	if err != nil || n != 0 {
-		t.Fatalf("before PurgeAt: deleted %d (%v), want 0", n, err)
+	ids, err := f.s.PurgeEnded(ctx, e.PurgeAt().Add(-time.Second))
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("before PurgeAt: deleted %v (%v), want none", ids, err)
 	}
-	n, err = f.s.PurgeEnded(ctx, e.PurgeAt())
-	if err != nil || n != 1 {
-		t.Fatalf("at PurgeAt: deleted %d (%v), want 1", n, err)
+	ids, err = f.s.PurgeEnded(ctx, e.PurgeAt())
+	if err != nil || !slices.Equal(ids, []int64{f.eventID}) {
+		t.Fatalf("at PurgeAt: deleted %v (%v), want [%d]", ids, err, f.eventID)
 	}
 	if _, _, err := f.s.Event(ctx, f.eventID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("event still there: %v", err)
@@ -455,9 +456,9 @@ func TestPurgeSkipsUnreadableEvents(t *testing.T) {
 		VALUES ('bad', '2027-06-06', 'Mars/Base', 'Draft', ?, 0)`, hash("bad")); err != nil {
 		t.Fatal(err)
 	}
-	n, err := f.s.PurgeEnded(ctx, e.PurgeAt())
-	if n != 1 {
-		t.Errorf("deleted %d events, want 1", n)
+	ids, err := f.s.PurgeEnded(ctx, e.PurgeAt())
+	if !slices.Equal(ids, []int64{f.eventID}) {
+		t.Errorf("deleted %v, want [%d]", ids, f.eventID)
 	}
 	if err == nil || !strings.Contains(err.Error(), "Mars/Base") {
 		t.Errorf("err = %v, want the unreadable event reported", err)
