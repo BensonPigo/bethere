@@ -178,8 +178,8 @@ func TestSnapshotDuringPurgeStaysWhole(t *testing.T) {
 	var once sync.Once
 	withHook(t, func() {
 		once.Do(func() {
-			if n, err := f.s.PurgeEnded(ctx, e.PurgeAt()); err != nil || n != 1 {
-				t.Errorf("purge: %d, %v", n, err)
+			if ids, err := f.s.PurgeEnded(ctx, e.PurgeAt()); err != nil || len(ids) != 1 {
+				t.Errorf("purge: %v, %v", ids, err)
 			}
 		})
 	})
