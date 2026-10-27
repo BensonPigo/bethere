@@ -83,8 +83,8 @@ fresh; rm "$FAKE/meta.bethere-previous-version"; rebuild
 check "VM without a rollback record: rebuilt without one" \
   'created && ! create_has "bethere-previous-version"'
 fresh; rm "$FAKE/meta.bethere-previous-version"; echo down > "$FAKE/mode"; rebuild PROBE_SECONDS=1
-check "slow VM: says to wait and check status, not to rerun" \
-  'said "STOPPED at: wait for" && said "maintenance.sh status" && ! said "Run it again"'
+check "slow VM: says to check from outside with curl, not to rerun" \
+  'said "STOPPED at: wait for" && said "curl -s https://bethere.example/api/ping" && ! said "Run it again"'
 fresh; rebuild DOMAIN=bethere.example PREVIOUS_VERSION="$P"
 check "rerun with the printed values while the failed VM is there: goes on" 'deleted && created'
 
@@ -109,6 +109,12 @@ check "rebuild: new uniquely named disk" 'create_has "--create-disk boot=yes,nam
 check "rebuild: domain, rollback version and maintenance carried over" \
   'create_has "bethere-version=$V,bethere-previous-version=$P,.*bethere-domain=bethere.example,bethere-maintenance=1"'
 check "rebuild: checked from outside in maintenance mode, time reported" 'said "maintenance mode: https://bethere.example/" && said "rebuilt in [0-9]* min" && ! said STOPPED'
+
+fresh; echo 1 > "$FAKE/sshfail"; rebuild
+check "rebuild: waits until ssh reaches the new VM" 'said "rebuilt in" && ! said STOPPED && test "$(cat "$FAKE/sshfail")" = 0'
+fresh; echo 99 > "$FAKE/sshfail"; rebuild PROBE_SECONDS=1
+check "no ssh to the new VM: stops and says not to rebuild again" \
+  'said "STOPPED at: wait for ssh" && said "do not rebuild again" && said "4003" && ! said "rebuilt in"'
 
 ARGS=("$N"); fresh; rebuild
 check "rebuild to another version: the old one becomes the rollback" 'create_has "bethere-version=$N,bethere-previous-version=$V,"'

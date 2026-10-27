@@ -25,7 +25,7 @@ if [ -n "$want" ]; then
     sudo systemctl restart bethere
     sleep 3
     systemctl is-active bethere >/dev/null" || {
-    echo "metadata bethere-maintenance is now $want, but the restart failed; run maintenance.sh status" >&2
+    echo "metadata bethere-maintenance is now $want, but the restart failed; run maintenance.sh status (if ssh itself fails, check the IAP permission and firewall: the service keeps its mode until this succeeds)" >&2
     exit 1
   }
 fi

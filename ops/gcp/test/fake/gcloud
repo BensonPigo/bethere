@@ -21,7 +21,11 @@ case "$args" in
   *" compute machine-types describe "*)
     has "--zone asia-east1-a " || has "--zone asia-east1-b " || has "--zone asia-east1-c " || exit 1 ;;
   *" compute disks list "*) ;;
-  *" compute ssh "*) printf 'version=%s\nBETHERE_MAINTENANCE=0\n' "$(cat "$FAKE/deployed" 2>/dev/null)" ;;
+  *" compute ssh "*)
+    # sshfail: how many more ssh calls fail, as IAP does right after a create.
+    n="$(cat "$FAKE/sshfail" 2>/dev/null || echo 0)"
+    if [ "$n" -gt 0 ]; then echo $((n - 1)) > "$FAKE/sshfail"; echo "ERROR: 4003: failed to connect to backend" >&2; exit 255; fi
+    printf 'version=%s\nBETHERE_MAINTENANCE=0\n' "$(cat "$FAKE/deployed" 2>/dev/null)" ;;
   *" storage objects describe "*)
     for m in $(cat "$FAKE/missing" 2>/dev/null); do has "$m" && exit 1; done ;;
   *" storage ls "*)

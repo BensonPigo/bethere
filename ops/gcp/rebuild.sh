@@ -98,9 +98,21 @@ ZONE="$ZONE" DOMAIN="$DOMAIN" PREVIOUS_VERSION="$previous" "$(dirname "$0")/crea
 
 # ---- from outside: certificate valid, restored, in maintenance mode
 step="wait for https://$DOMAIN in maintenance mode (boot, restore, certificate)"
-advice="The new VM may still be coming up: check PROJECT=$PROJECT ops/gcp/maintenance.sh status in a few minutes before running it again."
+advice="The new VM may still be coming up: in a few minutes run curl -s https://$DOMAIN/api/ping (no ssh needed); \"maintenance\" means it is up, so do not run it again."
 echo "$step; up to $PROBE_SECONDS seconds ..."
 probe_mode 1
+
+# The site answering does not mean ssh does: IAP can reach a new VM about a
+# minute after the site is up, and maintenance.sh off needs ssh.
+step="wait for ssh to the new VM (maintenance.sh off needs it)"
+advice="The site is up in maintenance mode, so do not rebuild again: do step 5 now, then step 6 (maintenance.sh off) in a few minutes; if ssh still fails, check the IAP permission and firewall."
+ssh_seconds=$(( PROBE_SECONDS < 120 ? PROBE_SECONDS : 120 ))
+echo "$step; up to $ssh_seconds seconds ..."
+deadline=$((SECONDS + ssh_seconds))
+until ssh_error="$(vm_ssh true 2>&1 >/dev/null)"; do
+  [ "$SECONDS" -lt "$deadline" ] || { echo "no ssh to $VM after $ssh_seconds seconds: $ssh_error" >&2; false; }
+  sleep 2
+done
 
 echo "rebuilt in $(( (SECONDS - started) / 60 )) min. Next: runbook section 2, steps 5-6 (the Master checks, then maintenance.sh off)."
 echo "Kept disks (delete after the event, runbook section 4):"
