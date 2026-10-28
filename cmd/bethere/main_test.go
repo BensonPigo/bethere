@@ -493,6 +493,22 @@ func TestUS_O_2_1_BETHERE_MAINTENANCEAcceptsOnlyZeroOrOne(t *testing.T) {
 	}
 }
 
+// US-O-8.2: BETHERE_SUPPORT_EMAIL is shown only when it is one plain
+// address; anything else is dropped with an error, and serve still starts.
+func TestUS_O_8_2_SupportEmailFromEnv(t *testing.T) {
+	for _, v := range []string{"", "help@example.com", "Help.Desk+tw@mail.example.co"} {
+		got, err := supportEmailFromEnv(func(string) (string, bool) { return v, v != "" })
+		if err != nil || got != v {
+			t.Errorf("%q: %q %v", v, got, err)
+		}
+	}
+	for _, v := range []string{"help", "help@example", "a b@example.com", "<help@example.com>", "help@example.com\n", "a@b@example.com", "javascript:x@example.com"} {
+		if got, err := supportEmailFromEnv(func(string) (string, bool) { return v, true }); err == nil || got != "" {
+			t.Errorf("%q accepted: %q", v, got)
+		}
+	}
+}
+
 // US-O-2.1: the start script asks the release whether it knows
 // maintenance mode before starting it in that mode.
 func TestUS_O_2_1_FeaturesListsMaintenance(t *testing.T) {

@@ -10,6 +10,7 @@ import { readTheme, saveTheme } from "./theme";
 import { recoverOutcome } from "./recoverCode";
 import { createOutcome, dateRange } from "./createEvent";
 import { prep, prepDone } from "./prepGuide";
+import { supportEmail } from "./support";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -602,5 +603,18 @@ describe("the preparation checklist (US-M-18)", () => {
   it("all three ticked is done (US-M-18.4)", () => {
     expect(prepDone(prep(snap(1, [role(2, true)])))).toBe(true);
     expect(prepDone(prep(snap(0, [role(2, true)])))).toBe(false);
+  });
+});
+
+// US-O-8.3: only one plain address from /support.json is shown.
+describe("supportEmail", () => {
+  it("takes one plain address", () => {
+    expect(supportEmail({ email: "help@example.com" })).toBe("help@example.com");
+  });
+  it("shows nothing for none, junk or another scheme", () => {
+    for (const body of [null, {}, { email: null }, { email: 3 }, { email: "help" }, { email: "javascript:alert(1)//@x.com" },
+      { email: "a b@example.com" }, { email: "help@example.com?cc=x@y.com" }, "help@example.com"]) {
+      expect(supportEmail(body)).toBeNull();
+    }
   });
 });

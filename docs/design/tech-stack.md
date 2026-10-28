@@ -73,7 +73,7 @@
 | 網域與 TLS | **發出任何連結前**就設定自訂網域，A 紀錄指向靜態 IP；Caddy 以 Let's Encrypt 自動簽發與更新憑證（Let's Encrypt 失敗時改用 ZeroSSL），反向代理到本機的 Go 服務。重建 VM 會重新簽發；同一組網域每週最多 5 張重複憑證，所以演練一律用另一個子網域 |
 | 備份 | Litestream 持續複製到同區域的 GCS bucket（版本與保留期見 2.1「資料刪除」）；**不需要任何金鑰檔**。VM 使用**專屬服務帳號**（不用預設的 Compute 服務帳號），存取範圍設 `cloud-platform`、以 IAM 收窄：備份 bucket 可讀寫，發行版 bucket **只能讀**（VM 被入侵也無法改寫發行版） |
 | 發行版 | `make release` 產生 Linux 版 Go 執行檔（內嵌前端），連同鎖定版本的 Litestream、Caddy 上傳到發行版 bucket，以版本號命名，**上傳後不覆寫**（上傳時要求物件尚不存在）。恢復時不依賴 GitHub 或 apt 是否可用 |
-| 服務啟動 | `bethere.service` 設 `After=`／`Wants=network-online.target`、`Restart=on-failure`（有退避間隔、不設次數上限；沒有資料庫時 `serve` 本來就不啟動，所以重試是安全的）。每次啟動（開機、重啟服務皆同）都先執行準備腳本，以 `set -e` **失敗即停**：向 metadata server 讀取版本號與維護旗標（讀不到就不啟動）→ 版本與本機已安裝的相同就跳過下載（GCS 暫時不通時仍能啟動），不同才從發行版 bucket 下載到暫存檔，以原子方式換上後才寫入「已安裝版本」標記 → 資料庫檔不存在時先刪除殘留的 `-wal`／`-shm`，再執行 `litestream restore -if-replica-exists`，失敗就不啟動 → 以 `litestream replicate -exec "bethere serve"` 啟動。即使還原「成功但沒有副本」，`serve` 也會因找不到資料庫而拒絕啟動（2.1「不自動建庫」） |
+| 服務啟動 | `bethere.service` 設 `After=`／`Wants=network-online.target`、`Restart=on-failure`（有退避間隔、不設次數上限；沒有資料庫時 `serve` 本來就不啟動，所以重試是安全的）。每次啟動（開機、重啟服務皆同）都先執行準備腳本，以 `set -e` **失敗即停**：向 metadata server 讀取版本號與維護旗標（讀不到就不啟動）→ 版本與本機已安裝的相同就跳過下載（GCS 暫時不通時仍能啟動），不同才從發行版 bucket 下載到暫存檔，以原子方式換上後才寫入「已安裝版本」標記 → 資料庫檔不存在時先刪除殘留的 `-wal`／`-shm`，再執行 `litestream restore -if-replica-exists`，失敗就不啟動 → 讀取專案層級 metadata 的客服信箱（US-O-8.2；讀不到或格式不對就不顯示，不擋啟動）→ 以 `litestream replicate -exec "bethere serve"` 啟動。即使還原「成功但沒有副本」，`serve` 也會因找不到資料庫而拒絕啟動（2.1「不自動建庫」） |
 | 部署與回退 | 部署＝把 VM metadata 的版本號改成新版並重啟服務；回退＝改回上一版並重啟服務。活動前 7 天起凍結部署 |
 | 作業系統更新 | 平時開啟 Debian `unattended-upgrades`（只套安全更新、不自動重開機）；凍結期開始時套用一次更新並重開機驗證，之後停用自動更新到活動結束 |
 | 健康檢查 | `/healthz` 執行一次唯讀查詢（走唯讀連線池，不受寫入鎖影響），3 秒內沒成功就回 503，外部監控因此看得到資料庫讀不到；寫不進去（例如磁碟滿）不在這個檢查內 |

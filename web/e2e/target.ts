@@ -25,6 +25,8 @@ const LOCAL_PORT = 18090;
 type State = { baseURL: string; events: Links[]; local?: { dir: string; bin: string; pid: number } };
 
 export const target = (process.env.E2E_TARGET ?? "local") as "local" | "vm";
+// The local server's support address (US-O-8); the VM's test service has none.
+export const SUPPORT_EMAIL = "help@example.com";
 
 export function saveState(s: State) {
   writeFileSync(STATE, JSON.stringify(s));
@@ -107,6 +109,7 @@ function localServe(s: NonNullable<State["local"]>, init: boolean, maintenance =
   delete env.BETHERE_INIT;
   if (init) env.BETHERE_INIT = "1";
   env.BETHERE_MAINTENANCE = maintenance ? "1" : "0";
+  env.BETHERE_SUPPORT_EMAIL = SUPPORT_EMAIL;
   const p = spawn(s.bin, ["serve", "-db", join(s.dir, "e2e.db"), "-addr", `127.0.0.1:${LOCAL_PORT}`], {
     env, stdio: ["ignore", "ignore", "inherit"], detached: true,
   });
