@@ -182,11 +182,17 @@ func TestRecoveryCodeScope(t *testing.T) {
 		t.Errorf("non-Master link: err = %v, want ErrNoActor", err)
 	}
 
-	if _, err := f.s.w.Exec(`UPDATE events SET recovery_code_hash = ? WHERE id = ?`, hash("reset"), f.eventID); err != nil {
+	if err := f.s.ResetRecoveryCode(ctx, f.masterBy, hash("reset"), at(1, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.replaceMasterLink(ctx, code, f.eventID, hash("new-master"), at(1, 0)); !errors.Is(err, ErrInvalidRecoveryCode) {
 		t.Errorf("after reset: err = %v, want ErrInvalidRecoveryCode", err)
+	}
+	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2027, Month: time.May, Day: 1}, at(1, 0)); !errors.Is(err, ErrInvalidRecoveryCode) {
+		t.Errorf("RescheduleEvent after reset: err = %v, want ErrInvalidRecoveryCode", err)
+	}
+	if err := f.s.ResetRecoveryCode(ctx, code, hash("reset-again"), at(1, 0)); !errors.Is(err, ErrInvalidRecoveryCode) {
+		t.Errorf("ResetRecoveryCode after reset: err = %v, want ErrInvalidRecoveryCode", err)
 	}
 }
 

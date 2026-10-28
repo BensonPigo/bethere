@@ -261,6 +261,38 @@ func (s *Store) replaceMasterLink(ctx context.Context, actor Actor, eventID int6
 	})
 }
 
+// ResetRecoveryCode gives the actor's event a new recovery code; the old
+// one stops working in the same transaction (US-O-4). The actor is the
+// Master link or the current code, so a code that took the Master link
+// over can still be reset with the paper copy. The Master type is checked
+// here too, not only by the caller. Like ReissueLink it leaves the event
+// version alone; the log names who acted, never a code or hash.
+func (s *Store) ResetRecoveryCode(ctx context.Context, actor Actor, codeHash []byte, now time.Time) error {
+	if actor.kind != actorRole && actor.kind != actorRecoveryCode {
+		return ErrNoActor
+	}
+	return s.write(ctx, func(tx *sql.Tx) error {
+		if _, _, err := guardAs(ctx, tx, actor.eventID, actor, actor.kind, now); err != nil {
+			return err
+		}
+		var payload any
+		if actor.kind == actorRole {
+			_, typ, err := roleOf(ctx, tx, actor.roleID)
+			if err != nil {
+				return err
+			}
+			if typ != domain.Master {
+				return ErrNoActor
+			}
+			payload = map[string]any{"byTokenId": actor.tokenID}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE events SET recovery_code_hash = ? WHERE id = ?`, codeHash, actor.eventID); err != nil {
+			return err
+		}
+		return logAction(ctx, tx, actor.eventID, actor, "recovery-code.reset", payload, now)
+	})
+}
+
 // credential keeps its own copy, so the caller changing the slice later
 // does not change the actor.
 func credential(h []byte) *[]byte {

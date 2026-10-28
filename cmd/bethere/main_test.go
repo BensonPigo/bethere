@@ -408,6 +408,7 @@ func TestEverySubcommandRequiresDB(t *testing.T) {
 		{"add-role", "-name", "x", "-type", "Stylist", "-base-url", base},
 		{"import-rundown", "-file", "x.csv"},
 		{"create-invite"},
+		{"reset-recovery-code"},
 	} {
 		r := runWith("", nil, args...)
 		if r.code != 2 || !strings.Contains(r.stderr, "-db") {
@@ -425,6 +426,7 @@ func TestCommandsNeverCreateADatabase(t *testing.T) {
 		{"create-event", "-db", missing, "-name", "x", "-date", "2027-06-06", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
 		{"add-role", "-db", missing, "-name", "x", "-type", "Stylist", "-base-url", base},
 		{"create-invite", "-db", missing},
+		{"reset-recovery-code", "-db", missing},
 	} {
 		if r := runWith("", nil, args...); r.code != 1 {
 			t.Errorf("%v: exit %d", args, r.code)
@@ -563,5 +565,106 @@ func TestUS_X_4_1_AddRoleSetsTheScreen(t *testing.T) {
 		if role["type"] != c.typ || role["view"] != c.view {
 			t.Errorf("%v: role = %v, want %s %s", c.args, role, c.typ, c.view)
 		}
+	}
+}
+
+// US-O-4: the developer resets the recovery code with the Master link or
+// with the current code, typed as on paper; the new code is printed once,
+// on standard output only, and the old one stops working.
+func TestUS_O_4_ResetRecoveryCode(t *testing.T) {
+	db := newDB(t)
+	master, masterToken, old := newEvent(t, db)
+	codes := []string{old}
+	for _, input := range []func() string{
+		func() string { return master + "\n" },
+		func() string { return strings.ToLower(strings.ReplaceAll(codes[len(codes)-1], "-", " ")) + "\n" },
+	} {
+		in := input()
+		r := runWith(in, nil, "reset-recovery-code", "-db", db)
+		if r.code != 0 {
+			t.Fatalf("reset: %d %s", r.code, r.stderr)
+		}
+		m := codeRE.FindAllStringSubmatch(r.stdout, -1)
+		if len(m) != 1 {
+			t.Fatalf("stdout %q: want exactly one code", r.stdout)
+		}
+		for _, secret := range []string{m[0][1], codes[len(codes)-1], masterToken} {
+			if strings.Contains(r.stderr, secret) {
+				t.Errorf("stderr carries a secret: %q", r.stderr)
+			}
+		}
+		if strings.Contains(r.stdout, masterToken) || strings.Contains(r.stdout, codes[len(codes)-1]) {
+			t.Errorf("stdout echoes the input: %q", r.stdout)
+		}
+		codes = append(codes, m[0][1])
+	}
+
+	st, err := store.Open(context.Background(), db, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for i, c := range codes {
+		h, err := auth.HashRecoveryCode(c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = st.LookupRecoveryCode(context.Background(), h)
+		if last := i == len(codes)-1; last != (err == nil) {
+			t.Errorf("code %d (last %v): err = %v", i, last, err)
+		}
+	}
+	if _, err := st.LookupToken(context.Background(), auth.HashToken(masterToken), time.Now()); err != nil {
+		t.Errorf("the Master link stopped working: %v", err)
+	}
+}
+
+func TestResetRecoveryCodeRefusals(t *testing.T) {
+	db := newDB(t)
+	master, _, code := newEvent(t, db)
+	r := runWith(master+"\n", nil, "add-role", "-db", db, "-name", "新秘", "-type", "Stylist", "-base-url", base)
+	stylist := linkRE.FindStringSubmatch(r.stdout)[0]
+	unknown, err := auth.NewRecoveryCode() // well formed, of no event
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{stylist, "https://bethere.example/#x=abc", "ABCD-EFGH", unknown, ""} {
+		r := runWith(input+"\n", nil, "reset-recovery-code", "-db", db)
+		if r.code != 1 || r.stdout != "" {
+			t.Errorf("%q: exit %d, stdout %q", input, r.code, r.stdout)
+		}
+		if input != "" && strings.Contains(r.stderr, input) {
+			t.Errorf("%q: stderr echoes the input: %q", input, r.stderr)
+		}
+	}
+	h, _ := auth.HashRecoveryCode(code)
+	st, err := store.Open(context.Background(), db, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, _, err := st.LookupRecoveryCode(context.Background(), h); err != nil {
+		t.Errorf("a refused reset changed the code: %v", err)
+	}
+}
+
+// failWriter fails every write, as a closed pipe would.
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+// The new code is printed before it is stored (US-O-4.4): when printing
+// fails nothing changes, so the code in hand, paper or link, still works.
+func TestResetRecoveryCodeUnprinted(t *testing.T) {
+	db := newDB(t)
+	_, _, old := newEvent(t, db)
+	var errb bytes.Buffer
+	code := run([]string{"reset-recovery-code", "-db", db}, cli{stdin: strings.NewReader(old + "\n"), stdout: failWriter{}, stderr: &errb,
+		lookupEnv: func(string) (string, bool) { return "", false }})
+	if code != 1 || !strings.Contains(errb.String(), "nothing was changed") {
+		t.Errorf("exit %d, stderr %q", code, errb.String())
+	}
+	if r := runWith(old+"\n", nil, "reset-recovery-code", "-db", db); r.code != 0 || codeRE.FindString(r.stdout) == "" {
+		t.Errorf("again with the same code: %d %q %q", r.code, r.stdout, r.stderr)
 	}
 }
