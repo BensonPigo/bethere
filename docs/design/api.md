@@ -284,9 +284,10 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 6. **所有寫入**都帶 store 的 `Actor`，在同一交易內重新確認憑證並寫入操作紀錄。
 7. **指令（`bethere` 子命令）**：
    - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫，ADR-0012）。
-   - `create-event`、`add-role`、`import-rundown`、`create-invite` 一律以「不建立新資料庫」的方式開啟；連結、復原碼與邀請碼只印到終端機（stdout），不經過結構化日誌。
+   - `create-event`、`add-role`、`import-rundown`、`create-invite`、`reset-recovery-code` 一律以「不建立新資料庫」的方式開啟；連結、復原碼與邀請碼只印到終端機（stdout），不經過結構化日誌。
    - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經 `LookupToken` 取得操作者（不留在 shell 歷史與程序清單）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
    - `import-rundown` 在單一交易內寫入全部 Cue 與指派，任一列不合法就整份不寫入（US-M-0.2）。
+   - `reset-recovery-code`（US-O-4）以同樣的方式讀取 Master 連結**或**目前的復原碼，store 在單一交易內重新確認憑證、活動未結束，以 Master 連結時再確認角色類型是 Master，然後換掉復原碼雜湊並寫操作紀錄（`recovery-code.reset`）。新碼先印出再寫入：印出失敗時什麼都不改（沒人看到的碼絕不能取代手上可能唯一的憑證，RISK-19）；寫入失敗時以錯誤結束並說明印出的碼無效。
 
 ## 8. 安全邊界相關的限制
 

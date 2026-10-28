@@ -6,6 +6,7 @@
 //	bethere add-role       -db <path> -name <name> -type Stylist|Host [-view HandsFree|Glance] -base-url https://<host>
 //	bethere import-rundown -db <path> -file rundown.csv
 //	bethere create-invite  -db <path>
+//	bethere reset-recovery-code -db <path>
 //	bethere version
 //	bethere features
 //
@@ -15,6 +16,8 @@
 // standard output only, never to a log (api.md section 7). add-role and import-rundown
 // act as the Master: they ask for the Master link on the terminal without
 // echo and never take it from arguments or the environment (api.md section 7).
+// reset-recovery-code asks the same way for the Master link or the current
+// recovery code (US-O-4).
 package main
 
 import (
@@ -47,7 +50,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|version|features> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -81,6 +84,8 @@ func run(args []string, c cli) int {
 		err = importRundown(args[1:], c)
 	case "create-invite":
 		err = createInvite(args[1:], c)
+	case "reset-recovery-code":
+		err = resetRecoveryCode(args[1:], c)
 	case "version":
 		fmt.Fprintln(c.stdout, version)
 		return 0
@@ -451,6 +456,80 @@ func importRundown(args []string, c cli) error {
 	return nil
 }
 
+// resetRecoveryCode gives an event a new recovery code (US-O-4). The
+// event is named by its Master link or by its current recovery code, read
+// like the Master link in askMaster: the code is what is left when a
+// leaked copy has taken the Master link over. The new code is printed
+// once, before it is stored; if printing fails nothing changes, and if
+// storing fails the printed code is declared void (US-O-4.4).
+func resetRecoveryCode(args []string, c cli) error {
+	fs := flag.NewFlagSet("reset-recovery-code", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "database file (required)")
+	if err := parseFlags(fs, args, c); err != nil {
+		return err
+	}
+	if err := required("db", *dbPath); err != nil {
+		return err
+	}
+	ctx := context.Background()
+	st, err := openExisting(ctx, *dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	fmt.Fprint(c.stderr, "Master link or current recovery code (input hidden): ")
+	line, err := readSecretLine(c.stdin)
+	fmt.Fprintln(c.stderr)
+	if err != nil {
+		return fmt.Errorf("reading the input: %w", err)
+	}
+	var actor store.Actor
+	var eventID int64
+	if token, err := tokenFromLink(line); err == nil {
+		owner, err := proveMaster(ctx, st, token)
+		if err != nil {
+			return err
+		}
+		actor, eventID = owner.Actor, owner.EventID
+	} else if oldHash, err := auth.HashRecoveryCode(line); err == nil {
+		actor, eventID, err = st.LookupRecoveryCode(ctx, oldHash)
+		if errors.Is(err, store.ErrInvalidRecoveryCode) {
+			return errors.New("the recovery code is wrong or was reset already")
+		}
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("not a Master link or recovery code")
+	}
+
+	code, err := auth.NewRecoveryCode()
+	if err != nil {
+		return err
+	}
+	codeHash, err := auth.HashRecoveryCode(code)
+	if err != nil {
+		return err
+	}
+	// Printed before it is stored: a code nobody saw must never replace the
+	// one in hand, which may be the only way back in (RISK-19).
+	if _, err := fmt.Fprintf(c.stdout, "New recovery code for event %d (shown only this once; give it only to the backup operator, apart from the link):\n  %s\n",
+		eventID, code); err != nil {
+		return fmt.Errorf("the new code could not be shown (%v); nothing was changed", err)
+	}
+	switch err := st.ResetRecoveryCode(ctx, actor, codeHash, time.Now()); {
+	case errors.Is(err, domain.ErrEnded):
+		return errors.New("the event has ended; nothing was changed and the code above does not work")
+	case errors.Is(err, store.ErrInvalidRecoveryCode), errors.Is(err, store.ErrInvalidToken):
+		return errors.New("the link or code stopped working before the reset; nothing was changed and the code above does not work")
+	case err != nil:
+		return fmt.Errorf("%w; nothing was changed and the code above does not work", err)
+	}
+	fmt.Fprintln(c.stdout, "Reset: the old recovery code no longer works.")
+	return nil
+}
+
 // askMaster asks for the Master link on the terminal without echo, reads
 // it from standard input only, and proves it with the store (api.md section 7). The
 // store does not check role types, so being the Master is checked here.
@@ -465,6 +544,11 @@ func askMaster(ctx context.Context, st *store.Store, c cli) (store.TokenOwner, e
 	if err != nil {
 		return store.TokenOwner{}, err
 	}
+	return proveMaster(ctx, st, token)
+}
+
+// proveMaster looks the token up and accepts only a valid Master link.
+func proveMaster(ctx context.Context, st *store.Store, token string) (store.TokenOwner, error) {
 	owner, err := st.LookupToken(ctx, auth.HashToken(token), time.Now())
 	switch {
 	case errors.Is(err, store.ErrInvalidToken):
