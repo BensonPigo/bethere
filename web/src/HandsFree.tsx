@@ -146,15 +146,29 @@ function useCheckInQuestion(snap: RoleSnapshot, offline: boolean) {
 }
 
 // US-ST-1.6: request on tap; re-show the overlay whenever the lock is not held.
+// Without Wake Lock the hint is shown once per device (screen-design.md section 5).
+const WAKE_HINT_KEY = "wakeHintDismissed";
+
 function useWakeLock() {
   const supported = typeof navigator !== "undefined" && "wakeLock" in navigator;
   const sentinel = useRef<WakeLockSentinel | null>(null);
   const [held, setHeld] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(WAKE_HINT_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const request = useCallback(async () => {
     if (!supported) {
       setDismissed(true);
+      try {
+        localStorage.setItem(WAKE_HINT_KEY, "1");
+      } catch {
+        /* shown again next time */
+      }
       return;
     }
     try {

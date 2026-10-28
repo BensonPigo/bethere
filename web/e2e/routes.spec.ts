@@ -202,6 +202,21 @@ test("廠商收到變更：打卡、平移與新增環節的提示、目前環�
   await test.step("音控的備註以等寬字體顯示（US-X-6.6）", async () => {
     await expect(av.locator(".next-card .note.mono").first()).toContainText("welcome.mp3");
   });
+
+  await test.step("瀏覽器不支援常亮時，提示關掉後重新整理不再出現（US-ST-1.6）", async () => {
+    const ctx = await browser.newContext({ ...IPHONE, baseURL: loadState().baseURL });
+    contexts.push(ctx);
+    await ctx.addInitScript(() => {
+      delete (Navigator.prototype as { wakeLock?: unknown }).wakeLock;
+    });
+    const phone = await ctx.newPage();
+    await phone.goto(`/#t=${links.新秘}`);
+    await phone.getByText("此瀏覽器不支援螢幕常亮").click(); // checked in already, so not asked again
+    await expect(phone.getByText("此瀏覽器不支援螢幕常亮")).toBeHidden();
+    await phone.reload();
+    await expect(phone.locator(".big-num")).toBeVisible();
+    await expect(phone.getByText("此瀏覽器不支援螢幕常亮")).toBeHidden();
+  });
 });
 
 // ---------------------------------------------------------------- 連結外流
