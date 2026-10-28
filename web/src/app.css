@@ -256,6 +256,8 @@ button.theme-toggle { min-height: 44px; padding: 8px 12px; font-size: 15px; whit
 .recovery-code { min-height: 52px; font-size: 20px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--field); background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.05em; width: 100%; box-sizing: border-box; }
 .recover button.confirm { min-height: 52px; font-size: 20px; }
 .recover .bad { color: var(--bad); font-weight: 600; margin: 0; }
+.recover h2 { font-size: 18px; color: var(--fg); margin: 8px 0 0; }
+.admin-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 
 /* `/new` and the way to it (US-M-17). */
 .invite-note { margin-top: 32px; color: var(--muted); font-size: 16px; }

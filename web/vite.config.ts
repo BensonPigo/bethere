@@ -14,7 +14,7 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
-        navigateFallbackAllowlist: [/^\/$/, /^\/print$/, /^\/recover$/, /^\/new$/],
+        navigateFallbackAllowlist: [/^\/$/, /^\/print$/, /^\/recover$/, /^\/new$/, /^\/admin$/],
         navigateFallbackDenylist: [/^\/api\//, /^\/healthz$/],
         runtimeCaching: [],
       },

@@ -11,6 +11,7 @@ import { recoverOutcome } from "./recoverCode";
 import { createOutcome, dateRange } from "./createEvent";
 import { prep, prepDone } from "./prepGuide";
 import { supportEmail } from "./support";
+import { inviteOutcome, overviewOutcome } from "./admin";
 import { agoText, dateInZone, formatHM, parseClock, zonedToISO } from "./format";
 import { holdsStaleGuests, isStaleLive, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 import { countdownText, levelFor, nextPendingCue, stylistView } from "./roleView";
@@ -616,5 +617,29 @@ describe("supportEmail", () => {
       { email: "a b@example.com" }, { email: "help@example.com?cc=x@y.com" }, "help@example.com"]) {
       expect(supportEmail(body)).toBeNull();
     }
+  });
+});
+
+// The admin page's answers (US-O-9, US-O-10): anything not understood is a
+// failure, and every refusal of the link is the same "denied".
+describe("admin page", () => {
+  const ev = { id: 1, name: "婚宴", date: "2027-06-06", status: "Draft", createdAt: "2027-05-01T00:00:00Z" };
+  const inv = { id: 3, expiresAt: "2027-06-01T00:00:00Z" };
+  it("reads the overview", () => {
+    expect(overviewOutcome(200, { result: "ok", invites: [inv], events: [ev] })).toEqual({ kind: "ok", invites: [inv], events: [ev] });
+    expect(overviewOutcome(200, { result: "ok", invites: [inv] }).kind).toBe("failure");
+    expect(overviewOutcome(200, { result: "ok", invites: [{ id: "3" }], events: [] }).kind).toBe("failure");
+    expect(overviewOutcome(404, { error: "not_found" }).kind).toBe("denied");
+    expect(overviewOutcome(503, { error: "maintenance" }).kind).toBe("maintenance");
+    expect(overviewOutcome(500, { error: "internal" }).kind).toBe("failure");
+  });
+  it("reads a new code", () => {
+    expect(inviteOutcome(200, { result: "ok", id: 4, code: "ABCD-EFGH", expiresAt: "2027-06-01T00:00:00Z" })).toEqual({
+      kind: "ok", id: 4, code: "ABCD-EFGH", expiresAt: "2027-06-01T00:00:00Z",
+    });
+    expect(inviteOutcome(200, { result: "ok", id: 4 }).kind).toBe("failure");
+    expect(inviteOutcome(422, { error: "too_many_invites" }).kind).toBe("tooMany");
+    expect(inviteOutcome(404, { error: "not_found" }).kind).toBe("denied");
+    expect(inviteOutcome(422, { error: "wrong_invite_code" }).kind).toBe("failure");
   });
 });

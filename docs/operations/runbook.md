@@ -12,6 +12,7 @@
 - 維護模式（規則見 `requirements/stories.md` US-O-2）：`ops/gcp/maintenance.sh on|off|status`。`on` 開啟並重啟；`off` 解除、刪除還原標記並重啟；`status` 顯示 metadata、還原標記與服務實際的模式。三者最後都從外部確認：維護中 `/api/ping` 回 503 `maintenance`，開放時回 200。從備份還原的資料庫會一直維持維護模式，直到 `off`。維護中只能部署支援維護模式的版本，要回退到更舊的版本先 `off`。
 - 重建：`ops/gcp/rebuild.sh`（第 2 節程序 2）刪掉舊 VM 後呼叫 `ops/gcp/create-vm.sh`；`create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台，每次都建一顆名稱不重複的新開機磁碟；新 VM 一律帶 `bethere-maintenance=1`。重建後測試服務的網域不會沿用，要再執行一次 `ops/gcp/e2e-setup.sh`。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原，並以維護模式啟動。第一次部署時以 `ops/gcp/init-db.sh` 建立空資料庫後，執行 `ops/gcp/maintenance.sh off`。
 - 邀請碼（ADR-0036）：`ops/gcp/invite.sh` 在正式資料庫產生一組邀請碼，印出編號與邀請碼各一次，交給受邀的人在 `/new` 建立活動（不支援的舊版會回 `unknown command`）。記下編號給了誰：建立活動的操作紀錄只記編號。
+- 系統後台（ADR-0038）：`ops/gcp/admin-link.sh` 在正式資料庫產生管理員連結，印出一次，舊的立即失效；存在自己的密碼管理工具，打開就能發邀請碼、看所有活動。懷疑外流、從備份還原後都再執行一次。
 - 客服信箱（US-O-8、ADR-0037）：`ops/gcp/support-email.sh <信箱>` 設定、`ops/gcp/support-email.sh none` 清除。信箱放在專案層級的 metadata，重建 VM 也沿用。腳本不重啟服務，新的信箱從服務下次啟動起顯示：主機開著時以 `ops/gcp/deploy.sh <目前版本>` 重新部署同一版（「上一版」不變），關著時就是下次 `power.sh on`；之後開 `https://<網域>/support.json` 確認。凍結期不換信箱。由開發者（專案擁有者）執行，備援操作者沒有寫 metadata 的權限。
 - 監控（US-O-7）：`ALERT_EMAIL=<信箱> ops/gcp/monitoring.sh` 建立外部探測與告警，網站打不開時約 3～5 分鐘後寄信，恢復時再寄一封。開發期主機平時關機，一律以 `ops/gcp/power.sh on|off` 開關，告警跟著開關；在 Cloud 網頁主控台直接關機，告警會一直寄信。`ops/gcp/power.sh status` 顯示主機與告警的狀態；重建或主機狀態不明時先看它，告警沒開就執行 `ops/gcp/power.sh on`（主機已開也可以，只會打開告警）。凍結期起主機一直開著，**不要**執行 `power.sh off`：它會連告警一起關掉。
 - 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
@@ -76,6 +77,7 @@ sequenceDiagram
      5. 請總召用 Master 連結確認 Rundown 與 Cue 狀態是最新的，並在角色與連結管理畫面確認各角色的連結狀態（未發／有效／已撤銷）。此時其他角色仍被擋、`lastSeenAt` 已歸零，「最近有人在用」必定是空的，不必核對。
         - 資料略舊：總召在維護模式下直接補登（Master 可寫入）。
         - 備份時間點之後若曾以 `reset-recovery-code` 重設復原碼，還原後外流的舊碼又會有效，備援操作者手上的新碼反而無效：先由開發者再重設一次，憑證用總召手上的 Master 連結（還原後仍有效時），否則用重設前的舊紙本碼；新碼交給備援操作者，再做下一步。兩者都不能用時同 RISK-19（`README.md`）。
+        - 開發者以 `ops/gcp/admin-link.sh` 重新產生一次管理員連結：備份時間點之後若曾因外流重新產生，還原後被取代的舊連結又會有效。
         - 一律由備援操作者以復原碼在 `/recover` **再換發一次** Master 連結，傳給總召：備份時間點之後若曾換發，還原後舊的 Master 連結又會有效。
         - 以邀請碼建立的活動沒有備援操作者：開發者通知那些建立者，若備份時間點之後曾以復原碼換發總召連結，請自己在 `/recover` 再換發一次。
         - 備份時間點之後用掉的邀請碼又能用、之後才產生的邀請碼不見了，那段時間以邀請碼建立的活動也不在了：請那些建立者用原本的邀請碼重建，或發新的邀請碼。

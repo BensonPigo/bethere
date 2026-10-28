@@ -409,6 +409,7 @@ func TestEverySubcommandRequiresDB(t *testing.T) {
 		{"import-rundown", "-file", "x.csv"},
 		{"create-invite"},
 		{"reset-recovery-code"},
+		{"issue-admin-link", "-base-url", base},
 	} {
 		r := runWith("", nil, args...)
 		if r.code != 2 || !strings.Contains(r.stderr, "-db") {
@@ -427,6 +428,7 @@ func TestCommandsNeverCreateADatabase(t *testing.T) {
 		{"add-role", "-db", missing, "-name", "x", "-type", "Stylist", "-base-url", base},
 		{"create-invite", "-db", missing},
 		{"reset-recovery-code", "-db", missing},
+		{"issue-admin-link", "-db", missing, "-base-url", base},
 	} {
 		if r := runWith("", nil, args...); r.code != 1 {
 			t.Errorf("%v: exit %d", args, r.code)
@@ -666,5 +668,39 @@ func TestResetRecoveryCodeUnprinted(t *testing.T) {
 	}
 	if r := runWith(old+"\n", nil, "reset-recovery-code", "-db", db); r.code != 0 || codeRE.FindString(r.stdout) == "" {
 		t.Errorf("again with the same code: %d %q %q", r.code, r.stdout, r.stderr)
+	}
+}
+
+var adminRE = regexp.MustCompile(`https://bethere\.example/admin#t=([A-Za-z0-9_-]{22})\b`)
+
+// US-O-9.1: the admin link is printed once, on standard output only, and
+// a new one replaces the last.
+func TestUS_O_9_1_IssueAdminLink(t *testing.T) {
+	db := newDB(t)
+	var tokens []string
+	for range 2 {
+		r := runWith("", nil, "issue-admin-link", "-db", db, "-base-url", base)
+		if r.code != 0 {
+			t.Fatalf("issue-admin-link: %d %s", r.code, r.stderr)
+		}
+		m := adminRE.FindAllStringSubmatch(r.stdout, -1)
+		if len(m) != 1 || strings.Count(r.stdout, m[0][1]) != 1 || strings.Contains(r.stderr, m[0][1]) {
+			t.Fatalf("stdout %q, stderr %q: want the link exactly once, on stdout", r.stdout, r.stderr)
+		}
+		tokens = append(tokens, m[0][1])
+	}
+	st, err := store.Open(context.Background(), db, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.CheckAdmin(context.Background(), auth.HashToken(tokens[1])); err != nil {
+		t.Errorf("new link: %v", err)
+	}
+	if err := st.CheckAdmin(context.Background(), auth.HashToken(tokens[0])); !errors.Is(err, store.ErrInvalidAdmin) {
+		t.Errorf("old link: err = %v, want ErrInvalidAdmin", err)
+	}
+	if r := runWith("", nil, "issue-admin-link", "-db", db, "-base-url", base, "extra"); r.code != 2 {
+		t.Errorf("positional argument: exit %d", r.code)
 	}
 }

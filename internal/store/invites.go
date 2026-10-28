@@ -18,10 +18,19 @@ const InviteLife = 30 * 24 * time.Hour
 // number the create-event log refers to (US-M-17.1).
 func (s *Store) CreateInvite(ctx context.Context, codeHash []byte, now time.Time) (int64, error) {
 	var id int64
-	err := s.write(ctx, func(tx *sql.Tx) error {
-		return tx.QueryRowContext(ctx, `INSERT INTO invites (code_hash, expires_at) VALUES (?, ?) RETURNING id`,
-			codeHash, toNS(now.Add(InviteLife))).Scan(&id)
+	err := s.write(ctx, func(tx *sql.Tx) (err error) {
+		id, err = insertInvite(ctx, tx, codeHash, now)
+		return err
 	})
+	return id, err
+}
+
+// insertInvite stores a code usable for InviteLife from now; the command
+// and the admin page share it (US-O-10.1).
+func insertInvite(ctx context.Context, tx *sql.Tx, codeHash []byte, now time.Time) (int64, error) {
+	var id int64
+	err := tx.QueryRowContext(ctx, `INSERT INTO invites (code_hash, expires_at) VALUES (?, ?) RETURNING id`,
+		codeHash, toNS(now.Add(InviteLife))).Scan(&id)
 	return id, err
 }
 

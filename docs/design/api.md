@@ -45,8 +45,8 @@
 | 400 | `bad_request` | 缺少或重複的 `Authorization` 標頭、Token 格式不符、本文不是單一 JSON 物件、有未知欄位、超過本文上限（第 1 節） |
 | 403 | `forbidden` | Token 有效，但角色類型沒有這個端點的權限（第 4 節） |
 | 409 | `version_conflict` | 寫入帶的 `version` 不是目前版本；回應另附 `snapshot`（最新快照），客戶端更新畫面並提示「畫面已更新，請重新確認」 |
-| 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節） |
-| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`wrong_invite_code`、`invalid_event`（只有建立活動，見第 3 節）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
+| 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節）；系統後台的端點不是帶著目前的管理員連結（沒有或格式不符的標頭、查無、任何角色的連結、被取代的管理員連結都相同，先於本文檢查；US-O-9.1） |
+| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`wrong_invite_code`、`invalid_event`（只有建立活動，見第 3 節）、`too_many_invites`（只有系統後台）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
 | 503 | `maintenance` | 維護模式下，Master 與復原碼換發以外的所有 `/api/` 請求，以及任何人的建立活動（第 8 節） |
 
@@ -78,6 +78,8 @@
 | `POST /api/roles/preview` | Token | Master | `{"roleId":n}` | `{"result":"ok","preview":{…}}`：`preview` 是目標角色自己會拿到的快照（US-M-14） |
 | `POST /api/recover/master` | 復原碼（只在本文） | — | `{"recoveryCode":"…"}` | `{"result":"ok","token":"<22 字元>"}`：新的 Master 連結，不附快照（US-O-3） |
 | `POST /api/events` | 邀請碼（只在本文） | — | `{"inviteCode":"…","name":"…","date":"YYYY-MM-DD"}` | `{"result":"ok","token":"<22 字元>","recoveryCode":"…"}`：新活動的 Master 連結與復原碼，不附快照（US-M-17） |
+| `GET /api/admin/overview` | 管理員連結 | — | — | `{"result":"ok","invites":[{"id":n,"expiresAt":…}],"events":[{"id":n,"name":"…","date":"YYYY-MM-DD","status":"Draft\|Live\|Ended","createdAt":…}]}`：還沒用的邀請碼與所有活動，新的在前（US-O-9.2） |
+| `POST /api/admin/invites` | 管理員連結 | — | `{}` | `{"result":"ok","id":n,"code":"…","expiresAt":…}`：新的邀請碼，只在這次回應（US-O-10） |
 | `GET /support.json` | 無 | — | — | `{"email":"<客服信箱>"}`，沒有設定時為 `{"email":null}`；不在 `/api/` 下，維護模式照常回應；`Cache-Control: no-store`（US-O-8.1） |
 | `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料；維護模式下回 503 `maintenance`，`ops/gcp/maintenance.sh` 以此從外部確認模式 |
 
@@ -284,14 +286,15 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 6. **所有寫入**都帶 store 的 `Actor`，在同一交易內重新確認憑證並寫入操作紀錄。
 7. **指令（`bethere` 子命令）**：
    - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫，ADR-0012）。
-   - `create-event`、`add-role`、`import-rundown`、`create-invite`、`reset-recovery-code` 一律以「不建立新資料庫」的方式開啟；連結、復原碼與邀請碼只印到終端機（stdout），不經過結構化日誌。
+   - `create-event`、`add-role`、`import-rundown`、`create-invite`、`reset-recovery-code`、`issue-admin-link` 一律以「不建立新資料庫」的方式開啟；連結、復原碼與邀請碼只印到終端機（stdout），不經過結構化日誌。
    - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經 `LookupToken` 取得操作者（不留在 shell 歷史與程序清單）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
    - `import-rundown` 在單一交易內寫入全部 Cue 與指派，任一列不合法就整份不寫入（US-M-0.2）。
+   - `issue-admin-link`（US-O-9.1）不讀取任何憑證：能在主機上執行就是開發者。單一交易內刪掉舊的管理員連結、存入新的雜湊，連結只印到 stdout。
    - `reset-recovery-code`（US-O-4）以同樣的方式讀取 Master 連結**或**目前的復原碼，store 在單一交易內重新確認憑證、活動未結束，以 Master 連結時再確認角色類型是 Master，然後換掉復原碼雜湊並寫操作紀錄（`recovery-code.reset`）。新碼先印出再寫入：印出失敗時什麼都不改（沒人看到的碼絕不能取代手上可能唯一的憑證，RISK-19）；寫入失敗時以錯誤結束並說明印出的碼無效。
 
 ## 8. 安全邊界相關的限制
 
-- **維護模式**（`tech-stack.md` 2.1「維護模式」，US-O-2）：所有路由之前的單一關卡。路徑（整理後）在 `/api` 底下時，只放行 `POST /api/recover/master`，以及 Bearer Token 查得到、類型為 Master 的請求；其他一律回 503 `maintenance`，包括其他角色、查無或已結束的連結、沒有或格式不符的標頭、資料庫錯誤、`/api/ping` 與不存在的路徑，絕不回 `invalid` 或 `ended`（還原後不存在的連結因此不會清掉裝置資料）。被擋的請求不到處理函式，不更新 `lastSeenAt`。放行的 Master 請求由處理函式再查一次 Token；兩次之間 Master 連結剛好被換發時回 `invalid`，與平常相同。`POST /api/events` 不看 Token，由處理函式自己在維護模式下回 503 `maintenance`，所以帶著 Master 的 Token 也建立不了活動。
+- **維護模式**（`tech-stack.md` 2.1「維護模式」，US-O-2）：所有路由之前的單一關卡。路徑（整理後）在 `/api` 底下時，只放行 `POST /api/recover/master`，以及 Bearer Token 查得到、類型為 Master 的請求；其他一律回 503 `maintenance`，包括其他角色、查無或已結束的連結、沒有或格式不符的標頭、資料庫錯誤、`/api/ping` 與不存在的路徑，絕不回 `invalid` 或 `ended`（還原後不存在的連結因此不會清掉裝置資料）。被擋的請求不到處理函式，不更新 `lastSeenAt`。放行的 Master 請求由處理函式再查一次 Token；兩次之間 Master 連結剛好被換發時回 `invalid`，與平常相同。`POST /api/events` 不看 Token，由處理函式自己在維護模式下回 503 `maintenance`，所以帶著 Master 的 Token 也建立不了活動。系統後台的端點同樣被擋（管理員連結不是 Master），回 503 `maintenance`。
 - 第 2、4、6 節屬於「Token 權限與資料外洩」邊界：實作完成後由獨立審查依第 4 節權限表的**每一格**、第 6 節的**每一列**與第 5 節的鍵集合驗證。
 - 必要的測試：
   - 資料庫中直接插入未開放的角色類型，每個端點都回 403。
@@ -300,6 +303,11 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
   - 404、405、本文過大、400、403、409、500 的回應都有 `no-store` 且不帶 `result`。
   - `POST /api/report` 回 404 或 405。
   - `BETHERE_INIT` 為 `0`、`true`、` 1`、`yes` 時拒絕啟動。
+  - 系統後台（US-O-9、US-O-10）：
+    - 沒有標頭、格式不符、查無、總召與其他角色的連結、被取代的管理員連結，兩個端點都回同一個 404 `not_found`，本文格式錯誤也一樣；管理員連結打角色端點回 `invalid`。
+    - 總覽的鍵集合固定，不含任何雜湊；發出的邀請碼送進 `POST /api/events` 可以建立活動；日誌不含管理員連結或邀請碼。
+    - 24 小時內第 21 組回 422 `too_many_invites`；用掉的碼與重新產生的連結都不讓額度恢復；同時送出的請求不超過上限。
+    - 維護模式下兩個端點都回 503 `maintenance`。
   - 建立活動（US-M-17）：
     - 維護模式下，不帶 Token 與帶 Master 的 Token 都回 503 `maintenance`，邀請碼仍可用。
     - 不正確、格式不符、已用、已過期的邀請碼都回同一個 422 `wrong_invite_code`；取消的請求與資料庫錯誤不回 `wrong_invite_code`。

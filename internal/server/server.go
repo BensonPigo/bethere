@@ -13,7 +13,7 @@ import (
 )
 
 // Entry paths all render the single-page app; see tech-stack.md 2.2「路由」.
-var entryPaths = []string{"/", "/print", "/recover", "/new"}
+var entryPaths = []string{"/", "/print", "/recover", "/new", "/admin"}
 
 type Config struct {
 	Static  fs.FS

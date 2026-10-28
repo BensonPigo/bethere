@@ -5,7 +5,7 @@
 // stay with real people on real phones.
 import { devices, expect, test } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { createInvite, loadState, startServer, stopServer, SUPPORT_EMAIL, target, tomorrow } from "./target";
+import { createInvite, issueAdminLink, loadState, startServer, stopServer, SUPPORT_EMAIL, target, tomorrow } from "./target";
 import type { Links, RoleName } from "./target";
 
 // NFR-2 is 3 seconds for 95% of devices; one poll is 2 seconds. A route
@@ -610,6 +610,44 @@ test("用邀請碼建立活動：首頁 → 建立 → 進入總召畫面，上�
     await page.getByLabel("活動日期").fill(tomorrow());
     await page.getByRole("button", { name: "建立活動" }).click();
     await expect(page.getByRole("alert")).toHaveText("邀請碼不正確或已失效");
+  });
+});
+
+test("系統後台：發邀請碼、用它建立活動、在清單看到", async ({ browser }) => {
+  const admin = issueAdminLink();
+  const ctx = await browser.newContext({ ...IPAD, baseURL: loadState().baseURL });
+  contexts.push(ctx);
+  const page = await ctx.newPage();
+  let code = "";
+
+  await test.step("總召的連結進不了後台（US-O-9.1）", async () => {
+    await page.goto(`/admin#t=${event(0)["總召"]}`);
+    await expect(page.getByRole("alert")).toHaveText("無法進入後台");
+  });
+
+  await test.step("管理員連結打開後台，發一組邀請碼，只顯示這一次（US-O-10.1、10.2）", async () => {
+    await page.goto(`/admin#t=${admin}`);
+    await page.reload(); // a new fragment alone does not reload the page
+    await expect(page.getByRole("heading", { name: "系統後台" })).toBeVisible();
+    await page.getByRole("button", { name: "發一組邀請碼" }).click();
+    code = await page.locator(".link-text").inputValue();
+    expect(code).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{1,4}){6}$/);
+    const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+    expect(stored).not.toContain(admin);
+    expect(stored).not.toContain(code);
+  });
+
+  await test.step("用這組碼在 /new 建立活動，回到後台看到它（US-O-9.2）", async () => {
+    const other = await ctx.newPage();
+    await other.goto("/new");
+    await other.getByLabel("邀請碼").fill(code);
+    await other.getByLabel("活動名稱").fill("後台發的活動");
+    await other.getByLabel("活動日期").fill(tomorrow());
+    await other.getByRole("button", { name: "建立活動" }).click();
+    await expect(other.getByRole("heading", { name: "活動已建立" })).toBeVisible();
+    await page.reload();
+    await expect(page.locator(".admin-list li", { hasText: "後台發的活動" })).toContainText(`${tomorrow()}・準備中`);
+    await expect(page.locator(".link-text")).toHaveCount(0);
   });
 });
 
