@@ -68,6 +68,10 @@ type Store interface {
 	ReplaceMasterLink(ctx context.Context, codeHash, tokenHash []byte, now time.Time) error
 	// An invited event (US-M-17).
 	CreateEvent(ctx context.Context, ne store.NewEvent, now time.Time) (int64, error)
+	// The admin page (US-O-9, US-O-10).
+	CheckAdmin(ctx context.Context, tokenHash []byte) error
+	AdminOverview(ctx context.Context, adminHash []byte, now time.Time) (store.AdminOverview, error)
+	CreateAdminInvite(ctx context.Context, adminHash, codeHash []byte, now time.Time) (int64, error)
 }
 
 const (
@@ -152,6 +156,9 @@ func (a *API) Register(mux *http.ServeMux) {
 	handle("POST /api/recover/master", a.recoverMaster)
 	// An invited event, without a token (US-M-17).
 	handle("POST /api/events", a.createEvent)
+	// The admin page, with the admin link only (US-O-9, US-O-10).
+	handle("GET /api/admin/overview", a.adminOverview)
+	handle("POST /api/admin/invites", a.adminInvite)
 }
 
 // Routes lists the patterns Register added, so tests can try every one.

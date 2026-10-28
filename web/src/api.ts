@@ -338,14 +338,29 @@ export const POLL_TIMEOUT_MS = 8000;
 // postNoToken sends a JSON body without a token (the recovery code and the
 // invite code) and returns the status and parsed body, or null when no
 // answer came within timeoutMs.
-export async function postNoToken(path: string, body: unknown, timeoutMs: number): Promise<{ status: number; body: unknown } | null> {
+export function postNoToken(path: string, body: unknown, timeoutMs: number): Promise<{ status: number; body: unknown } | null> {
+  return sendJSON("POST", path, body, timeoutMs);
+}
+
+// sendJSON is one request outside the session: a token, when given, only
+// in the Authorization header; null when no answer came.
+export async function sendJSON(
+  method: "GET" | "POST",
+  path: string,
+  body: unknown,
+  timeoutMs: number,
+  token?: string,
+): Promise<{ status: number; body: unknown } | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
       signal: ctrl.signal,
     });

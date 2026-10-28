@@ -7,6 +7,7 @@
 //	bethere import-rundown -db <path> -file rundown.csv
 //	bethere create-invite  -db <path>
 //	bethere reset-recovery-code -db <path>
+//	bethere issue-admin-link -db <path> -base-url https://<host>
 //	bethere version
 //	bethere features
 //
@@ -50,7 +51,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|version|features> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -86,6 +87,8 @@ func run(args []string, c cli) int {
 		err = createInvite(args[1:], c)
 	case "reset-recovery-code":
 		err = resetRecoveryCode(args[1:], c)
+	case "issue-admin-link":
+		err = issueAdminLink(args[1:], c)
 	case "version":
 		fmt.Fprintln(c.stdout, version)
 		return 0
@@ -527,6 +530,42 @@ func resetRecoveryCode(args []string, c cli) error {
 		return fmt.Errorf("%w; nothing was changed and the code above does not work", err)
 	}
 	fmt.Fprintln(c.stdout, "Reset: the old recovery code no longer works.")
+	return nil
+}
+
+// issueAdminLink makes the admin page's link (US-O-9.1, ADR-0038) and
+// prints it once; the last one stops working. It asks for nothing: being
+// able to run it on the server is what makes the developer.
+func issueAdminLink(args []string, c cli) error {
+	fs := flag.NewFlagSet("issue-admin-link", flag.ContinueOnError)
+	dbPath := fs.String("db", "", "database file (required)")
+	baseURL := fs.String("base-url", "", "https://<host> the link points to (required)")
+	if err := parseFlags(fs, args, c); err != nil {
+		return err
+	}
+	for _, f := range []struct{ name, value string }{{"db", *dbPath}, {"base-url", *baseURL}} {
+		if err := required(f.name, f.value); err != nil {
+			return err
+		}
+	}
+	base, err := parseBaseURL(*baseURL)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	st, err := openExisting(ctx, *dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	token, err := auth.NewToken()
+	if err != nil {
+		return err
+	}
+	if err := st.IssueAdminLink(ctx, auth.HashToken(token)); err != nil {
+		return err
+	}
+	fmt.Fprintf(c.stdout, "Admin link (shown only this once; the last one no longer works):\n  %s/admin#t=%s\n", base, token)
 	return nil
 }
 

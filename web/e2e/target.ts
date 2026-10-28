@@ -228,3 +228,17 @@ export function createInvite(): string {
   if (!code) throw new Error(`create-invite printed no code:\n${out}`);
   return code[0];
 }
+
+// issueAdminLink makes the admin link as the developer does (US-O-9.1);
+// it replaces the last one, so each run starts from its own.
+export function issueAdminLink(): string {
+  const s = loadState();
+  const args = (db: string, bin: string) => `${bin} issue-admin-link -db ${db} -base-url https://bethere.example`;
+  const out =
+    target === "vm"
+      ? vm(`sudo -u bethere ${args(VM_DB, VM_BIN)}`)
+      : execFileSync(s.local!.bin, ["issue-admin-link", "-db", join(s.local!.dir, "e2e.db"), "-base-url", "https://bethere.example"], { encoding: "utf8" });
+  const tok = out.match(/\/admin#t=([A-Za-z0-9_-]{22})\b/);
+  if (!tok) throw new Error(`issue-admin-link printed no link:\n${out}`);
+  return tok[1];
+}

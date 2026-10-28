@@ -3,6 +3,7 @@ import { App } from "./App";
 import { PrintPage } from "./PrintPage";
 import { NewEventPage } from "./NewEvent";
 import { RecoverPage } from "./Recover";
+import { AdminPage } from "./AdminPage";
 import { applyTheme, deviceStorage, readTheme } from "./theme";
 import "./style.css";
 import "./app.css";
@@ -16,6 +17,8 @@ function Root() {
       return <RecoverPage />;
     case "/new":
       return <NewEventPage />;
+    case "/admin":
+      return <AdminPage />;
     default:
       return <App />;
   }
