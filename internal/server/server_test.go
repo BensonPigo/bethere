@@ -65,6 +65,25 @@ func TestHealthzFailsWhenTheDatabaseDoes(t *testing.T) {
 	}
 }
 
+// US-O-8.1: /support.json names the support address, or null when there is none.
+func TestUS_O_8_1_SupportJSON(t *testing.T) {
+	for _, email := range []string{"help@example.com", ""} {
+		h := New(Config{Static: fstest.MapFS{}, Store: newEnv(t).fs, Now: func() time.Time { return fixedNow },
+			Version: "test-1", Logger: slog.New(slog.DiscardHandler), SupportEmail: email})
+		rec := do(h, http.MethodGet, "/support.json", nil)
+		var got struct{ Email *string }
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+			t.Fatalf("%q: %d %q", email, rec.Code, rec.Body.String())
+		}
+		if (email == "" && got.Email != nil) || (email != "" && (got.Email == nil || *got.Email != email)) {
+			t.Errorf("%q: got %q", email, rec.Body.String())
+		}
+		if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("%q: Cache-Control %q", email, cc)
+		}
+	}
+}
+
 func TestPingReturnsServerTimeAndNoStore(t *testing.T) {
 	h, _ := newTestServer(t)
 	rec := do(h, http.MethodGet, "/api/ping", nil)

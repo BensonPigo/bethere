@@ -5,6 +5,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { CopyBox } from "./controls";
 import { dateRange, postCreateEvent } from "./createEvent";
+import { SupportNote } from "./support";
 import { ThemeToggle } from "./theme";
 
 const CREATE_TEXT = {
@@ -124,6 +125,7 @@ export function NewEventPage() {
           {error}
         </p>
       )}
+      <SupportNote />
     </main>
   );
 }

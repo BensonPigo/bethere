@@ -26,6 +26,6 @@ export default defineConfig({
     rollupOptions: { output: { codeSplitting: false } },
   },
   server: {
-    proxy: { "/api": "http://127.0.0.1:8080", "/healthz": "http://127.0.0.1:8080" },
+    proxy: { "/api": "http://127.0.0.1:8080", "/healthz": "http://127.0.0.1:8080", "/support.json": "http://127.0.0.1:8080" },
   },
 });

@@ -177,4 +177,14 @@ check "power on with no alert yet: does not claim the alert is on" 'said "(no al
 fresh; mon ALERT_EMAIL=dev@example.com; POWER=status power
 check "power status: VM and alert" 'said "VM: RUNNING" && said "alert enabled: True"'
 
+# Support address (US-O-8.4).
+support() { run env PROJECT=test-proj "$@" "$OPS/support-email.sh" "$ADDR"; }
+ADDR='help me@example.com'; fresh; support
+check "support address that is not one address: refused, nothing set" 'said "not one email address" && ! called project-info'
+ADDR=help@example.com; fresh; support
+check "support address set: in project metadata, no restart, says when it shows" \
+  'grep -qx help@example.com "$FAKE/project.support" && ! called "compute ssh" && said "next start"'
+ADDR=none; support
+check "support address none: removed" '! test -e "$FAKE/project.support" && said "set to none"'
+
 exit $failed

@@ -12,6 +12,8 @@ case "$args" in
     elif has "--filter=name="; then cat "$FAKE/vm.zone"
     else echo bethere-1; fi ;;
   *" auth print-access-token "*) echo token ;;
+  *" compute project-info add-metadata "*) sed -n 's/.*bethere-support-email=\([^ ]*\).*/\1/p' <<<"$args" > "$FAKE/project.support" ;;
+  *" compute project-info remove-metadata "*) rm -f "$FAKE/project.support" ;;
   *" compute instances describe "*" --format=value(status) "*) cat "$FAKE/vm.status" 2>/dev/null || echo RUNNING ;;
   *" compute instances start "*) echo RUNNING > "$FAKE/vm.status" ;;
   *" compute instances stop "*) echo TERMINATED > "$FAKE/vm.status" ;;

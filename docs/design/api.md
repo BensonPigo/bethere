@@ -78,6 +78,7 @@
 | `POST /api/roles/preview` | Token | Master | `{"roleId":n}` | `{"result":"ok","preview":{…}}`：`preview` 是目標角色自己會拿到的快照（US-M-14） |
 | `POST /api/recover/master` | 復原碼（只在本文） | — | `{"recoveryCode":"…"}` | `{"result":"ok","token":"<22 字元>"}`：新的 Master 連結，不附快照（US-O-3） |
 | `POST /api/events` | 邀請碼（只在本文） | — | `{"inviteCode":"…","name":"…","date":"YYYY-MM-DD"}` | `{"result":"ok","token":"<22 字元>","recoveryCode":"…"}`：新活動的 Master 連結與復原碼，不附快照（US-M-17） |
+| `GET /support.json` | 無 | — | — | `{"email":"<客服信箱>"}`，沒有設定時為 `{"email":null}`；不在 `/api/` 下，維護模式照常回應；`Cache-Control: no-store`（US-O-8.1） |
 | `GET /api/ping` | 無 | — | — | `{"serverTime":…,"version":"<發行版>"}`；部署檢查用；不含活動資料；維護模式下回 503 `maintenance`，`ops/gcp/maintenance.sh` 以此從外部確認模式 |
 
 - 沒有 `POST /api/event/start`：活動日當天 Draft 狀態下的 `POST /api/cues/advance` 同時開始活動；非活動日回 422 `not_event_day`（ADR-0020）。

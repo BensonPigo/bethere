@@ -95,6 +95,17 @@ YML
     mkdir -p /run/bethere
     echo "BETHERE_MAINTENANCE=$m" > /run/bethere/maintenance.env.new
     mv -f /run/bethere/maintenance.env.new /run/bethere/maintenance.env ;;
+  # The support address (US-O-8.2): project metadata, shared by every VM.
+  # It never stops the start: missing, unreadable or odd shows none. Only
+  # address characters reach the unit's environment, so a value with a line
+  # break cannot add another variable (BETHERE_MAINTENANCE above all); serve
+  # checks the rest.
+  support)
+    e="$(curl -fsS -m 5 -H "Metadata-Flavor: Google" \
+      "http://metadata.google.internal/computeMetadata/v1/project/attributes/bethere-support-email" 2>/dev/null || true)"
+    [[ "$e" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || e=""
+    mkdir -p /run/bethere
+    printf 'BETHERE_SUPPORT_EMAIL=%s\n' "$e" > /run/bethere/support.env ;;
   caddy)
     v="$(md caddy-version)"; install_bin caddy "$v" "caddy/$v/caddy"
     printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$(md bethere-domain)" > /etc/caddy/Caddyfile
@@ -118,8 +129,11 @@ User=bethere
 ExecStartPre=+/opt/bethere/prepare.sh bethere
 ExecStartPre=+/opt/bethere/prepare.sh backup
 ExecStartPre=+/opt/bethere/prepare.sh maintenance
+ExecStartPre=+/opt/bethere/prepare.sh support
 # "unread" refuses to start; the file written by the step above replaces it.
 Environment=BETHERE_MAINTENANCE=unread
+# The support file is read first, so the maintenance flag always has the last word.
+EnvironmentFile=-/run/bethere/support.env
 EnvironmentFile=-/run/bethere/maintenance.env
 # The database is never created here (tech-stack.md 2.1「不自動建庫」): the first
 # deployment creates it once with ops/gcp/init-db.sh. Litestream copies every

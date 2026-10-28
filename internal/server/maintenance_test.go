@@ -175,7 +175,7 @@ func TestUS_O_2_4_RefusedLinksAreNotSeen(t *testing.T) {
 func TestUS_O_2_3_HealthAndPagesStayUp(t *testing.T) {
 	e := newEnv(t)
 	e.maintenance()
-	for _, p := range []string{"/healthz", "/", "/recover", "/print", "/new"} {
+	for _, p := range []string{"/healthz", "/support.json", "/", "/recover", "/print", "/new"} {
 		if r := e.do(http.MethodGet, p, "", ""); r.Code != http.StatusOK {
 			t.Errorf("%s: %d", p, r.Code)
 		}

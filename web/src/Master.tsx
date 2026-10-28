@@ -14,6 +14,7 @@ import { heldFixed, OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice"
 import { OriginalTime } from "./OriginalTime";
 import { prep, prepDone } from "./prepGuide";
 import type { Prep } from "./prepGuide";
+import { SupportNote } from "./support";
 import { ThemeToggle } from "./theme";
 
 const ICON: Record<CueStatus, string> = { Completed: "✔", InProgress: "▶", Pending: "○", Skipped: "⊘" };
@@ -195,6 +196,8 @@ export function Master(props: Props) {
           open={(r) => setOpen({ kind: "role", id: r.id })}
           add={() => setOpen({ kind: "addRole" })}
         />
+
+        <SupportNote />
       </div>
 
       {editing && (

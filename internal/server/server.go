@@ -23,6 +23,9 @@ type Config struct {
 	Logger  *slog.Logger
 	// Maintenance lets only the Master into /api/ (api.Gate, US-O-2).
 	Maintenance bool
+	// SupportEmail is shown to Masters and on the way in (US-O-8); empty
+	// shows none.
+	SupportEmail string
 }
 
 func New(cfg Config) http.Handler {
@@ -38,6 +41,18 @@ func New(cfg Config) http.Handler {
 			return
 		}
 		w.Write([]byte("ok\n"))
+	})
+
+	// The support address, outside /api/ so it answers in maintenance too
+	// (US-O-8.1).
+	mux.HandleFunc("GET /support.json", func(w http.ResponseWriter, r *http.Request) {
+		var email *string
+		if cfg.SupportEmail != "" {
+			email = &cfg.SupportEmail
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(w).Encode(map[string]*string{"email": email})
 	})
 
 	// Deployment check without credentials and without event data (api.md section 3).

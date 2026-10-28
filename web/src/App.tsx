@@ -10,6 +10,7 @@ import { HandsFree } from "./HandsFree";
 import { Master } from "./Master";
 import { monthDay } from "./notice";
 import { isEventDay } from "./roleView";
+import { SupportNote } from "./support";
 import { useSession } from "./session";
 
 const OFFLINE_WARN_MS = 5 * 60 * 1000;
@@ -32,6 +33,7 @@ export function App() {
         <p class="invite-note">
           想為自己的活動使用 BeThere？<a href="/new">用邀請碼建立</a>
         </p>
+        <SupportNote />
       </Full>
     );
   }

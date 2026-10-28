@@ -5,7 +5,7 @@
 // stay with real people on real phones.
 import { devices, expect, test } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { createInvite, loadState, startServer, stopServer, target, tomorrow } from "./target";
+import { createInvite, loadState, startServer, stopServer, SUPPORT_EMAIL, target, tomorrow } from "./target";
 import type { Links, RoleName } from "./target";
 
 // NFR-2 is 3 seconds for 95% of devices; one poll is 2 seconds. A route
@@ -516,6 +516,13 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
 
 // ---------------------------------------------------------------- 用邀請碼建立活動
 
+// The support address on the way in and on the console (US-O-8.3); only
+// the local server has one.
+async function supportShown(page: Page) {
+  if (target !== "local") return;
+  await expect(page.locator(".support-note a")).toHaveAttribute("href", `mailto:${SUPPORT_EMAIL}`);
+}
+
 test("用邀請碼建立活動：首頁 → 建立 → 進入總召畫面，上一頁回不到復原碼，同一組碼不能再用", async ({ browser }) => {
   const code = createInvite();
   const ctx = await browser.newContext({ ...IPHONE, baseURL: loadState().baseURL });
@@ -526,12 +533,14 @@ test("用邀請碼建立活動：首頁 → 建立 → 進入總召畫面，上�
     await page.goto(`/new#t=${event(0)["總召"]}`);
     await expect(page.getByRole("heading", { name: "建立活動" })).toBeVisible();
     await expect(page.getByLabel("邀請碼")).toHaveValue("");
+    await supportShown(page);
   });
 
   await test.step("首頁沒有連結：廠商的提示在上，下面才是建立活動的入口（US-M-17.2）", async () => {
     await page.goto("/");
     await expect(page.locator(".msg")).toHaveText("找不到連結資訊，請使用總召給你的完整連結開啟");
     await expect(page.locator(".msg ~ .invite-note")).toBeVisible();
+    await supportShown(page);
     await page.getByRole("link", { name: "用邀請碼建立" }).click();
     await expect(page).toHaveURL(/\/new$/);
   });
@@ -555,6 +564,7 @@ test("用邀請碼建立活動：首頁 → 建立 → 進入總召畫面，上�
   await test.step("進入總召畫面；上一頁回不到建立結果（US-M-17.8）", async () => {
     await page.getByRole("button", { name: "進入總召畫面" }).click();
     await expect(page.getByRole("button", { name: "編輯流程表" })).toBeVisible();
+    await supportShown(page);
     // A new event: the checklist shows what to do, nothing ticked (US-M-18.1, 18.2).
     const guide = page.getByRole("region", { name: "婚前準備" });
     await expect(guide.locator("li .mark")).toHaveText(["○", "○", "○", "・"]);

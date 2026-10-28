@@ -260,3 +260,5 @@ button.theme-toggle { min-height: 44px; padding: 8px 12px; font-size: 15px; whit
 /* `/new` and the way to it (US-M-17). */
 .invite-note { margin-top: 32px; color: var(--muted); font-size: 16px; }
 .invite-note a { color: inherit; }
+.support-note { margin-top: 24px; color: var(--muted); font-size: 15px; }
+.support-note a { color: inherit; overflow-wrap: anywhere; }
