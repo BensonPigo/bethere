@@ -1,0 +1,3 @@
+[submodule "tools/quality"]
+	path = tools/quality
+	url = ../quality-tools.git
