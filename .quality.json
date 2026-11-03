@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "language": "go",
+  "base": "origin/main",
+  "gates": ["test"],
+  "exclude": ["tools/", "vendor/", "node_modules/", "web/", ".claude/"],
+  "crap": { "threshold": 12 },
+  "mutation": {
+    "kill_rate_threshold": 80,
+    "reach_rate_threshold": 50
+  }
+}
