@@ -2,7 +2,8 @@
   "version": 2,
   "language": "go",
   "base": "origin/main",
-  "gates": ["test"],
+  "gates": ["test", "crap"],
+  "go": { "coverage_scope": "module" },
   "exclude": ["tools/", "vendor/", "node_modules/", "web/", ".claude/"],
   "crap": { "threshold": 12 },
   "mutation": {
