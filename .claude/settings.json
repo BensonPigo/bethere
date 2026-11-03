@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/.quality.json)",
+      "Edit(/.quality-equivalents.json)",
+      "Edit(/.gitmodules)",
+      "Edit(/tools/quality/**)",
+      "Edit(/.github/**)",
+      "Edit(/.claude/settings.json)",
+      "Edit(/.claude/hooks/**)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/gate.sh\""
+          }
+        ]
+      }
+    ]
+  }
+}
