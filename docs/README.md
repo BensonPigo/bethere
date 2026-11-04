@@ -20,6 +20,7 @@
 | [operations/runbook.md](operations/runbook.md) | 部署與回退、當天的維運與故障重建、婚前檢查、婚後收尾 |
 | [process/development-process.md](process/development-process.md) | 開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI |
 | [process/e2e-test-routes.md](process/e2e-test-routes.md) | 端對端測試路線 |
+| [process/quality-baseline.md](process/quality-baseline.md) | 品質現況：CRAP 與抓錯檢查的基準（同名 `.json` 給 `baseline --compare` 用）；重新量測用 `python3 tools/quality/quality.py baseline --out docs/process/quality-baseline.md` |
 | [decisions.md](decisions.md) | 現行決定（ADR-NNNN）與理由 |
 | [glossary.md](glossary.md) | 術語與代號規則 |
 
