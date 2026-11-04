@@ -123,17 +123,27 @@
 2. CRAP：`python tools/quality/quality.py crap --base origin/main` 通過，body.go 每個函式都 ≤ 12。
 3. 抓錯檢查：
    - **前提**：功能分支以啟用 `mutation` 關卡之後的 `main` 為基礎（`.quality.json` 的 `gates` 有 `mutation`，PR #11）。
-   - **指令**：在功能分支上執行 `python tools/quality/quality.py mutation --base origin/main --json <暫存路徑>`。
+   - **在哪個 commit 跑**：抓錯檢查會對每個改壞版本跑整個 module 的測試，對照測試還在的話，幾乎都會被它抓到，量不出留下來的測試夠不夠。所以要在對照測試已經刪掉的 commit 上跑，原則上就是 PR 最後的 head。
+   - **指令**：在那個 commit 上執行 `python tools/quality/quality.py mutation --base origin/main --json <暫存路徑>`。
    - **結果判定**：
      - 輸出必須列出 body.go 的改壞版本，以及抓到、沒抓到、測試沒跑到的數量。
      - 印出「還沒啟用」，或報告的 result 是 skipped，都算**失敗**，不算通過。
    - **通過條件**：body.go「沒抓到」和「測試沒跑到」的改壞版本必須是零，或者每一項都已經逐項列出、由人核准寫進排除清單。
-   - **紀錄**：數量和沒抓到的清單寫在 PR 描述裡，和對照測試的 SHA 放在一起。CI 的第三關會再跑一次。
+   - **紀錄**：PR 描述寫下：
+     - 跑抓錯檢查那個 commit 的 SHA
+     - JSON 報告的 `commit` 欄位，必須等於這個 SHA
+     - 數量
+     - 沒抓到的清單
+
+     這些和對照測試的 SHA 放在一起。CI 的第三關只檢查門檻（抓錯率 80%、測到率 50%），不能取代這一項。
 4. CI 全過。
-5. 核准前做 security-reviewer 和 plan-verifier 審查。做完由獨立的 verifier 對第 1～3 項出具 CONFIRMED，才請你合併。verifier 要確認的事：
+5. 做完由獨立的 verifier 對第 1～3 項出具 CONFIRMED，才請你合併。verifier 要確認的事：
    - 舊版副本和 `origin/main` 的差別只有改名。
    - `fieldSet` 清單完整。
    - 種子有上面列的邊界輸入。
+   - 第 3 項記錄的 SHA 上沒有對照測試，在那個 SHA 重跑抓錯檢查，數量相同。
+
+   安全審查發現的處置寫在 PR 描述，不寫進這份文件（CLAUDE.md：文件不寫審查紀錄）。
 
 ## 非目標
 
