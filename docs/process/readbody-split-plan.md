@@ -121,7 +121,14 @@
 
        verifier 可以 checkout 那個 SHA 重跑。
 2. CRAP：`python tools/quality/quality.py crap --base origin/main` 通過，body.go 每個函式都 ≤ 12。
-3. 抓錯檢查：對 body.go 跑 `mutation`（module 模式）。「沒抓到」和「測試沒跑到」的改壞版本必須是零，或者每一項都已經逐項列出、由人核准寫進排除清單。
+3. 抓錯檢查：
+   - **前提**：功能分支以啟用 `mutation` 關卡之後的 `main` 為基礎（`.quality.json` 的 `gates` 有 `mutation`，PR #11）。
+   - **指令**：在功能分支上執行 `python tools/quality/quality.py mutation --base origin/main --json <暫存路徑>`。
+   - **結果判定**：
+     - 輸出必須列出 body.go 的改壞版本，以及抓到、沒抓到、測試沒跑到的數量。
+     - 印出「還沒啟用」，或報告的 result 是 skipped，都算**失敗**，不算通過。
+   - **通過條件**：body.go「沒抓到」和「測試沒跑到」的改壞版本必須是零，或者每一項都已經逐項列出、由人核准寫進排除清單。
+   - **紀錄**：數量和沒抓到的清單寫在 PR 描述裡，和對照測試的 SHA 放在一起。CI 的第三關會再跑一次。
 4. CI 全過。
 5. 核准前做 security-reviewer 和 plan-verifier 審查。做完由獨立的 verifier 對第 1～3 項出具 CONFIRMED，才請你合併。verifier 要確認的事：
    - 舊版副本和 `origin/main` 的差別只有改名。
