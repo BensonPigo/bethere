@@ -1,1 +1,58 @@
-[]
+[
+  {
+    "file": "internal/api/body.go",
+    "function": "readBody, readRoles, readNewRoles",
+    "line_text": "if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {",
+    "mutator": "INVERT_LOGICAL",
+    "reason": "出錯時 tok 是 nil，兩種寫法都拒絕；拿到合法但不是 { 的符號時，json.Decoder 只接受成對的括號，後面沒被改到的結尾檢查一定拒絕",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/api/body.go",
+    "function": "readBody",
+    "line_text": "if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {",
+    "mutator": "INVERT_LOGICAL",
+    "reason": "dec.More() 為 false 之後，物件裡下一個符號只能是 }，否則 json.Decoder 回錯誤；出錯時 tok 是 nil，兩種寫法都拒絕",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/api/body.go",
+    "function": "readRoles, readNewRoles, readIDs",
+    "line_text": "if tok, err := dec.Token(); err != nil || tok != json.Delim('[') {",
+    "mutator": "INVERT_LOGICAL",
+    "reason": "出錯時 tok 是 nil，兩種寫法都拒絕；拿到合法但不是 [ 的值時，後面讀項目或讀結尾 ] 的檢查一定拒絕，json.Decoder 只接受成對的括號",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/api/body.go",
+    "function": "readRoles, readNewRoles, readIDs",
+    "line_text": "if tok, err := dec.Token(); err != nil || tok != json.Delim(']') {",
+    "mutator": "INVERT_LOGICAL",
+    "reason": "dec.More() 為 false 之後，陣列裡下一個符號只能是 ]，否則 json.Decoder 回錯誤；出錯時 tok 是 nil，兩種寫法都拒絕",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/api/body.go",
+    "function": "readBody, readInt",
+    "line_text": "if err != nil || !isNumber {",
+    "mutator": "INVERT_LOGICAL",
+    "reason": "不是數字時 n 是空字串，接著的 parseInt(\"\") 一定拒絕",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/api/body.go",
+    "function": "parseInt",
+    "line_text": "if signed && len(raw) > 0 && raw[0] == '-' {",
+    "mutator": "CONDITIONALS_BOUNDARY",
+    "reason": "signed 的呼叫端（readInt 和 count）只在確認是 JSON 數字後才呼叫，raw 不會是空字串",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/api/body.go",
+    "function": "parseInt",
+    "line_text": "if c < '0' || c > '9' {",
+    "mutator": "INVERT_LOGICAL",
+    "reason": "JSON 數字只含數字和 - + . e E；跳過這個檢查後，strconv.ParseInt 也會拒絕非數字的字元",
+    "approved_by": "Benson"
+  }
+]
