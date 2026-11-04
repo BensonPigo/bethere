@@ -24,7 +24,7 @@
 以 design/api.md 第 1 節和目前的 `origin/main:internal/api/body.go` 為準。驗收要確認的至少包括：
 
 - 只收一個 JSON 物件，大小上限照 `bodyLimit`；物件後面只能有空白。`fieldSet{}` 只收 `{}`。
-- 欄位名稱大小寫要完全相符（比對的是 JSON 解碼後的名稱，所以 `"version"` 等同 `"version"`），重複的欄位、不認得的欄位都拒絕；`idList` 和 `optString` 以外的欄位都必填。
+- 欄位名稱大小寫要完全相符（比對的是 JSON 解碼後的名稱，所以 `"\u0076ersion"` 等同 `"version"`），重複的欄位、不認得的欄位都拒絕；`idList` 和 `optString` 以外的欄位都必填。
 - 數字只收純整數：不收 `1.0`、`1e0`、`-0`、前導零，最多 18 位數。
   - 不帶正負號的要 ≥ 1。
   - `signedInt` 限 int32 範圍。
@@ -106,7 +106,7 @@
        - 既有測試裡所有拒絕的字串：server/api_test.go 的 `TestWriteBodyIsStrict`、shift_and_notice_test.go、body_test.go。
        - roles 50/51 項、newRoles 50/51 項、excluded 200/201 個。
        - Unicode 空白造成的重複名稱，例如 `"　攝影"`。
-       - 跳脫過的欄位名稱，例如 `{"version":1}`。
+       - 跳脫過的欄位名稱：`{"\u0076ersion":1}` 對 `versionOnly` 要接受；`{"version":1,"\u0076ersion":1}` 只差在跳脫，算重複，要拒絕。
        - `notePublic`、`roleNote`、`afterCueId` 的 null 和字串。
        - 各種 RFC 3339 寫法：時區、小數秒、小寫 t/z。
        - 接近 16 KB 和 256 KB 的請求。
