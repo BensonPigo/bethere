@@ -91,3 +91,65 @@ func TestFileLevelErrors(t *testing.T) {
 		t.Error("oversized file accepted")
 	}
 }
+
+func TestValuesAtTheLimitsAreAccepted(t *testing.T) {
+	file := "seq,title,start,duration_min\n" +
+		"123456789,a,23:00,1440\n" + // nine digits, last hour, a full day
+		"2,a,12:59,000000005\n" // last minute, nine digits with leading zeros
+	rows, err := Parse(strings.NewReader(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("%d rows", len(rows))
+	}
+	if r := rows[0]; r.Seq != 123456789 || r.StartHour != 23 || r.StartMinute != 0 || r.DurationMin != 1440 || len(r.Problems) != 0 {
+		t.Errorf("line 2 = %+v", r)
+	}
+	if r := rows[1]; r.StartHour != 12 || r.StartMinute != 59 || r.DurationMin != 5 || len(r.Problems) != 0 {
+		t.Errorf("line 3 = %+v", r)
+	}
+}
+
+func TestMalformedNumbersAndClocks(t *testing.T) {
+	file := "seq,title,start,duration_min\n" +
+		"1234567890,a,08:00,1\n" + // line 2: seq has ten digits
+		"2,a,12345,1\n" + // line 3: start without a colon
+		"3,a,ab:30,1\n" + // line 4: start hour not a number
+		"4,a,,1\n" // line 5: start blank
+	rows, err := Parse(strings.NewReader(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("%d rows", len(rows))
+	}
+	for _, r := range rows {
+		if len(r.Problems) != 1 {
+			t.Errorf("line %d: problems %v, want exactly one", r.Line, r.Problems)
+		}
+	}
+}
+
+// padded returns a rundown of exactly size bytes: one row whose title fills the rest.
+func padded(size int) string {
+	header := "seq,title,start,duration_min\n"
+	return header + "1," + strings.Repeat("x", size-len(header)-len("1,,08:00,1\n")) + ",08:00,1\n"
+}
+
+func TestSizeLimitsAreInclusive(t *testing.T) {
+	if file := padded(MaxFileBytes); len(file) != MaxFileBytes {
+		t.Fatalf("file is %d bytes", len(file))
+	} else if _, err := Parse(strings.NewReader(file)); err != nil {
+		t.Errorf("file of exactly MaxFileBytes: %v", err)
+	}
+	if text := padded(MaxTextBytes); len(text) != MaxTextBytes {
+		t.Fatalf("text is %d bytes", len(text))
+	} else if _, err := ParseText(text); err != nil {
+		t.Errorf("text of exactly MaxTextBytes: %v", err)
+	}
+	text := "seq,title,start,duration_min\n" + strings.Repeat("1,a,08:00,1\n", MaxTextRows)
+	if rows, err := ParseText(text); err != nil || len(rows) != MaxTextRows {
+		t.Errorf("exactly MaxTextRows rows: %d rows, %v", len(rows), err)
+	}
+}
