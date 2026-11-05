@@ -19,24 +19,24 @@
 
 ## 品質規則（三道檢查）
 
-改完程式後，執行下面這一行，通過才算完成。它依 `.quality.json` 的 `gates` 設定，依序跑已啟用的關，第一個沒過就停：
+改完程式後，執行下面這一行，通過才算完成。它依 `.referee.json` 的 `gates` 設定，依序跑已啟用的關，第一個沒過就停：
 
 ```bash
-python tools/quality/quality.py check --base origin/main --skip mutation
+python tools/referee/referee.py check --base origin/main --skip mutation
 ```
 
 - 第一關：單元測試。
 - 第二關：CRAP，改到的函式不能超過門檻。超標的函式後面會標改善方向。
-- 第三關：抓錯檢查，改到的行，抓錯率和測到率都要達到門檻。這一關太慢，由 CI 執行，不在上面這一行裡。要在本機跑時，執行 `python tools/quality/quality.py mutation --base origin/main`。
+- 第三關：抓錯檢查，改到的行，抓錯率和測到率都要達到門檻。這一關太慢，由 CI 執行，不在上面這一行裡。要在本機跑時，執行 `python tools/referee/referee.py mutation --base origin/main`。
 
 規則：
 
-- 不准修改 `.quality.json`、`.quality-equivalents.json`、`.gitmodules`、`CODEOWNERS`，以及 `tools/quality/`、`.gitea/`、`.github/`、`.claude/` 底下的檔案，也不准切換 `tools/quality` 的版本。
+- 不准修改 `.referee.json`、`.referee-equivalents.json`、`.gitmodules`、`CODEOWNERS`，以及 `tools/referee/`、`.gitea/`、`.github/`、`.claude/` 底下的檔案，也不准切換 `tools/referee` 的版本。
 - 不准刪除測試，也不准把測試註解掉或標成略過。
 - 測試的正確答案要照需求規格寫死，不准呼叫正式程式碼算出來。
 - 測試失敗時，修正程式，不要改測試去配合程式。
 - CRAP 超標時，照工具標的方向處理：標「要拆函式」就拆函式，標「覆蓋率要到 X%」就補測試。
 - 抓錯檢查有「沒抓到」的改壞版本時，先補測試，把它抓出來。輸出的每一行寫著檔案、行號和改了什麼，例如「把 `>=` 改成 `>`」，表示這個邊界值沒有測到。
 - 抓錯檢查有「測試沒跑到」的改壞版本時，表示那一行沒有測試，補測試。
-- 認為某個改壞的版本改了也沒差（怎麼改，程式的結果都一樣），不要為它寫奇怪的測試，也不准自己編輯 `.quality-equivalents.json`。在回報裡逐項列出：檔案、行號、改法（`把 X 改成 Y`，或 `--json` 報告裡 `mutator` 欄位的名稱）、那一行的原文、為什麼改了也沒差。由人判斷後寫進排除清單。
+- 認為某個改壞的版本改了也沒差（怎麼改，程式的結果都一樣），不要為它寫奇怪的測試，也不准自己編輯 `.referee-equivalents.json`。在回報裡逐項列出：檔案、行號、改法（`把 X 改成 Y`，或 `--json` 報告裡 `mutator` 欄位的名稱）、那一行的原文、為什麼改了也沒差。由人判斷後寫進排除清單。
 - 過不了的時候，說明卡在哪裡、試過什麼，等人處理，不要想辦法繞過檢查。

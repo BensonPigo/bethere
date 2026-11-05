@@ -84,7 +84,7 @@
 
 ## 排除清單
 
-`.quality-equivalents.json` 現在 7 項都在 body.go，比對的是「那一行的原文」。這次改動後多數對不上，工具會列成「沒用到」。還對得上的也可能換了位置和意義，例如 `readInt` 裡的 `if err != nil || !isNumber {`。
+`.referee-equivalents.json` 現在 7 項都在 body.go，比對的是「那一行的原文」。這次改動後多數對不上，工具會列成「沒用到」。還對得上的也可能換了位置和意義，例如 `readInt` 裡的 `if err != nil || !isNumber {`。
 
 - 舊的理由不能照搬到共用的小函式上。例如舊理由是「開頭括號被改壞了，結尾括號的檢查還是會拒絕」，但 `expectDelim` 同時負責開頭和結尾，改壞一次兩邊一起壞。改法第 0 步的括號測試就是要抓這種。
 - 同一個 PR 裡更新排除清單：
@@ -120,11 +120,11 @@
        - 結果
 
        verifier 可以 checkout 那個 SHA 重跑。
-2. CRAP：`python tools/quality/quality.py crap --base origin/main` 通過，body.go 每個函式都 ≤ 12。
+2. CRAP：`python tools/referee/referee.py crap --base origin/main` 通過，body.go 每個函式都 ≤ 12。
 3. 抓錯檢查：
-   - **前提**：功能分支以啟用 `mutation` 關卡之後的 `main` 為基礎（`.quality.json` 的 `gates` 有 `mutation`，PR #11）。
+   - **前提**：功能分支以啟用 `mutation` 關卡之後的 `main` 為基礎（`.referee.json` 的 `gates` 有 `mutation`，PR #11）。
    - **在哪個 commit 跑**：抓錯檢查會對每個改壞版本跑整個 module 的測試，對照測試還在的話，幾乎都會被它抓到，量不出留下來的測試夠不夠。所以要在對照測試已經刪掉的 commit 上跑，原則上就是 PR 最後的 head。
-   - **指令**：在那個 commit 上執行 `python tools/quality/quality.py mutation --base origin/main --json <暫存路徑>`。
+   - **指令**：在那個 commit 上執行 `python tools/referee/referee.py mutation --base origin/main --json <暫存路徑>`。
    - **結果判定**：
      - 輸出必須列出 body.go 的改壞版本，以及抓到、沒抓到、測試沒跑到的數量。
      - 印出「還沒啟用」，或報告的 result 是 skipped，都算**失敗**，不算通過。

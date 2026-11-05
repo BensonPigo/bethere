@@ -1,3 +1,3 @@
-[submodule "tools/quality"]
-	path = tools/quality
-	url = ../quality-tools.git
+[submodule "tools/referee"]
+	path = tools/referee
+	url = ../quality-referee.git
