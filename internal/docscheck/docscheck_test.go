@@ -11,8 +11,8 @@ import (
 var exempt = []string{
 	// A released migration keeps its comments as they were (ADR-0019).
 	"internal/store/migrations/0001_init.sql",
-	// The quality-tools submodule is a separate repository with its own docs.
-	"tools/quality/",
+	// The quality-referee submodule is a separate repository with its own docs.
+	"tools/referee/",
 }
 
 var scanned = map[string]bool{
