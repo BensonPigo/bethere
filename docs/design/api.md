@@ -455,12 +455,11 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 
 ### 10.2 規則
 
-- **主控台連結的解析**：加在 store 的 `resolveToken`（`LookupToken`、`Snapshot`、`PreviewSnapshot` 共用，在同一個讀取交易內）：查不到 `access_tokens` 時，再以單一查詢確認主控台連結存在、成員仍在、活動屬於成員的公司，解析出那場活動的 Master 角色；`TokenOwner` 帶出新的操作者種類「成員」（成員編號與主控台連結的編號），`TokenID` 為 0。所以輪詢、寫入後的快照、平移與預覽都認得它（US-CO-4.8）。因此要改的既有程式：
+- **主控台連結的解析**：加在 store 的 `resolveToken`（`LookupToken`、`Snapshot`、`PreviewSnapshot` 共用，在同一個讀取交易內）：先查 `access_tokens`，查不到時再以單一查詢確認主控台連結存在、成員仍在、活動屬於成員的公司，解析出那場活動的 Master 角色；`TokenOwner` 帶出新的操作者種類「成員」（成員編號與主控台連結的編號），`TokenID` 為 0。所以輪詢、寫入後的快照、平移與預覽都認得它（US-CO-4.8）。兩段查詢都成功、都查無，才是 `ErrInvalidToken`；第二段查詢出錯時是 500，以測試固定。因此要改的既有程式：
   - store 寫入前確認操作者的函式（`checkActor`）在期待角色操作者的地方也接受「成員」：在同一交易內以同樣的單一查詢再確認一次，查不到就是 `ErrInvalidToken`。只接受復原碼的寫入（第 2 節的四件事）仍然拒絕「成員」。
   - API 層凡以 `TokenID == 0` 判斷「呼叫者查不到」的地方（例如角色預覽），改以「是否已解析出呼叫者」判斷；以測試固定：用主控台連結預覽不存在的角色回 404，不是 500。
   - `seen` 對 `TokenID` 為 0 的呼叫者不記錄；`lastSeenAt` 只屬於 `access_tokens`。
   - 操作紀錄的 `byTokenId` 為空，改記成員編號與主控台連結的編號（取代第 4 節「都有操作者的 `byTokenId`」對這種請求的要求）。
-  - 維護關卡（第 8 節）以 `isMaster` 放行時，「成員連結待清除」標記存在（US-O-12.6）就不放行主控台連結，回 503 `maintenance`。
   - 第 4 節權限表的 Master 欄、第 7 節與第 8 節的 Master 規則照常適用；主控台連結不在 Master 快照的角色連結裡。
 - **伺服器指令**（第 7 節）讀入「Master 連結」時用只查 `access_tokens` 的 `LookupRoleToken`，主控台連結當作查無；`LookupToken` 只給 API 用。`find-member`、`add-member`、`remove-member`（US-O-12）不讀取任何憑證，與 `issue-admin-link` 相同。
 - 本節的每個寫入端點（`logout` 除外）都在單一寫入交易內：再確認登入連結有效、呼叫者仍是成員 → 檢查 → 寫入；交易內查不到時回 404 `not_found`。
@@ -470,7 +469,10 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 - `POST /api/company/events` 的名稱與日期檢查同 `POST /api/events`（第 3 節），不合格回 422 `invalid_event`；交易內數這家公司建立時間晚於「現在減 24 小時」的活動（只用下界），達 20 場回 422 `too_many_events` → 建立活動（`organizationId` 為本公司）→ 操作紀錄 `create-event`（actor 為成員）。
 - `POST /api/admin/organizations`：交易內以同樣的下界數建立的公司，達 5 家回 422 `too_many_organizations`。
 - 以復原碼換發 Master 連結（第 3 節）在同一交易內刪除這場活動所有的主控台連結。
-- **從備份還原**：規則見 `requirements/stories.md` US-O-12.5～US-O-12.6。`serve` 在 `BETHERE_RESTORED=1` 時，開啟資料庫後、開始接受請求前，刪除所有登入連結與主控台連結，成功後刪掉 `/var/lib/bethere/member-reset.pending`；失敗時以 `member-reset` 開頭記錄錯誤、照常啟動。標記存在期間（不論這次是否以 `BETHERE_RESTORED=1` 啟動），本節所有端點與主控台連結一律回 503 `maintenance`。`BETHERE_RESTORED` 只接受 `1`、`0` 或未設定，其他值拒絕啟動。
+- **從備份還原**（US-O-12.5、US-O-12.6）：
+  - 「成員連結待清除」標記是資料庫所在目錄下的 `member-reset.pending`（正式為 `/var/lib/bethere/member-reset.pending`；路徑由 `-db` 推得，測試服務各自獨立）。準備腳本在 `litestream restore` **之前**與 `maintenance.forced` 一起建立並 `sync`，所以還原中途當機也不會少了它；`maintenance.sh off` 與 `init-db.sh` 不碰它。
+  - `serve` 開啟資料庫後、開始接受請求前讀一次這個標記（標記只會在服務停止時建立）。存在時，在單一交易內刪除所有登入連結與主控台連結，提交後刪掉標記；交易或刪標記失敗時以 `member-reset` 開頭記錄錯誤、照常啟動，這次執行視為「待清除」。交易提交後、刪標記前當機，下次啟動再清一次，結果相同。
+  - 「待清除」時，所有路由之前的單一檢查（不論是否維護模式）讓本節的公司端點與解析成主控台連結的請求一律回 503 `maintenance`；查不到的連結照常回 `invalid`。
 - 維護模式（第 8 節）：本節所有端點回 503 `maintenance`；以主控台連結呼叫的 Master 端點照 Master 的規則放行。
 
 ### 10.3 錯誤（追加到第 6 節）
