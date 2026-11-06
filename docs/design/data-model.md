@@ -187,17 +187,16 @@ id 永不重用。規則見 `api.md` 9.6。
 | --- | --- | --- |
 | Organization | id, name, createdAt | 一家婚顧公司；由系統後台建立。名稱規則同活動名稱 |
 | Member | id, organizationId, email, createdAt | 一位成員。`email` 去除前後空白、轉小寫後儲存，全系統唯一（一個 email 只屬於一家公司）；移除時刪除這一列，連同他的 MemberSession 與 ConsoleToken；id 刪除後不再配發（操作紀錄以它記下是誰） |
-| MemberSession | id, memberId, tokenHash, expiresAt | 登入連結；只存雜湊，30 天後失效，登出時刪除 |
-| ConsoleToken | id, memberId, eventId, tokenHash | 成員對某場活動的主控台連結；驗證時解析成那場活動的 Master 角色，操作者記為這位成員（`access-control.md` 第 7 節）。活動刪除時一併刪除 |
-| OrganizationEventLog | organizationId, at | 公司每建立一場活動記一列建立時間，只增不刪，計算 24 小時內的上限 |
+| MemberSession | id, memberId, tokenHash, createdAt, expiresAt | 登入連結；只存雜湊，30 天後失效，登出時刪除；每位成員最多 20 列，再登入時刪掉最舊的 |
+| ConsoleToken | id, memberId, eventId, tokenHash | 成員對某場活動的主控台連結；驗證時解析成那場活動的 Master 角色，操作者記為這位成員（`access-control.md` 第 7 節）。每位成員對每場活動最多 10 列；以復原碼換發 Master 連結時刪除這場活動的全部 |
 
-Organization、Member、MemberSession、OrganizationEventLog 不屬於任何活動，每日刪除不碰它們；過期的 MemberSession 由每日刪除清掉。
+MemberSession 與 ConsoleToken 以外鍵連到 Member（`ON DELETE CASCADE`），ConsoleToken 也連到 Event（活動刪除時一併刪除）。Organization、Member、MemberSession 不屬於任何活動，每日刪除不碰它們，只清掉過期的 MemberSession。公司與它的活動不會被刪除（活動到結束後 80 天才刪），所以每家公司每天 20 場、系統後台每天 5 家的上限直接以 `Event.createdAt`、`Organization.createdAt` 計算。
 
 ### 平移紀錄
 不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。
 
 ### ActionLog（操作紀錄）
-`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（4.1）。`actor` 為 Role、成員（以主控台連結操作或在公司頁面建立活動時，只記成員編號）、「復原碼」，或建立活動時的「伺服器」（以邀請碼建立時 `payload` 只記邀請碼的 id）。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（P1，`requirements/scope.md`）。
+`id, eventId, actor, at, type, payload, undoneAt`。Cue 操作（`cue.*`）的 `payload` 含前後狀態，`undoneAt` 在被復原時填入；「復原上一步」找最近一筆 Cue 操作，已復原過就不能再復原（4.1）。`actor` 為 Role、成員（以主控台連結操作時記成員編號與主控台連結的 id，`byTokenId` 為空；在公司頁面建立活動時只記成員編號）、「復原碼」，或建立活動時的「伺服器」（以邀請碼建立時 `payload` 只記邀請碼的 id）。涵蓋推進、略過、平移、復原、代打卡、Token 重發與撤銷、以復原碼進行的操作。事後檢討與除錯用；活動結束後可憑復原碼唯讀匯出（P1，`requirements/scope.md`）。
 
 ## 4. 核心行為規則
 
