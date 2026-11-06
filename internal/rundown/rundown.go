@@ -149,11 +149,9 @@ func parseRow(line int, rec []string, col map[string]int, width int) store.Impor
 		bad("有 %d 欄，標題列有 %d 欄", len(rec), width)
 		return row
 	}
-	for _, f := range rec {
-		if !utf8.ValidString(f) {
-			bad("不是 UTF-8；請存成 UTF-8")
-			return row
-		}
+	if !allUTF8(rec) {
+		bad("不是 UTF-8；請存成 UTF-8")
+		return row
 	}
 	field := func(name string) string {
 		if i, ok := col[name]; ok {
@@ -171,7 +169,7 @@ func parseRow(line int, rec []string, col map[string]int, width int) store.Impor
 		bad("title：必填")
 	}
 	if h, m, ok := clock(field("start")); !ok {
-		bad("start %q：必須是 24 小時制的 HH:MM（例如 09:05）", field("start"))
+		bad("start %q：必須是 24 小時制的 HH:MM%s", field("start"), startHint(field("start")))
 	} else {
 		row.StartHour, row.StartMinute = h, m
 	}
@@ -187,14 +185,50 @@ func parseRow(line int, rec []string, col map[string]int, width int) store.Impor
 	default:
 		bad("fixed %q：只能是 Y 或空白", f)
 	}
-	if roles := field("roles"); roles != "" {
-		for _, name := range strings.Split(roles, ";") {
-			row.Roles = append(row.Roles, strings.TrimSpace(name))
-		}
-	}
+	row.Roles = splitRoles(field("roles"))
 	row.RoleNote = field("role_note")
 	row.Note = field("note")
 	return row
+}
+
+func allUTF8(fields []string) bool {
+	for _, f := range fields {
+		if !utf8.ValidString(f) {
+			return false
+		}
+	}
+	return true
+}
+
+// splitRoles splits the roles field at ";"; blank is no roles.
+func splitRoles(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var names []string
+	for _, name := range strings.Split(s, ";") {
+		names = append(names, strings.TrimSpace(name))
+	}
+	return names
+}
+
+// startHint ends the start problem with the fix when the text is a time
+// in a shape a spreadsheet copies (US-M-12.C1): a one-digit hour such as
+// 9:05, or seconds such as 09:05:00. Other text gets the format's example.
+func startHint(s string) string {
+	hour, rest, ok := strings.Cut(s, ":")
+	if !ok {
+		return "（例如 09:05）"
+	}
+	minute, _, _ := strings.Cut(rest, ":")
+	if len(hour) == 1 {
+		hour = "0" + hour
+	}
+	h, m, ok := clock(hour + ":" + minute)
+	if !ok {
+		return "（例如 09:05）"
+	}
+	return fmt.Sprintf("，請寫成 %02d:%02d", h, m)
 }
 
 // integer accepts only ASCII digits, so "+3", "3.0" and "1e2" are refused.
