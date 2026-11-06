@@ -148,20 +148,26 @@ func insertEvent(ctx context.Context, tx *sql.Tx, ne NewEvent, orgID int64, acto
 	if err != nil {
 		return 0, err
 	}
-	res, err = tx.ExecContext(ctx, `INSERT INTO roles (event_id, name, type) VALUES (?, ?, ?)`,
-		eventID, ne.MasterName, domain.Master)
-	if err != nil {
-		return 0, err
-	}
-	roleID, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
-		roleID, ne.MasterTokenHash, toNS(now)); err != nil {
+	if err := insertMaster(ctx, tx, eventID, ne, now); err != nil {
 		return 0, err
 	}
 	return eventID, logAction(ctx, tx, eventID, actor, "create-event", logged, now)
+}
+
+// insertMaster writes a new event's Master role and its link.
+func insertMaster(ctx context.Context, tx *sql.Tx, eventID int64, ne NewEvent, now time.Time) error {
+	res, err := tx.ExecContext(ctx, `INSERT INTO roles (event_id, name, type) VALUES (?, ?, ?)`,
+		eventID, ne.MasterName, domain.Master)
+	if err != nil {
+		return err
+	}
+	roleID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
+		roleID, ne.MasterTokenHash, toNS(now))
+	return err
 }
 
 // Event returns an event and its current version.
@@ -211,11 +217,8 @@ func guard(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, now time
 // ended, which a client would take as its own event ending (api.md
 // section 6).
 func guardAs(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind actorKind, now time.Time) (domain.Event, int64, error) {
-	if !actsAs(actor, kind) || actor.cred == nil {
-		return domain.Event{}, 0, ErrNoActor
-	}
-	if actor.eventID != eventID {
-		return domain.Event{}, 0, ErrCrossEvent
+	if err := actorFor(eventID, actor, kind); err != nil {
+		return domain.Event{}, 0, err
 	}
 	e, v, err := loadEvent(ctx, tx, eventID)
 	if err != nil {
@@ -234,16 +237,30 @@ func actsAs(actor Actor, kind actorKind) bool {
 	return actor.kind == kind || kind == actorRole && actor.kind == actorMember && actor.consoleID != 0
 }
 
-func checkActor(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind actorKind) error {
+// actorFor is whether actor, without the database, may act on eventID
+// where kind is asked for.
+func actorFor(eventID int64, actor Actor, kind actorKind) error {
 	if !actsAs(actor, kind) || actor.cred == nil {
 		return ErrNoActor
 	}
 	if actor.eventID != eventID {
 		return ErrCrossEvent
 	}
+	return nil
+}
+
+func checkActor(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind actorKind) error {
+	if err := actorFor(eventID, actor, kind); err != nil {
+		return err
+	}
 	if actor.kind == actorMember {
 		return checkConsole(ctx, tx, eventID, actor)
 	}
+	return checkCredential(ctx, tx, eventID, actor)
+}
+
+// checkCredential proves a role's link or the recovery code again.
+func checkCredential(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor) error {
 	var (
 		query = `SELECT 1 FROM access_tokens t JOIN roles r ON r.id = t.role_id
 			WHERE t.token_hash = ? AND t.revoked_at IS NULL AND r.id = ? AND r.event_id = ?`
@@ -379,52 +396,70 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) 
 		skipped []error
 	)
 	err := s.write(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, `SELECT id FROM events`)
+		ids, err := allEventIDs(ctx, tx)
 		if err != nil {
 			return err
 		}
-		var ids []int64
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			ids = append(ids, id)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		for _, id := range ids {
-			e, _, err := loadEvent(ctx, tx, id)
-			if err != nil {
-				skipped = append(skipped, fmt.Errorf("event %d: %w", id, err))
-				continue
-			}
-			if now.Before(e.PurgeAt()) {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id); err != nil {
-				return err
-			}
-			deleted = append(deleted, id)
-		}
-		return nil
+		deleted, skipped, err = purgeEvents(ctx, tx, ids, now)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	// Expired invite codes go too (US-M-17.11), in a write of their own so
-	// a failure here never keeps an event past its retention.
-	if _, err := s.w.ExecContext(ctx, `DELETE FROM invites WHERE expires_at <= ?`, toNS(now)); err != nil {
-		skipped = append(skipped, fmt.Errorf("invites: %w", err))
-	}
-	// Expired login links too (data-model.md「婚顧公司」).
-	if _, err := s.w.ExecContext(ctx, `DELETE FROM member_sessions WHERE expires_at <= ?`, toNS(now)); err != nil {
-		skipped = append(skipped, fmt.Errorf("member sessions: %w", err))
-	}
+	skipped = append(skipped, s.purgeExpired(ctx, now)...)
 	return deleted, errors.Join(skipped...)
+}
+
+// allEventIDs lists every event inside the caller's transaction.
+func allEventIDs(ctx context.Context, tx *sql.Tx) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM events`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// purgeEvents deletes those of ids whose retention ran out; an unreadable
+// one is skipped and reported.
+func purgeEvents(ctx context.Context, tx *sql.Tx, ids []int64, now time.Time) (deleted []int64, skipped []error, err error) {
+	for _, id := range ids {
+		e, _, err := loadEvent(ctx, tx, id)
+		if err != nil {
+			skipped = append(skipped, fmt.Errorf("event %d: %w", id, err))
+			continue
+		}
+		if now.Before(e.PurgeAt()) {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id); err != nil {
+			return nil, nil, err
+		}
+		deleted = append(deleted, id)
+	}
+	return deleted, skipped, nil
+}
+
+// purgeExpired deletes the expired invite codes (US-M-17.11) and login
+// links (data-model.md「婚顧公司」), each in a write of its own so a failure
+// here never keeps an event past its retention.
+func (s *Store) purgeExpired(ctx context.Context, now time.Time) []error {
+	var errs []error
+	for _, table := range []string{"invites", "member_sessions"} {
+		// Table names are constants, not input.
+		if _, err := s.w.ExecContext(ctx, `DELETE FROM `+table+` WHERE expires_at <= ?`, toNS(now)); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", table, err))
+		}
+	}
+	return errs
 }
 
 func bumpVersion(ctx context.Context, tx *sql.Tx, eventID int64) (int64, error) {

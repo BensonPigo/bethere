@@ -107,7 +107,7 @@ func TestPingReturnsServerTimeAndNoStore(t *testing.T) {
 
 func TestEntryPathsServeIndexWithSecurityHeaders(t *testing.T) {
 	h, _ := newTestServer(t)
-	for _, path := range []string{"/", "/print", "/recover", "/new", "/admin"} {
+	for _, path := range []string{"/", "/print", "/recover", "/new", "/admin", "/login", "/company"} {
 		rec := do(h, http.MethodGet, path, nil)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "<title>BeThere</title>") {
 			t.Errorf("%s: %d %q", path, rec.Code, rec.Body.String())
