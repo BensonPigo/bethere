@@ -137,7 +137,17 @@ func (a *API) adminInvite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
-	if _, ok := a.adminBody(w, r, hash, fieldSet{}); !ok {
+	// The link before the body, so a stranger's request is the same 404
+	// whatever it sends.
+	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
+	err := a.store.CheckAdmin(ctx, hash)
+	cancel()
+	if err != nil {
+		a.adminFailed(w, r, err)
+		return
+	}
+	if _, ok := readBody(w, r, fieldSet{}); !ok {
+		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	code, err := auth.NewRecoveryCode()
