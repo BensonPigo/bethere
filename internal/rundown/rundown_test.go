@@ -131,6 +131,30 @@ func TestMalformedNumbersAndClocks(t *testing.T) {
 	}
 }
 
+// A start time in a shape a spreadsheet copies is still refused, and the
+// problem says what to write instead (US-M-12.C1).
+func TestStartProblemNamesTheFix(t *testing.T) {
+	for start, want := range map[string]string{
+		"9:05":     `start "9:05"：必須是 24 小時制的 HH:MM，請寫成 09:05`,
+		"09:05:00": `start "09:05:00"：必須是 24 小時制的 HH:MM，請寫成 09:05`,
+		"9:05:00":  `start "9:05:00"：必須是 24 小時制的 HH:MM，請寫成 09:05`,
+		"23:59:59": `start "23:59:59"：必須是 24 小時制的 HH:MM，請寫成 23:59`,
+		"24:00":    `start "24:00"：必須是 24 小時制的 HH:MM（例如 09:05）`,
+		"9:60":     `start "9:60"：必須是 24 小時制的 HH:MM（例如 09:05）`,
+		"10:5":     `start "10:5"：必須是 24 小時制的 HH:MM（例如 09:05）`,
+		"0905":     `start "0905"：必須是 24 小時制的 HH:MM（例如 09:05）`,
+		"":         `start ""：必須是 24 小時制的 HH:MM（例如 09:05）`,
+	} {
+		rows, err := Parse(strings.NewReader("seq,title,start,duration_min\n1,a," + start + ",1\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := rows[0].Problems; len(got) != 1 || got[0] != want {
+			t.Errorf("start %q: problems %q, want [%q]", start, got, want)
+		}
+	}
+}
+
 // padded returns a rundown of exactly size bytes: one row whose title fills the rest.
 func padded(size int) string {
 	header := "seq,title,start,duration_min\n"
