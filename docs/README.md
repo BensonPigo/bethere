@@ -20,7 +20,6 @@
 | [operations/runbook.md](operations/runbook.md) | 部署與回退、當天的維運與故障重建、婚前檢查、婚後收尾 |
 | [process/development-process.md](process/development-process.md) | 開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI |
 | [process/e2e-test-routes.md](process/e2e-test-routes.md) | 端對端測試路線 |
-| [process/quality-baseline.md](process/quality-baseline.md) | 品質現況：CRAP 與抓錯檢查的基準，同名 `.json` 是同一份數據；現行的 quality-referee 沒有 `baseline` 指令，這份不會自動重新產生 |
 | [process/readbody-split-plan.md](process/readbody-split-plan.md) | 計畫 RB1：把 `internal/api/body.go` 的請求解析拆到 CRAP 門檻以下，行為不變 |
 | [decisions.md](decisions.md) | 現行決定（ADR-NNNN）與理由 |
 | [glossary.md](glossary.md) | 術語與代號規則 |

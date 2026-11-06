@@ -4,7 +4,7 @@
 
 ## 目標
 
-`internal/api/body.go` 有四個函式超過 CRAP 門檻 12（quality-baseline.md，量測 commit f42618d；之後 body.go 沒有改過）：
+`internal/api/body.go` 有四個函式超過 CRAP 門檻 12（量測 commit f42618d）：
 
 | 函式 | 複雜度 | 覆蓋率 | CRAP | 修改次數 |
 |---|---|---|---|---|
@@ -150,7 +150,6 @@
 - 不改 API 的行為和錯誤碼，不改其他檔案的超標函式（`checkOrigin`、`run` 等另案處理）。
 - 不換掉 `json.Decoder` 逐符號讀取的做法（design/api.md 第 1 節的理由不變）。
 - 不比對 `ResponseWriter` 的副作用和讀了多少位元組；`MaxBytesReader(…, bodyLimit(fields))` 的寫法不改。
-- 不重跑 baseline；合併後要更新 quality-baseline.md 時再跑一次。
 
 ## 回復
 
