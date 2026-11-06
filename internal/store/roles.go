@@ -289,25 +289,33 @@ func (s *Store) replaceMasterLink(ctx context.Context, actor Actor, eventID int6
 		if e.Ended(now) {
 			return domain.ErrEnded
 		}
-		var roleID int64
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM roles WHERE event_id = ? AND type = ?`, eventID, domain.Master).
-			Scan(&roleID); err != nil {
-			return notFound(err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
-			toNS(now), roleID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
-			roleID, tokenHash, toNS(now)); err != nil {
-			return err
-		}
-		// Every member's console link of the event goes too (US-CO-4.5).
-		if _, err := tx.ExecContext(ctx, `DELETE FROM console_tokens WHERE event_id = ?`, eventID); err != nil {
+		roleID, err := swapMasterToken(ctx, tx, eventID, tokenHash, now)
+		if err != nil {
 			return err
 		}
 		return logAction(ctx, tx, eventID, actor, "token.recover", map[string]any{"roleId": roleID}, now)
 	})
+}
+
+// swapMasterToken revokes the event's Master link, stores tokenHash as
+// the new one and deletes every member's console link of the event
+// (US-CO-4.5); it returns the Master role.
+func swapMasterToken(ctx context.Context, tx *sql.Tx, eventID int64, tokenHash []byte, now time.Time) (int64, error) {
+	var roleID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM roles WHERE event_id = ? AND type = ?`, eventID, domain.Master).
+		Scan(&roleID); err != nil {
+		return 0, notFound(err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
+		toNS(now), roleID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
+		roleID, tokenHash, toNS(now)); err != nil {
+		return 0, err
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM console_tokens WHERE event_id = ?`, eventID)
+	return roleID, err
 }
 
 // ResetRecoveryCode gives the actor's event a new recovery code; the old

@@ -719,3 +719,31 @@ func TestUS_CO_3_5_PlantedConsoleLinkOfAnotherCompanyIsInvalid(t *testing.T) {
 		t.Errorf("lookup after the move: err = %v, want ErrInvalidToken", err)
 	}
 }
+
+// The overview proves the admin link first and trusts no cancelled read
+// (US-O-9.1, US-O-11.3).
+func TestUS_O_11_3_OverviewNeedsTheAdminLink(t *testing.T) {
+	c := newCompany(t)
+	if _, err := c.f.s.AdminOverview(ctx, hash("nobody"), before); !errors.Is(err, ErrInvalidAdmin) {
+		t.Errorf("not the admin link: err = %v, want ErrInvalidAdmin", err)
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := c.f.s.AdminOverview(cancelled, hash("admin"), before); err == nil || errors.Is(err, ErrInvalidAdmin) {
+		t.Errorf("cancelled: err = %v", err)
+	}
+	if _, err := c.f.s.CreateAdminInvite(ctx, hash("admin"), hash("code"), before); err != nil {
+		t.Fatal(err)
+	}
+	o, err := c.f.s.AdminOverview(ctx, hash("admin"), before)
+	if err != nil || len(o.Invites) != 1 || len(o.Events) != 1 || len(o.Organizations) != 1 {
+		t.Errorf("overview = %+v, %v", o, err)
+	}
+	// An event whose zone no longer reads back fails the overview.
+	if _, err := c.f.s.w.Exec(`UPDATE events SET timezone = 'Mars/Base' WHERE id = ?`, c.f.eventID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.f.s.AdminOverview(ctx, hash("admin"), before); err == nil {
+		t.Error("an unreadable event: no error")
+	}
+}

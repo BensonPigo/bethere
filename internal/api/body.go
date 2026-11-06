@@ -38,7 +38,11 @@ type body struct {
 	originGiven bool // origin is in the body, even as ""
 	text        string
 	date        string // an invited event's YYYY-MM-DD (US-M-17)
-	newRoles    []store.NewRole
+	// The company page (api.md section 10).
+	email    string
+	memberID int64
+	eventID  int64
+	newRoles []store.NewRole
 	// The four jobs (api.md section 9).
 	job     string
 	taskID  int64
@@ -235,25 +239,24 @@ func readField(dec *json.Decoder, kind fieldKind, key string, b *body) bool {
 	return read(dec, key, b)
 }
 
+// intTargets is where each positiveInt field goes in b.
+var intTargets = map[string]func(*body) *int64{
+	"version":    func(b *body) *int64 { return &b.version },
+	"fromCueId":  func(b *body) *int64 { return &b.fromCueID },
+	"roleId":     func(b *body) *int64 { return &b.roleID },
+	"cueId":      func(b *body) *int64 { return &b.cueID },
+	"afterCueId": func(b *body) *int64 { return &b.afterCueID },
+	"taskId":     func(b *body) *int64 { return &b.taskID },
+	"guestId":    func(b *body) *int64 { return &b.guestID },
+	"itemId":     func(b *body) *int64 { return &b.itemID },
+	"memberId":   func(b *body) *int64 { return &b.memberID },
+	"eventId":    func(b *body) *int64 { return &b.eventID },
+}
+
 // intTarget is where the positiveInt field key goes in b, or nil.
 func intTarget(b *body, key string) *int64 {
-	switch key {
-	case "version":
-		return &b.version
-	case "fromCueId":
-		return &b.fromCueID
-	case "roleId":
-		return &b.roleID
-	case "cueId":
-		return &b.cueID
-	case "afterCueId":
-		return &b.afterCueID
-	case "taskId":
-		return &b.taskID
-	case "guestId":
-		return &b.guestID
-	case "itemId":
-		return &b.itemID
+	if at, ok := intTargets[key]; ok {
+		return at(b)
 	}
 	return nil
 }
@@ -273,25 +276,25 @@ func boolTarget(b *body, key string) *bool {
 	return nil
 }
 
+// stringTargets is where each text or optString field goes in b.
+var stringTargets = map[string]func(*body) *string{
+	"title":        func(b *body) *string { return &b.title },
+	"name":         func(b *body) *string { return &b.name },
+	"view":         func(b *body) *string { return &b.view },
+	"origin":       func(b *body) *string { return &b.origin },
+	"text":         func(b *body) *string { return &b.text },
+	"recoveryCode": func(b *body) *string { return &b.text },
+	"inviteCode":   func(b *body) *string { return &b.text },
+	"date":         func(b *body) *string { return &b.date },
+	"email":        func(b *body) *string { return &b.email },
+	"job":          func(b *body) *string { return &b.job },
+	"state":        func(b *body) *string { return &b.state },
+}
+
 // stringTarget is where the text or optString field key goes in b, or nil.
 func stringTarget(b *body, key string) *string {
-	switch key {
-	case "title":
-		return &b.title
-	case "name":
-		return &b.name
-	case "view":
-		return &b.view
-	case "origin":
-		return &b.origin
-	case "text", "recoveryCode", "inviteCode":
-		return &b.text
-	case "date":
-		return &b.date
-	case "job":
-		return &b.job
-	case "state":
-		return &b.state
+	if at, ok := stringTargets[key]; ok {
+		return at(b)
 	}
 	return nil
 }

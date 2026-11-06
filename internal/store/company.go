@@ -27,10 +27,9 @@ var (
 	// ErrTooManyMembers is a company at MembersPerOrganization (US-CO-2.5).
 	ErrTooManyMembers = errors.New("the company has its most members")
 	// ErrCannotRemoveSelf keeps a company from losing its last member on
-	// its own page (US-CO-2.3).
+	// its own page (US-CO-2.3): the remover is proved inside the removal,
+	// so two members removing each other leave one.
 	ErrCannotRemoveSelf = errors.New("a member cannot remove themselves")
-	// ErrLastMember is removing the only member left (US-CO-2.3).
-	ErrLastMember = errors.New("a company keeps at least one member")
 	// ErrTooManyEvents is a company's daily limit (US-CO-3.4).
 	ErrTooManyEvents = errors.New("the company made its events for today")
 	// ErrTooManyOrganizations is the admin page's daily limit (US-O-11.5).
@@ -66,7 +65,7 @@ func (s *Store) ResetMemberAccess(ctx context.Context) error {
 	})
 }
 
-// open returns ErrMembersClosed while member links are closed.
+// membersOpen returns ErrMembersClosed while member links are closed.
 func (s *Store) membersOpen() error {
 	if s.membersClosed.Load() {
 		return ErrMembersClosed
@@ -223,6 +222,16 @@ type CompanyEvent struct {
 	Status domain.EventStatus // Draft, Live or EventEnded
 }
 
+// CheckSession proves a login link from the read pool, so a stranger's
+// request is refused before its body is read (api.md 10.1).
+func (s *Store) CheckSession(ctx context.Context, sessionHash []byte, now time.Time) error {
+	if err := s.membersOpen(); err != nil {
+		return err
+	}
+	_, err := sessionMember(ctx, s.r, sessionHash, now)
+	return err
+}
+
 // Company reads the caller's company in one read transaction that proves
 // the login link first: its members, and its events not ended by date
 // from the nearest, then the ended ones from the latest (US-CO-3.1).
@@ -343,13 +352,13 @@ func (s *Store) RemoveMember(ctx context.Context, sessionHash []byte, memberID i
 		if memberID == m.id {
 			return ErrCannotRemoveSelf
 		}
-		return deleteMember(ctx, tx, m.orgID, memberID, false)
+		return deleteMember(ctx, tx, m.orgID, memberID)
 	})
 }
 
-// deleteMember deletes a member of orgID; lastToo lets the developer's
-// command remove a company's last member (US-O-12.3).
-func deleteMember(ctx context.Context, tx *sql.Tx, orgID, memberID int64, lastToo bool) error {
+// deleteMember deletes a member of orgID; their links go with them
+// through ON DELETE CASCADE.
+func deleteMember(ctx context.Context, tx *sql.Tx, orgID, memberID int64) error {
 	res, err := tx.ExecContext(ctx, `DELETE FROM members WHERE id = ? AND organization_id = ?`, memberID, orgID)
 	if err != nil {
 		return err
@@ -358,16 +367,6 @@ func deleteMember(ctx context.Context, tx *sql.Tx, orgID, memberID int64, lastTo
 		return err
 	} else if n == 0 {
 		return ErrNotFound
-	}
-	if lastToo {
-		return nil
-	}
-	var left int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM members WHERE organization_id = ?`, orgID).Scan(&left); err != nil {
-		return err
-	}
-	if left == 0 {
-		return ErrLastMember
 	}
 	return nil
 }
@@ -507,7 +506,7 @@ func (s *Store) RemoveMemberByEmail(ctx context.Context, email string) (int64, s
 		if err != nil {
 			return err
 		}
-		return deleteMember(ctx, tx, orgID, memberID, true)
+		return deleteMember(ctx, tx, orgID, memberID)
 	})
 	return orgID, name, err
 }
