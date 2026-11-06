@@ -188,7 +188,7 @@ id 永不重用。規則見 `api.md` 9.6。
 | Organization | id, name, createdAt | 一家婚顧公司；由系統後台建立。名稱規則同活動名稱 |
 | Member | id, organizationId, email, createdAt | 一位成員。`email` 去除前後空白、轉小寫後儲存，全系統唯一（一個 email 只屬於一家公司）；移除時刪除這一列，連同他的 MemberSession 與 ConsoleToken；id 刪除後不再配發（操作紀錄以它記下是誰） |
 | MemberSession | id, memberId, tokenHash, createdAt, expiresAt | 登入連結；只存雜湊，30 天後失效，登出時刪除；每位成員最多 20 列，再登入時刪掉最舊的 |
-| ConsoleToken | id, memberId, eventId, tokenHash | 成員對某場活動的主控台連結；驗證時解析成那場活動的 Master 角色，操作者記為這位成員（`access-control.md` 第 7 節）。每位成員對每場活動最多 10 列；以復原碼換發 Master 連結時刪除這場活動的全部 |
+| ConsoleToken | id, memberId, eventId, tokenHash, createdAt | 成員對某場活動的主控台連結；驗證時解析成那場活動的 Master 角色，操作者記為這位成員（`access-control.md` 第 7 節）。每位成員對每場活動最多 10 列，再開啟時刪掉最舊的；以復原碼換發 Master 連結時刪除這場活動的全部。id 以 AUTOINCREMENT 產生，刪除後不再配發（操作紀錄以它記下是哪一條） |
 
 MemberSession 與 ConsoleToken 以外鍵連到 Member（`ON DELETE CASCADE`），ConsoleToken 也連到 Event（活動刪除時一併刪除）。Organization、Member、MemberSession 不屬於任何活動，每日刪除不碰它們，只清掉過期的 MemberSession。公司與它的活動不會被刪除（活動到結束後 80 天才刪），所以每家公司每天 20 場、系統後台每天 5 家的上限直接以 `Event.createdAt`、`Organization.createdAt` 計算。
 

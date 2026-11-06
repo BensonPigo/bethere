@@ -54,4 +54,4 @@
 | RISK-17 | 系統以外的單點：GCP 帳單停權、網域到期、開發者的 Google 帳號被鎖；任一項發生，備援操作者都無權處理 | 決定日前依 `operations/runbook.md` 第 3 節處理：信用卡效期、預算告警、網域續約與鎖定、第二位 Owner（開發者本人的另一個帳號） |
 | RISK-18 | LINE 內建瀏覽器（預設設定）不受 Service Worker 控制，斷網時打不開，而廠商多半從 LINE 點開連結（`design/tech-stack.md` 5.1） | 活動前一天請所有工作人員用系統瀏覽器開一次連結（`operations/runbook.md` 第 3 節）；LINE 中顯示改用 Safari／Chrome 的小字；仍打不開的人靠紙本與總召口頭通知 |
 | RISK-19 | 復原碼紙本遺失、撿到的人又已換掉 Master 連結時，Master 連結與復原碼都不在手上，`reset-recovery-code` 無法執行，活動收不回來（`design/access-control.md` 第 1 節） | 接受；不另開不需憑證的入口。當天改用離線快取、紙本與 LINE 群組（ADR-0013） |
-| RISK-20 | 成員的測試版登入只需 email，正式主機也開；知道 email 的人就能進入那家公司、指揮它所有的活動，也能把別人的 email 加進去佔用（`design/access-control.md` 第 1 節） | 接受（ADR-0040）；不屬於任何公司的活動（包括第一場）不受影響；佔用由開發者以指令救援（US-O-12）；正式登入上線時請每家公司重新核對成員 |
+| RISK-20 | 成員的測試版登入只需 email，正式主機也開；知道 email 的人就能進入那家公司、指揮它所有的活動，也能把別人的 email 加進去佔用；看過公司頁面就知道所有同事的 email，移除後仍能再登入（`design/access-control.md` 第 1 節） | 接受（ADR-0040）；不屬於任何公司的活動（包括第一場）不受影響；佔用由開發者以指令救援（US-O-12）；正式登入上線時請每家公司重新核對成員 |
