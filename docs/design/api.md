@@ -433,3 +433,43 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 任務、賓客、檢核項目的 id 不在呼叫者的活動裡 | 404 `not_found` |
 
 **歸屬先於一切檢查**（同第 3 節）：`cueId`、`taskId`、`guestId`、`itemId` 只在呼叫者的活動中查詢，查不到回 404，排在 `not_assigned`、`task_taken`、`invalid_task_state`、`guests_arrived`、`checklist_started` 之前；別的已結束活動的 id 同樣回 404。任務、賓客、檢核項目的 id 以 AUTOINCREMENT 產生，取代整份後也不會重用，離線裝置送出的舊 id 只會得到 404。
+
+## 10. 婚顧公司（US-CO-1～US-CO-4、US-O-11，ADR-0039）
+
+### 10.1 端點
+
+公司頁面的端點以 `Authorization: Bearer <登入連結>` 驗證（格式同第 1 節的 Token）；成員與公司一律取自登入連結，請求不帶公司編號。沒有或格式不符的標頭、查無、過期、登出或成員已移除的登入連結、任何角色或管理員的連結，一律回同一個 404 `not_found`，先於本文檢查（同系統後台，US-O-9.1）。
+
+| 方法與路徑 | 憑證 | 本文 | 成功回應 |
+| --- | --- | --- | --- |
+| `POST /api/company/login` | 無（不讀取標頭） | `{"email":"…"}` | `{"result":"ok","loginToken":"…"}`：新的登入連結，只在這次回應（US-CO-1.2） |
+| `POST /api/company/logout` | 登入連結 | `{}` | `{"result":"ok"}`：作廢這一條登入連結 |
+| `GET /api/company` | 登入連結 | — | `{"result":"ok","organization":{"name":"…"},"me":n,"members":[{"id":n,"email":"…"}],"events":[{"id":n,"name":"…","date":"YYYY-MM-DD","status":"Draft\|Live\|Ended"}]}`；`events` 依 US-CO-3.1 排序 |
+| `POST /api/company/members/add` | 登入連結 | `{"email":"…"}` | 同 `GET /api/company` |
+| `POST /api/company/members/remove` | 登入連結 | `{"memberId":n}` | 同 `GET /api/company` |
+| `POST /api/company/events` | 登入連結 | `{"name":"…","date":"YYYY-MM-DD"}` | `{"result":"ok","eventId":n,"masterToken":"…","recoveryCode":"…"}`，與 `POST /api/events` 相同的明文規則（第 3 節） |
+| `POST /api/company/events/open` | 登入連結 | `{"eventId":n}` | `{"result":"ok","consoleToken":"…"}`：這位成員對這場活動的新主控台連結（`access-control.md` 第 7 節），頁面以 `/#t=<consoleToken>` 開啟 |
+| `POST /api/admin/organizations` | 管理員連結 | `{"name":"…","email":"…"}` | `{"result":"ok","id":n}`（US-O-11.1） |
+
+`GET /api/admin/overview` 另帶 `organizations:[{"id":n,"name":"…","members":n,"events":n,"createdAt":…}]`，`events[]` 另帶 `organization`（名稱，不屬於任何公司時為 `null`）；不帶任何 email（US-O-11.3）。
+
+### 10.2 規則
+
+- 以主控台連結呼叫的請求，`LookupToken` 解析出那場活動的 Master 角色，`TokenOwner` 帶出成員編號，操作者記為這位成員；第 4 節權限表的 Master 欄、第 7 節與第 8 節的 Master 規則照常適用。主控台連結不在 Master 快照的角色連結與 `lastSeenAt` 裡。
+- `members/remove` 的對象不屬於本公司回 404；是自己回 422 `cannot_remove_self`。單一交易內刪除成員、他的登入連結與主控台連結。
+- `events/open` 的活動不屬於本公司（含不存在、不屬於任何公司）回 404；已結束回 422 `event_ended`。
+- `POST /api/company/events` 的名稱與日期檢查同 `POST /api/events`（第 3 節），不合格回 422 `invalid_event`；單一交易內確認公司 24 小時內的建立紀錄少於 20 筆 → 建立活動（`organizationId` 為本公司）→ 寫建立紀錄 → 操作紀錄 `create-event`（actor 為成員）。
+- 維護模式（第 8 節）：本節所有端點回 503 `maintenance`；以主控台連結呼叫的 Master 端點照 Master 的規則放行。
+
+### 10.3 錯誤（追加到第 6 節）
+
+| 來源錯誤 | 回應 |
+| --- | --- |
+| email 不是任何公司的成員或格式不符（登入） | 422 `not_member` |
+| email 格式不符（加入成員、建立公司） | 422 `invalid_email` |
+| email 已是成員 | 422 `email_taken` |
+| 公司已有 50 位成員 | 422 `too_many_members` |
+| 移除自己 | 422 `cannot_remove_self` |
+| 公司 24 小時內已建立 20 場 | 422 `too_many_events` |
+| 公司名稱不合格 | 422 `invalid_organization` |
+| 開啟已結束的活動 | 422 `event_ended` |
