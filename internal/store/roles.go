@@ -196,19 +196,7 @@ func (s *Store) consoles() consoleRule {
 // (api.md 10.2) unless rule says not to; only when both queries succeed
 // and find nothing is it ErrInvalidToken.
 func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time, rule consoleRule) (TokenOwner, domain.Event, int64, error) {
-	o, err := resolveRoleToken(ctx, tx, tokenHash)
-	if errors.Is(err, sql.ErrNoRows) && rule != consolesNone {
-		o, err = resolveConsole(ctx, tx, tokenHash)
-		if err == nil && rule == consolesClosed {
-			return TokenOwner{}, domain.Event{}, 0, ErrMembersClosed
-		}
-	}
-	if errors.Is(err, sql.ErrNoRows) {
-		// database/sql reports a context cancelled before the row was read
-		// as the context's error, not ErrNoRows; checking ctx as well keeps
-		// a miss that raced with a cancellation from being trusted.
-		return TokenOwner{}, domain.Event{}, 0, confirmedMiss(ctx, ErrInvalidToken)
-	}
+	o, err := lookupOwner(ctx, tx, tokenHash, rule)
 	if err != nil {
 		return TokenOwner{}, domain.Event{}, 0, err
 	}
@@ -220,6 +208,33 @@ func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Ti
 		return TokenOwner{}, domain.Event{}, 0, ErrEventEnded
 	}
 	return o, e, v, nil
+}
+
+// lookupOwner finds whose link tokenHash is: a role's, else (unless rule
+// says not to) a member's console link. ErrInvalidToken only when every
+// query asked succeeded and found nothing.
+func lookupOwner(ctx context.Context, tx *sql.Tx, tokenHash []byte, rule consoleRule) (TokenOwner, error) {
+	o, err := resolveRoleToken(ctx, tx, tokenHash)
+	if errors.Is(err, sql.ErrNoRows) && rule != consolesNone {
+		o, err = consoleOwner(ctx, tx, tokenHash, rule)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		// database/sql reports a context cancelled before the row was read
+		// as the context's error, not ErrNoRows; checking ctx as well keeps
+		// a miss that raced with a cancellation from being trusted.
+		return TokenOwner{}, confirmedMiss(ctx, ErrInvalidToken)
+	}
+	return o, err
+}
+
+// consoleOwner is resolveConsole, and ErrMembersClosed for a console link
+// found while member links are closed (US-O-12.6).
+func consoleOwner(ctx context.Context, tx *sql.Tx, tokenHash []byte, rule consoleRule) (TokenOwner, error) {
+	o, err := resolveConsole(ctx, tx, tokenHash)
+	if err == nil && rule == consolesClosed {
+		return TokenOwner{}, ErrMembersClosed
+	}
+	return o, err
 }
 
 // resolveRoleToken is a role's active link; ErrNoRows passes up as is.

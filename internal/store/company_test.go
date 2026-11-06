@@ -747,3 +747,32 @@ func TestUS_O_11_3_OverviewNeedsTheAdminLink(t *testing.T) {
 		t.Error("an unreadable event: no error")
 	}
 }
+
+// A console link whose event no longer reads back, or a lookup cancelled
+// before the console query, is an error and never ErrInvalidToken
+// (access-control.md 3.3).
+func TestUS_CO_4_1_ConsoleLookupFailuresAreNotInvalid(t *testing.T) {
+	c := newCompany(t)
+	ev := c.event(t, "sa", "甲婚宴", 7)
+	if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("ca"), before); err != nil {
+		t.Fatal(err)
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	for name, h := range map[string]string{"console": "ca", "unknown": "nobody"} {
+		if _, err := c.f.s.LookupToken(cancelled, hash(h), before); err == nil || errors.Is(err, ErrInvalidToken) {
+			t.Errorf("cancelled %s: err = %v", name, err)
+		}
+	}
+	if _, err := c.f.s.w.Exec(`UPDATE events SET timezone = 'Mars/Base' WHERE id = ?`, ev); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"ca", "m-甲婚宴"} {
+		if _, err := c.f.s.LookupToken(ctx, hash(h), before); err == nil || errors.Is(err, ErrInvalidToken) {
+			t.Errorf("%s of an unreadable event: err = %v", h, err)
+		}
+		if _, err := c.f.s.Snapshot(ctx, hash(h), before); err == nil || errors.Is(err, ErrInvalidToken) {
+			t.Errorf("%s snapshot of an unreadable event: err = %v", h, err)
+		}
+	}
+}
