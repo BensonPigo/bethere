@@ -375,3 +375,76 @@ func TestUS_CO_4_3_ConsoleUseIsNoRolesLastSeen(t *testing.T) {
 		}
 	}
 }
+
+// US-CO-1.7, US-O-11.4: in maintenance a Master's or console link in the
+// header opens neither the login (which reads no header), the company
+// page nor the admin page.
+func TestUS_CO_1_7_MaintenanceIgnoresAMastersHeader(t *testing.T) {
+	e := newEnv(t)
+	admin, session := e.company()
+	ev, master := e.companyEvent(session, "甲婚宴")
+	console := e.console(session, ev)
+	e.maintenance()
+	for _, tok := range []string{e.master, master, console, admin, session} {
+		for _, r := range []resp{
+			e.post(pathCompanyLogin, tok, map[string]any{"email": "a@x.tw"}),
+			e.do(http.MethodGet, pathCompany, tok, ""),
+			e.post(pathOpenConsole, tok, map[string]any{"eventId": ev}),
+			e.post(pathAdminOrgs, tok, map[string]any{"name": "乙", "email": "z@x.tw"}),
+			e.do(http.MethodGet, pathAdminOverview, tok, ""),
+		} {
+			r.wantError(t, http.StatusServiceUnavailable, "maintenance")
+		}
+	}
+	var n int
+	if err := e.db().QueryRow(`SELECT count(*) FROM member_sessions`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("login links = %d (%v), want only the one made before maintenance", n, err)
+	}
+	e.get(e.master).wantResult(t, "ok")
+	e.post("/api/recover/master", "", map[string]any{"recoveryCode": "x"}).wantError(t, http.StatusUnprocessableEntity, "wrong_recovery_code")
+}
+
+// US-O-12.6: while member links are closed every company endpoint is 503
+// before anything else is checked, a bad email or a missing header too.
+func TestUS_O_12_6_ClosedBeforeAnyCheck(t *testing.T) {
+	e := newEnv(t)
+	e.company()
+	e.st.CloseMemberAccess()
+	for _, r := range []resp{
+		e.post(pathCompanyLogin, "", map[string]any{"email": "not an email"}),
+		e.do(http.MethodPost, pathCompanyLogin, "", `{"x":1}`),
+		e.do(http.MethodGet, pathCompany, "", ""),
+		e.do(http.MethodPost, pathMemberAdd, newToken(t), `{}`),
+	} {
+		r.wantError(t, http.StatusServiceUnavailable, "maintenance")
+	}
+	admin := e.adminLink()
+	e.do(http.MethodGet, pathAdminOverview, admin, "").wantResult(t, "ok")
+}
+
+// US-CO-2.6: adding and removing a member logs both numbers, never an
+// email or a link.
+func TestUS_CO_2_6_MemberChangesAreLogged(t *testing.T) {
+	e := newEnv(t)
+	_, session := e.company()
+	r := e.post(pathMemberAdd, session, map[string]any{"email": "b@x.tw"})
+	ids := memberIDs(t, r)
+	e.post(pathMemberRemove, session, map[string]any{"memberId": ids["b@x.tw"]}).wantResult(t, "ok")
+	e.post(pathMemberRemove, session, map[string]any{"memberId": ids["a@x.tw"]}).
+		wantError(t, http.StatusUnprocessableEntity, "cannot_remove_self")
+	logs := e.logs.String()
+	for _, want := range []string{
+		fmt.Sprintf(`"msg":"member.add","by":%d,"member":%d`, ids["a@x.tw"], ids["b@x.tw"]),
+		fmt.Sprintf(`"msg":"member.remove","by":%d,"member":%d`, ids["a@x.tw"], ids["b@x.tw"]),
+	} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("no %s in %s", want, logs)
+		}
+	}
+	if strings.Count(logs, `"msg":"member.`) != 2 {
+		t.Errorf("a refused removal was logged: %s", logs)
+	}
+	if strings.Contains(logs, "@") || strings.Contains(logs, session) {
+		t.Errorf("the log carries an email or a link: %s", logs)
+	}
+}

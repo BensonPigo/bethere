@@ -412,7 +412,12 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) 
 
 // allEventIDs lists every event inside the caller's transaction.
 func allEventIDs(ctx context.Context, tx *sql.Tx) ([]int64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM events`)
+	return queryIDs(ctx, tx, `SELECT id FROM events`)
+}
+
+// queryIDs reads one column of ids.
+func queryIDs(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

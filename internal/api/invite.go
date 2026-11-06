@@ -69,17 +69,7 @@ func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "wrong_invite_code")
 		return
 	}
-	token, err := auth.NewToken()
-	if err != nil {
-		a.internal(w, r, err)
-		return
-	}
-	code, err := auth.NewRecoveryCode()
-	if err != nil {
-		a.internal(w, r, err)
-		return
-	}
-	codeHash, err := auth.HashRecoveryCode(code)
+	token, code, codeHash, err := newEventSecrets()
 	if err != nil {
 		a.internal(w, r, err)
 		return

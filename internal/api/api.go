@@ -78,10 +78,11 @@ type Store interface {
 	Logout(ctx context.Context, sessionHash []byte) error
 	CheckSession(ctx context.Context, sessionHash []byte, now time.Time) error
 	Company(ctx context.Context, sessionHash []byte, now time.Time) (store.Company, error)
-	AddMember(ctx context.Context, sessionHash []byte, email string, now time.Time) error
-	RemoveMember(ctx context.Context, sessionHash []byte, memberID int64, now time.Time) error
+	AddMember(ctx context.Context, sessionHash []byte, email string, now time.Time) (by, added int64, err error)
+	RemoveMember(ctx context.Context, sessionHash []byte, memberID int64, now time.Time) (by int64, err error)
 	CreateCompanyEvent(ctx context.Context, sessionHash []byte, ne store.NewEvent, now time.Time) (int64, error)
 	OpenConsole(ctx context.Context, sessionHash []byte, eventID int64, consoleHash []byte, now time.Time) error
+	MembersClosed() bool
 }
 
 const (

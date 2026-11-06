@@ -231,18 +231,27 @@ func (a *API) companyChange(fields fieldSet, change func(ctx context.Context, ha
 
 var errInvalidEmail = errors.New("not one plain email")
 
-// addMember is POST /api/company/members/add (US-CO-2.1).
+// addMember is POST /api/company/members/add (US-CO-2.1). The service log
+// names both members by number, never by email or link (US-CO-2.6).
 func (a *API) addMember(ctx context.Context, hash []byte, b body, now time.Time) error {
 	email, ok := domain.CleanEmail(b.email)
 	if !ok {
 		return errInvalidEmail
 	}
-	return a.store.AddMember(ctx, hash, email, now)
+	by, added, err := a.store.AddMember(ctx, hash, email, now)
+	if err == nil {
+		a.logger.Info("member.add", "by", by, "member", added)
+	}
+	return err
 }
 
-// removeMember is POST /api/company/members/remove (US-CO-2.3).
+// removeMember is POST /api/company/members/remove (US-CO-2.3, 2.6).
 func (a *API) removeMember(ctx context.Context, hash []byte, b body, now time.Time) error {
-	return a.store.RemoveMember(ctx, hash, b.memberID, now)
+	by, err := a.store.RemoveMember(ctx, hash, b.memberID, now)
+	if err == nil {
+		a.logger.Info("member.remove", "by", by, "member", b.memberID)
+	}
+	return err
 }
 
 // companyEvent is POST /api/company/events (US-CO-3.2): the checks and
@@ -317,16 +326,8 @@ func (a *API) adminOrganization(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
-	err := a.store.CheckAdmin(ctx, hash)
-	cancel()
-	if err != nil {
-		a.adminFailed(w, r, err)
-		return
-	}
-	b, ok := readBody(w, r, organizationFields)
+	b, ok := a.adminBody(w, r, hash, organizationFields)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	name, ok := domain.CleanLabel(b.name, maxCompanyNameRunes)

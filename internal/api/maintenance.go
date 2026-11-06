@@ -12,18 +12,42 @@ import (
 // Gate is maintenance mode (api.md section 8, US-O-2): under /api/ only
 // the recovery entry and requests with a Master link pass; everything
 // else is 503 "maintenance", never "invalid" or "ended".
+//
+// The company page and the admin page are closed whatever link comes with
+// the request, in maintenance and while member links are closed after a
+// restore (api.md 10.2, US-CO-1.7, US-O-12.6): a Master's header must
+// never open the login, which reads no header.
 func (a *API) Gate(next http.Handler) http.Handler {
-	if !a.maintenance {
-		return next
-	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !IsAPIPath(r) ||
-			r.Method == http.MethodPost && r.URL.Path == "/api/recover/master" || a.isMaster(r) {
-			next.ServeHTTP(w, r)
+		if a.closed(r) {
+			writeError(w, http.StatusServiceUnavailable, "maintenance")
 			return
 		}
-		writeError(w, http.StatusServiceUnavailable, "maintenance")
+		next.ServeHTTP(w, r)
 	})
+}
+
+// closed reports whether r is refused with 503 maintenance before any route.
+func (a *API) closed(r *http.Request) bool {
+	if pagePath(r, "company") {
+		return a.maintenance || a.store.MembersClosed()
+	}
+	return a.maintenance && IsAPIPath(r) && !a.passesMaintenance(r)
+}
+
+// passesMaintenance is the recovery entry and a Master's link, never on
+// the admin page (US-O-2.2, US-O-9.3).
+func (a *API) passesMaintenance(r *http.Request) bool {
+	if pagePath(r, "admin") {
+		return false
+	}
+	return r.Method == http.MethodPost && r.URL.Path == "/api/recover/master" || a.isMaster(r)
+}
+
+// pagePath reports whether the request's cleaned path is /api/<name> or under it.
+func pagePath(r *http.Request, name string) bool {
+	p := path.Clean("/" + r.URL.Path)
+	return p == "/api/"+name || strings.HasPrefix(p, "/api/"+name+"/")
 }
 
 // IsAPIPath reports whether the request's cleaned path is under /api, so

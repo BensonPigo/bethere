@@ -111,6 +111,24 @@ func adminEventOf(ev store.AdminEvent) adminEventSummary {
 	}
 }
 
+// adminBody proves the admin link before reading the body, so a
+// stranger's request is the same 404 whatever it sends; on failure it has
+// answered already.
+func (a *API) adminBody(w http.ResponseWriter, r *http.Request, hash []byte, fields fieldSet) (body, bool) {
+	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
+	err := a.store.CheckAdmin(ctx, hash)
+	cancel()
+	if err != nil {
+		a.adminFailed(w, r, err)
+		return body{}, false
+	}
+	b, ok := readBody(w, r, fields)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "bad_request")
+	}
+	return b, ok
+}
+
 // adminInvite is POST /api/admin/invites (US-O-10): an empty body, a new
 // code as create-invite makes, within the daily limit (US-O-10.3).
 func (a *API) adminInvite(w http.ResponseWriter, r *http.Request) {
@@ -119,17 +137,7 @@ func (a *API) adminInvite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
-	// The link before the body, so a stranger's request is the same 404
-	// whatever it sends.
-	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
-	err := a.store.CheckAdmin(ctx, hash)
-	cancel()
-	if err != nil {
-		a.adminFailed(w, r, err)
-		return
-	}
-	if _, ok := readBody(w, r, fieldSet{}); !ok {
-		writeError(w, http.StatusBadRequest, "bad_request")
+	if _, ok := a.adminBody(w, r, hash, fieldSet{}); !ok {
 		return
 	}
 	code, err := auth.NewRecoveryCode()
