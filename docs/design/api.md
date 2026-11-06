@@ -46,9 +46,9 @@
 | 403 | `forbidden` | Token 有效，但角色類型沒有這個端點的權限（第 4 節） |
 | 409 | `version_conflict` | 寫入帶的 `version` 不是目前版本；回應另附 `snapshot`（最新快照），客戶端更新畫面並提示「畫面已更新，請重新確認」 |
 | 404 | `not_found` | 本文中的 Cue id 或角色 id 不在呼叫者的活動裡（不存在或屬於別的活動，兩者不區分；第 6 節）；系統後台的端點不是帶著目前的管理員連結（沒有或格式不符的標頭、查無、任何角色的連結、被取代的管理員連結都相同，先於本文檢查；US-O-9.1） |
-| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`wrong_invite_code`、`invalid_event`（只有建立活動，見第 3 節）、`too_many_invites`（只有系統後台）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day` | 領域規則不允許（第 6 節） |
+| 422 | `wrong_recovery_code`、`event_ended`（只有復原碼入口，見第 3 節）、`wrong_invite_code`、`invalid_event`（只有建立活動，見第 3 節）、`too_many_invites`（只有系統後台）、`not_draft`、`not_live`、`not_event_day`、`nothing_to_advance`、`nothing_to_undo`、`undo_stale`、`shift_too_early`、`invalid_delta`、`not_pending`、`invalid_position`、`invalid_cue`、`invalid_assignment`、`not_checkin_role`、`master_role`、`invalid_role`、`duplicate_name`、`too_many_roles`、`invalid_import`、`locked_on_event_day`，以及婚顧公司的代碼（10.3） | 領域規則不允許（第 6 節）；婚顧公司的端點另見 10.1 的 404 規則 |
 | 500 | `internal` | 資料庫錯誤、逾時、`SQLITE_BUSY`、未預期的狀態（例如兩個進行中的 Cue）、任何未列出的錯誤 |
-| 503 | `maintenance` | 維護模式下，Master 與復原碼換發以外的所有 `/api/` 請求，以及任何人的建立活動（第 8 節） |
+| 503 | `maintenance` | 維護模式下，Master 與復原碼換發以外的所有 `/api/` 請求，以及任何人的建立活動（第 8 節）；「成員連結待清除」標記存在時的婚顧公司端點與主控台連結（10.2） |
 
 ## 3. 端點
 
@@ -131,7 +131,7 @@
 - **以復原碼換發 Master 連結**（`access-control.md` 第 2 節，US-O-3）：
   - 不讀取 `Authorization` 標頭，只認本文的 `recoveryCode`；比對前忽略空白、連字號與大小寫。
   - 復原碼不正確、格式不符、查無活動都回同一個 422 `wrong_recovery_code`，不透露活動是否存在。復原碼正確但活動已結束時回 422 `event_ended`；入口沒有 Token，所以不用 `result: ended`（第 2.1 節）。資料庫錯誤、逾時與取消一律 500，絕不回 `wrong_recovery_code`。
-  - 單一交易內：再確認一次復原碼 → 活動未結束 → 撤銷 Master 的有效 Token、建立新的 → 操作紀錄 `token.recover`（actor 為復原碼，只記角色 id）。與重發相同，不改 `eventVersion`（ADR-0023）。
+  - 單一交易內：再確認一次復原碼 → 活動未結束 → 撤銷 Master 的有效 Token、建立新的、刪除這場活動所有成員的主控台連結（10.2）→ 操作紀錄 `token.recover`（actor 為復原碼，只記角色 id）。與重發相同，不改 `eventVersion`（ADR-0023）。
   - 舊 Master 連結的裝置在下一次輪詢收到 `invalid`。新 Token 的明文只出現在這一次回應；`/recover` 頁面以文字加「複製」顯示，不做成可點的連結，不讀取網址片段，也不寫入任何儲存。
   - 不限頻（`access-control.md` 3.3：復原碼 128 位元）。維護模式下照常放行，是唯一放行的復原碼請求（`tech-stack.md` 2.1）。
 - **以邀請碼建立活動**（`access-control.md` 第 2 節，US-M-17，ADR-0036）：
@@ -287,7 +287,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 7. **指令（`bethere` 子命令）**：
    - `serve`：`BETHERE_INIT` 只接受 `1`（建立新資料庫）或未設定／空字串；其他值一律拒絕啟動（避免 `BETHERE_INIT=0` 之類的值被當成「要建立」而在還原失敗時建出空庫，ADR-0012）。
    - `create-event`、`add-role`、`import-rundown`、`create-invite`、`reset-recovery-code`、`issue-admin-link` 一律以「不建立新資料庫」的方式開啟；連結、復原碼與邀請碼只印到終端機（stdout），不經過結構化日誌。
-   - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經 `LookupToken` 取得操作者（不留在 shell 歷史與程序清單）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
+   - `add-role` 與 `import-rundown` 以**總召的身分**寫入：執行時提示輸入 Master 連結（不回顯），從標準輸入讀取，**絕不從命令列參數或環境變數讀取**，再經只查 `access_tokens` 的 `LookupRoleToken` 取得操作者（主控台連結當作查無，10.2）（不留在 shell 歷史與程序清單）。不新增任何「伺服器操作者」，維持「操作者只能來自驗證過的憑證」；操作紀錄記為 Master。
    - `import-rundown` 在單一交易內寫入全部 Cue 與指派，任一列不合法就整份不寫入（US-M-0.2）。
    - `issue-admin-link`（US-O-9.1）不讀取任何憑證：能在主機上執行就是開發者。單一交易內刪掉舊的管理員連結、存入新的雜湊，連結只印到 stdout。
    - `reset-recovery-code`（US-O-4）以同樣的方式讀取 Master 連結**或**目前的復原碼，store 在單一交易內重新確認憑證、活動未結束，以 Master 連結時再確認角色類型是 Master，然後換掉復原碼雜湊並寫操作紀錄（`recovery-code.reset`）。新碼先印出再寫入：印出失敗時什麼都不改（沒人看到的碼絕不能取代手上可能唯一的憑證，RISK-19）；寫入失敗時以錯誤結束並說明印出的碼無效。
@@ -433,3 +433,57 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 任務、賓客、檢核項目的 id 不在呼叫者的活動裡 | 404 `not_found` |
 
 **歸屬先於一切檢查**（同第 3 節）：`cueId`、`taskId`、`guestId`、`itemId` 只在呼叫者的活動中查詢，查不到回 404，排在 `not_assigned`、`task_taken`、`invalid_task_state`、`guests_arrived`、`checklist_started` 之前；別的已結束活動的 id 同樣回 404。任務、賓客、檢核項目的 id 以 AUTOINCREMENT 產生，取代整份後也不會重用，離線裝置送出的舊 id 只會得到 404。
+
+## 10. 婚顧公司（US-CO-1～US-CO-4、US-O-11，ADR-0039）
+
+### 10.1 端點
+
+公司頁面的端點以 `Authorization: Bearer <登入連結>` 驗證（格式同第 1 節的 Token）；成員與公司一律取自登入連結，請求不帶公司編號。沒有或格式不符的標頭、查無、過期、登出或成員已移除的登入連結、任何角色或管理員的連結，一律回同一個 404 `not_found`，先於本文檢查（同系統後台，US-O-9.1）。
+
+| 方法與路徑 | 憑證 | 本文 | 成功回應 |
+| --- | --- | --- | --- |
+| `POST /api/company/login` | 無（不讀取標頭） | `{"email":"…"}` | `{"result":"ok","loginToken":"…"}`：新的登入連結，只在這次回應（US-CO-1.2） |
+| `POST /api/company/logout` | 登入連結 | `{}` | `{"result":"ok"}`：作廢這一條登入連結 |
+| `GET /api/company` | 登入連結 | — | `{"result":"ok","organization":{"name":"…"},"me":n,"members":[{"id":n,"email":"…"}],"events":[{"id":n,"name":"…","date":"YYYY-MM-DD","status":"Draft\|Live\|Ended"}]}`；`events` 依 US-CO-3.1 排序 |
+| `POST /api/company/members/add` | 登入連結 | `{"email":"…"}` | 同 `GET /api/company` |
+| `POST /api/company/members/remove` | 登入連結 | `{"memberId":n}` | 同 `GET /api/company` |
+| `POST /api/company/events` | 登入連結 | `{"name":"…","date":"YYYY-MM-DD"}` | `{"result":"ok","eventId":n,"masterToken":"…","recoveryCode":"…"}`，與 `POST /api/events` 相同的明文規則（第 3 節） |
+| `POST /api/company/events/open` | 登入連結 | `{"eventId":n}` | `{"result":"ok","consoleToken":"…"}`：這位成員對這場活動的新主控台連結（`access-control.md` 第 7 節），頁面以 `/#t=<consoleToken>` 開啟 |
+| `POST /api/admin/organizations` | 管理員連結 | `{"name":"…","email":"…"}` | `{"result":"ok","id":n}`（US-O-11.1） |
+
+`GET /api/admin/overview` 另帶 `organizations:[{"id":n,"name":"…","members":n,"events":n,"createdAt":…}]`，`events[]` 另帶 `organization`（名稱，不屬於任何公司時為 `null`）；不帶任何 email（US-O-11.3）。
+
+### 10.2 規則
+
+- **主控台連結的解析**：加在 store 的 `resolveToken`（`LookupToken`、`Snapshot`、`PreviewSnapshot` 共用，在同一個讀取交易內）：先查 `access_tokens`，查不到時再以單一查詢確認主控台連結存在、成員仍在、活動屬於成員的公司，解析出那場活動的 Master 角色；`TokenOwner` 帶出新的操作者種類「成員」（成員編號與主控台連結的編號），`TokenID` 為 0。所以輪詢、寫入後的快照、平移與預覽都認得它（US-CO-4.8）。兩段查詢都成功、都查無，才是 `ErrInvalidToken`；第二段查詢出錯時是 500，以測試固定。因此要改的既有程式：
+  - store 寫入前確認操作者的函式（`checkActor`）在期待角色操作者的地方也接受「成員」：在同一交易內以同樣的單一查詢再確認一次，查不到就是 `ErrInvalidToken`。只接受復原碼的寫入（第 2 節的四件事）仍然拒絕「成員」。
+  - API 層凡以 `TokenID == 0` 判斷「呼叫者查不到」的地方（例如角色預覽），改以「是否已解析出呼叫者」判斷；以測試固定：用主控台連結預覽不存在的角色回 404，不是 500。
+  - `seen` 對 `TokenID` 為 0 的呼叫者不記錄；`lastSeenAt` 只屬於 `access_tokens`。
+  - 操作紀錄的 `byTokenId` 為空，改記成員編號與主控台連結的編號（取代第 4 節「都有操作者的 `byTokenId`」對這種請求的要求）。
+  - 第 4 節權限表的 Master 欄、第 7 節與第 8 節的 Master 規則照常適用；主控台連結不在 Master 快照的角色連結裡。
+- **伺服器指令**（第 7 節）讀入「Master 連結」時用只查 `access_tokens` 的 `LookupRoleToken`，主控台連結當作查無；`LookupToken` 只給 API 用。`find-member`、`add-member`、`remove-member`（US-O-12）不讀取任何憑證，與 `issue-admin-link` 相同。
+- 本節的每個寫入端點（`logout` 除外）都在單一寫入交易內：再確認登入連結有效、呼叫者仍是成員 → 檢查 → 寫入；交易內查不到時回 404 `not_found`。
+- `login`：email 屬於某位成員時，交易內若他已有 20 條有效登入連結就刪掉最舊的，再存入新的雜湊。
+- `members/remove`：對象不屬於本公司回 404；是自己回 422 `cannot_remove_self`；刪除成員（登入連結與主控台連結隨外鍵一併刪除）。
+- `events/open`：活動不屬於本公司（含不存在、不屬於任何公司）回 404；這位成員對這場活動已有 10 條主控台連結時刪掉最舊的一條，再存入新的。活動已結束時照樣產生，開啟後照第 2.1 節回 `ended`。
+- `POST /api/company/events` 的名稱與日期檢查同 `POST /api/events`（第 3 節），不合格回 422 `invalid_event`；交易內數這家公司建立時間晚於「現在減 24 小時」的活動（只用下界），達 20 場回 422 `too_many_events` → 建立活動（`organizationId` 為本公司）→ 操作紀錄 `create-event`（actor 為成員）。
+- `POST /api/admin/organizations`：交易內以同樣的下界數建立的公司，達 5 家回 422 `too_many_organizations`。
+- 以復原碼換發 Master 連結（第 3 節）在同一交易內刪除這場活動所有的主控台連結。
+- **從備份還原**（US-O-12.5、US-O-12.6）：
+  - 「成員連結待清除」標記是資料庫所在目錄下的 `member-reset.pending`（正式為 `/var/lib/bethere/member-reset.pending`；路徑由 `-db` 推得，測試服務各自獨立）。準備腳本在 `litestream restore` **之前**與 `maintenance.forced` 一起建立並 `sync`，所以還原中途當機也不會少了它；`maintenance.sh off` 與 `init-db.sh` 不碰它。
+  - `serve` 開啟資料庫後、開始接受請求前讀一次這個標記（標記只會在服務停止時建立）。存在時，在單一交易內刪除所有登入連結與主控台連結，提交後刪掉標記；交易或刪標記失敗時以 `member-reset` 開頭記錄錯誤、照常啟動，這次執行視為「待清除」。交易提交後、刪標記前當機，下次啟動再清一次，結果相同。
+  - 「待清除」時，所有路由之前的單一檢查（不論是否維護模式）讓本節的公司端點與解析成主控台連結的請求一律回 503 `maintenance`；查不到的連結照常回 `invalid`。
+- 維護模式（第 8 節）：本節所有端點回 503 `maintenance`；以主控台連結呼叫的 Master 端點照 Master 的規則放行。
+
+### 10.3 錯誤（追加到第 6 節）
+
+| 來源錯誤 | 回應 |
+| --- | --- |
+| email 不是任何公司的成員或格式不符（登入） | 422 `not_member` |
+| email 格式不符（加入成員、建立公司） | 422 `invalid_email` |
+| email 已是成員 | 422 `email_taken` |
+| 公司已有 50 位成員 | 422 `too_many_members` |
+| 移除自己 | 422 `cannot_remove_self` |
+| 公司 24 小時內已建立 20 場 | 422 `too_many_events` |
+| 公司名稱不合格 | 422 `invalid_organization` |
+| 系統後台 24 小時內已建立 5 家公司 | 422 `too_many_organizations` |
