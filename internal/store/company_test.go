@@ -776,3 +776,14 @@ func TestUS_CO_4_1_ConsoleLookupFailuresAreNotInvalid(t *testing.T) {
 		}
 	}
 }
+
+// US-CO-1.4: a login link lasts 30 days, written here as the story says.
+func TestUS_CO_1_4_LoginLinkLastsThirtyDays(t *testing.T) {
+	c := newCompany(t)
+	if _, err := c.f.s.Company(ctx, hash("sa"), before.AddDate(0, 0, 30).Add(-time.Second)); err != nil {
+		t.Errorf("a second before 30 days: %v", err)
+	}
+	if _, err := c.f.s.Company(ctx, hash("sa"), before.AddDate(0, 0, 30)); !errors.Is(err, ErrInvalidSession) {
+		t.Errorf("at 30 days: err = %v, want ErrInvalidSession", err)
+	}
+}
