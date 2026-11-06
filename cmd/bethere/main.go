@@ -50,7 +50,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|version|features> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|find-member|add-member|remove-member|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -88,6 +88,12 @@ func run(args []string, c cli) int {
 		err = resetRecoveryCode(args[1:], c)
 	case "issue-admin-link":
 		err = issueAdminLink(args[1:], c)
+	case "find-member":
+		err = findMember(args[1:], c)
+	case "add-member":
+		err = addMember(args[1:], c)
+	case "remove-member":
+		err = removeMember(args[1:], c)
 	case "version":
 		fmt.Fprintln(c.stdout, version)
 		return 0
@@ -200,6 +206,9 @@ func serve(args []string, c cli) error {
 	defer st.Close()
 
 	logger := slog.New(slog.NewJSONHandler(c.stdout, nil))
+	// Before any request: after a restore no member link of the backup
+	// works (US-O-12.5).
+	resetAfterRestore(ctx, st, *dbPath, logger)
 	support, err := supportEmailFromEnv(c.lookupEnv)
 	if err != nil {
 		logger.Error("support email", "err", err)
@@ -581,9 +590,10 @@ func askMaster(ctx context.Context, st *store.Store, c cli) (store.TokenOwner, e
 	return proveMaster(ctx, st, token)
 }
 
-// proveMaster looks the token up and accepts only a valid Master link.
+// proveMaster looks the token up and accepts only a valid Master link: a
+// member's console link is no link here (US-CO-4.6).
 func proveMaster(ctx context.Context, st *store.Store, token string) (store.TokenOwner, error) {
-	owner, err := st.LookupToken(ctx, auth.HashToken(token), time.Now())
+	owner, err := st.LookupRoleToken(ctx, auth.HashToken(token), time.Now())
 	switch {
 	case errors.Is(err, store.ErrInvalidToken):
 		return store.TokenOwner{}, errors.New("the Master link is invalid or was replaced")
