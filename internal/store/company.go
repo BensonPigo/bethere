@@ -53,6 +53,9 @@ const (
 // a run whose reset after a restore failed (US-O-12.6).
 func (s *Store) CloseMemberAccess() { s.membersClosed.Store(true) }
 
+// MembersClosed reports whether member links are closed for this run.
+func (s *Store) MembersClosed() bool { return s.membersClosed.Load() }
+
 // ResetMemberAccess deletes every login and console link in one write
 // (US-O-12.5); serve calls it before taking requests after a restore.
 func (s *Store) ResetMemberAccess(ctx context.Context) error {
@@ -97,7 +100,8 @@ func (s *Store) CreateOrganization(ctx context.Context, adminHash []byte, name, 
 			name, toNS(now)).Scan(&id); err != nil {
 			return err
 		}
-		return insertMember(ctx, tx, id, email, now)
+		_, err := insertMember(ctx, tx, id, email, now)
+		return err
 	})
 	return id, err
 }
@@ -114,21 +118,23 @@ func emailFree(ctx context.Context, tx *sql.Tx, email string) error {
 	return nil
 }
 
-// insertMember adds email to the company within MembersPerOrganization.
-func insertMember(ctx context.Context, tx *sql.Tx, orgID int64, email string, now time.Time) error {
+// insertMember adds email to the company within MembersPerOrganization
+// and returns the new member's number.
+func insertMember(ctx context.Context, tx *sql.Tx, orgID int64, email string, now time.Time) (int64, error) {
 	if err := emailFree(ctx, tx, email); err != nil {
-		return err
+		return 0, err
 	}
 	var n int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM members WHERE organization_id = ?`, orgID).Scan(&n); err != nil {
-		return err
+		return 0, err
 	}
 	if n >= MembersPerOrganization {
-		return ErrTooManyMembers
+		return 0, ErrTooManyMembers
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO members (organization_id, email, created_at) VALUES (?, ?, ?)`,
-		orgID, email, toNS(now))
-	return err
+	var id int64
+	err := tx.QueryRowContext(ctx, `INSERT INTO members (organization_id, email, created_at) VALUES (?, ?, ?) RETURNING id`,
+		orgID, email, toNS(now)).Scan(&id)
+	return id, err
 }
 
 // Login stores a new login link for the member with this email (US-CO-1.2);
@@ -306,20 +312,7 @@ func loadCompanyEvents(ctx context.Context, tx *sql.Tx, orgID int64, now time.Ti
 
 // companyEventIDs lists the company's events by date, then by id.
 func companyEventIDs(ctx context.Context, tx *sql.Tx, orgID int64) ([]int64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM events WHERE organization_id = ? ORDER BY event_date, id`, orgID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
+	return queryIDs(ctx, tx, `SELECT id FROM events WHERE organization_id = ? ORDER BY event_date, id`, orgID)
 }
 
 // companyWrite runs fn in one write transaction after proving the login
@@ -337,23 +330,31 @@ func (s *Store) companyWrite(ctx context.Context, sessionHash []byte, now time.T
 	})
 }
 
-// AddMember adds email to the caller's company (US-CO-2.1).
-func (s *Store) AddMember(ctx context.Context, sessionHash []byte, email string, now time.Time) error {
-	return s.companyWrite(ctx, sessionHash, now, func(tx *sql.Tx, m member) error {
-		return insertMember(ctx, tx, m.orgID, email, now)
+// AddMember adds email to the caller's company (US-CO-2.1) and returns
+// who added and who was added, for the service log (US-CO-2.6).
+func (s *Store) AddMember(ctx context.Context, sessionHash []byte, email string, now time.Time) (by, added int64, err error) {
+	err = s.companyWrite(ctx, sessionHash, now, func(tx *sql.Tx, m member) (err error) {
+		by = m.id
+		added, err = insertMember(ctx, tx, m.orgID, email, now)
+		return err
 	})
+	return by, added, err
 }
 
 // RemoveMember removes another member of the caller's company; their links
 // go with them (US-CO-2.3, 2.4). A member of another company or none is
 // ErrNotFound.
-func (s *Store) RemoveMember(ctx context.Context, sessionHash []byte, memberID int64, now time.Time) error {
-	return s.companyWrite(ctx, sessionHash, now, func(tx *sql.Tx, m member) error {
+//
+// It returns who removed, for the service log (US-CO-2.6).
+func (s *Store) RemoveMember(ctx context.Context, sessionHash []byte, memberID int64, now time.Time) (by int64, err error) {
+	err = s.companyWrite(ctx, sessionHash, now, func(tx *sql.Tx, m member) error {
+		by = m.id
 		if memberID == m.id {
 			return ErrCannotRemoveSelf
 		}
 		return deleteMember(ctx, tx, m.orgID, memberID)
 	})
+	return by, err
 }
 
 // deleteMember deletes a member of orgID; their links go with them
@@ -485,7 +486,8 @@ func (s *Store) AddMemberTo(ctx context.Context, orgID int64, email string, now 
 		if n == 0 {
 			return ErrNotFound
 		}
-		return insertMember(ctx, tx, orgID, email, now)
+		_, err := insertMember(ctx, tx, orgID, email, now)
+		return err
 	})
 }
 

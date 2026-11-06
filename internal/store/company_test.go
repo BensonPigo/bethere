@@ -112,7 +112,7 @@ func TestUS_O_11_5_OrganizationsPerDay(t *testing.T) {
 func TestUS_O_11_3_OverviewListsCompanies(t *testing.T) {
 	c := newCompany(t)
 	c.event(t, "sa", "甲婚宴", 7)
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
 	o, err := c.f.s.AdminOverview(ctx, hash("admin"), before)
@@ -192,36 +192,36 @@ func TestUS_CO_1_4_LogoutEndsThisLinkOnly(t *testing.T) {
 // A member keeps at most SessionsPerMember links; the oldest goes
 // (US-CO-1.8).
 func TestUS_CO_1_8_SessionsPerMember(t *testing.T) {
-	c := newCompany(t) // "sa" is the first
-	for i := 1; i <= SessionsPerMember; i++ {
+	c := newCompany(t)         // "sa" is the first
+	for i := 1; i <= 20; i++ { // US-CO-1.8: 20
 		if err := c.f.s.Login(ctx, "a@x.tw", hash(fmt.Sprintf("s%d", i)), before); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if _, err := c.f.s.Company(ctx, hash("sa"), before); !errors.Is(err, ErrInvalidSession) {
-		t.Errorf("the oldest after %d more: err = %v, want ErrInvalidSession", SessionsPerMember, err)
+		t.Errorf("the oldest after 20 more: err = %v, want ErrInvalidSession", err)
 	}
 	if _, err := c.f.s.Company(ctx, hash("s1"), before); err != nil {
 		t.Errorf("the 20th newest: %v", err)
 	}
 	var n int
-	if err := c.f.s.r.QueryRow(`SELECT count(*) FROM member_sessions`).Scan(&n); err != nil || n != SessionsPerMember {
-		t.Errorf("sessions = %d, %v, want %d", n, err, SessionsPerMember)
+	if err := c.f.s.r.QueryRow(`SELECT count(*) FROM member_sessions`).Scan(&n); err != nil || n != 20 {
+		t.Errorf("sessions = %d, %v, want 20", n, err)
 	}
 }
 
 func TestUS_CO_2_1_AddMember(t *testing.T) {
 	c := newCompany(t)
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
 		t.Errorf("the new member logs in: %v", err)
 	}
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); !errors.Is(err, ErrEmailTaken) {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); !errors.Is(err, ErrEmailTaken) {
 		t.Errorf("twice: err = %v, want ErrEmailTaken", err)
 	}
-	if err := c.f.s.AddMember(ctx, hash("nobody"), "c@x.tw", before); !errors.Is(err, ErrInvalidSession) {
+	if _, _, err := c.f.s.AddMember(ctx, hash("nobody"), "c@x.tw", before); !errors.Is(err, ErrInvalidSession) {
 		t.Errorf("without a login link: err = %v, want ErrInvalidSession", err)
 	}
 }
@@ -230,11 +230,11 @@ func TestUS_CO_2_1_AddMember(t *testing.T) {
 func TestUS_CO_2_5_MembersPerOrganization(t *testing.T) {
 	c := newCompany(t)
 	for i := 1; i < MembersPerOrganization; i++ {
-		if err := c.f.s.AddMember(ctx, hash("sa"), fmt.Sprintf("m%d@x.tw", i), before); err != nil {
+		if _, _, err := c.f.s.AddMember(ctx, hash("sa"), fmt.Sprintf("m%d@x.tw", i), before); err != nil {
 			t.Fatalf("member %d: %v", i, err)
 		}
 	}
-	if err := c.f.s.AddMember(ctx, hash("sa"), "over@x.tw", before); !errors.Is(err, ErrTooManyMembers) {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "over@x.tw", before); !errors.Is(err, ErrTooManyMembers) {
 		t.Errorf("51st: err = %v, want ErrTooManyMembers", err)
 	}
 	if err := c.f.s.AddMemberTo(ctx, c.orgID, "over@x.tw", before); !errors.Is(err, ErrTooManyMembers) {
@@ -246,7 +246,7 @@ func TestUS_CO_2_5_MembersPerOrganization(t *testing.T) {
 func TestUS_CO_2_4_RemoveMemberEndsTheirLinks(t *testing.T) {
 	c := newCompany(t)
 	ev := c.event(t, "sa", "甲婚宴", 7)
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
@@ -256,10 +256,10 @@ func TestUS_CO_2_4_RemoveMemberEndsTheirLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := c.member(t, "b@x.tw")
-	if err := c.f.s.RemoveMember(ctx, hash("sa"), c.member(t, "a@x.tw"), before); !errors.Is(err, ErrCannotRemoveSelf) {
+	if _, err := c.f.s.RemoveMember(ctx, hash("sa"), c.member(t, "a@x.tw"), before); !errors.Is(err, ErrCannotRemoveSelf) {
 		t.Errorf("self: err = %v, want ErrCannotRemoveSelf", err)
 	}
-	if err := c.f.s.RemoveMember(ctx, hash("sa"), b, before); err != nil {
+	if _, err := c.f.s.RemoveMember(ctx, hash("sa"), b, before); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.f.s.Company(ctx, hash("sb"), before); !errors.Is(err, ErrInvalidSession) {
@@ -268,7 +268,7 @@ func TestUS_CO_2_4_RemoveMemberEndsTheirLinks(t *testing.T) {
 	if _, err := c.f.s.LookupToken(ctx, hash("cb"), before); !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("their console link: err = %v, want ErrInvalidToken", err)
 	}
-	if err := c.f.s.RemoveMember(ctx, hash("sa"), b, before); !errors.Is(err, ErrNotFound) {
+	if _, err := c.f.s.RemoveMember(ctx, hash("sa"), b, before); !errors.Is(err, ErrNotFound) {
 		t.Errorf("gone already: err = %v, want ErrNotFound", err)
 	}
 }
@@ -287,7 +287,7 @@ func TestUS_CO_2_3_RemoveOnlyOwnCompanysMembers(t *testing.T) {
 	if err := c.f.s.r.QueryRow(`SELECT id FROM members WHERE email = 'z@x.tw'`).Scan(&zID); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.RemoveMember(ctx, hash("sa"), zID, before); !errors.Is(err, ErrNotFound) {
+	if _, err := c.f.s.RemoveMember(ctx, hash("sa"), zID, before); !errors.Is(err, ErrNotFound) {
 		t.Errorf("another company's member: err = %v, want ErrNotFound", err)
 	}
 	if id, _, err := c.f.s.FindMember(ctx, "z@x.tw"); err != nil || id != z {
@@ -298,7 +298,7 @@ func TestUS_CO_2_3_RemoveOnlyOwnCompanysMembers(t *testing.T) {
 // Two members removing each other at once leave one (US-CO-2.3).
 func TestUS_CO_2_3_ConcurrentMutualRemovalKeepsOne(t *testing.T) {
 	c := newCompany(t)
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
@@ -314,7 +314,7 @@ func TestUS_CO_2_3_ConcurrentMutualRemovalKeepsOne(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs[i] = c.f.s.RemoveMember(ctx, hash(r.session), r.target, before)
+			_, errs[i] = c.f.s.RemoveMember(ctx, hash(r.session), r.target, before)
 		}()
 	}
 	wg.Wait()
@@ -338,7 +338,7 @@ func TestUS_CO_2_3_ConcurrentMutualRemovalKeepsOne(t *testing.T) {
 func TestUS_CO_2_4_RemovalRacingAConsoleLeavesNoLink(t *testing.T) {
 	c := newCompany(t)
 	ev := c.event(t, "sa", "甲婚宴", 7)
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
@@ -353,7 +353,7 @@ func TestUS_CO_2_4_RemovalRacingAConsoleLeavesNoLink(t *testing.T) {
 			c.f.s.OpenConsole(ctx, hash("sb"), ev, hash(fmt.Sprintf("race%d", i)), before)
 		}()
 	}
-	if err := c.f.s.RemoveMember(ctx, hash("sa"), b, before); err != nil {
+	if _, err := c.f.s.RemoveMember(ctx, hash("sa"), b, before); err != nil {
 		t.Fatal(err)
 	}
 	wg.Wait()
@@ -508,7 +508,7 @@ func TestUS_CO_4_1_ConsoleLinkActsAsTheMaster(t *testing.T) {
 func TestUS_CO_2_4_StaleConsoleActorCannotWrite(t *testing.T) {
 	c := newCompany(t)
 	ev := c.event(t, "sa", "甲婚宴", 7)
-	if err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
+	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
@@ -521,7 +521,7 @@ func TestUS_CO_2_4_StaleConsoleActorCannotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.RemoveMember(ctx, hash("sa"), c.member(t, "b@x.tw"), before); err != nil {
+	if _, err := c.f.s.RemoveMember(ctx, hash("sa"), c.member(t, "b@x.tw"), before); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.f.s.AddRole(ctx, ev, "攝影", domain.Media, o.Actor, before); !errors.Is(err, ErrInvalidToken) {
@@ -541,7 +541,7 @@ func TestUS_CO_4_3_ConsolesPerMemberEvent(t *testing.T) {
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), other, hash("other"), before); err != nil {
 		t.Fatal(err)
 	}
-	for i := range ConsolesPerMemberEvent + 1 {
+	for i := range 11 { // US-CO-4.3: 10, so the 11th removes the first
 		if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash(fmt.Sprintf("c%d", i)), before); err != nil {
 			t.Fatal(err)
 		}
@@ -549,7 +549,7 @@ func TestUS_CO_4_3_ConsolesPerMemberEvent(t *testing.T) {
 	if _, err := c.f.s.LookupToken(ctx, hash("c0"), before); !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("the oldest: err = %v, want ErrInvalidToken", err)
 	}
-	for _, h := range []string{"c1", fmt.Sprintf("c%d", ConsolesPerMemberEvent), "other"} {
+	for _, h := range []string{"c1", "c10", "other"} {
 		if _, err := c.f.s.LookupToken(ctx, hash(h), before); err != nil {
 			t.Errorf("%s: %v", h, err)
 		}
@@ -606,9 +606,9 @@ func TestUS_O_12_6_ClosedMemberAccess(t *testing.T) {
 	checks := map[string]error{
 		"login":   c.f.s.Login(ctx, "a@x.tw", hash("s2"), before),
 		"logout":  c.f.s.Logout(ctx, hash("sa")),
-		"add":     c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before),
+		"add":     func() error { _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); return err }(),
 		"open":    c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("c2"), before),
-		"remove":  c.f.s.RemoveMember(ctx, hash("sa"), 99, before),
+		"remove":  func() error { _, err := c.f.s.RemoveMember(ctx, hash("sa"), 99, before); return err }(),
 		"console": func() error { _, err := c.f.s.LookupToken(ctx, hash("ca"), before); return err }(),
 		"company": func() error { _, err := c.f.s.Company(ctx, hash("sa"), before); return err }(),
 		"create": func() error {

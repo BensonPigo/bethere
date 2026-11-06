@@ -15,7 +15,7 @@ import {
   postRemoveMember,
   rememberConsole,
 } from "./company";
-import type { Company, CompanyOutcome } from "./company";
+import type { Company, CompanyOutcome, Refusal } from "./company";
 import { dateRange } from "./createEvent";
 import { tokenFromHash } from "./env";
 import { snapKey } from "./storage";
@@ -23,6 +23,8 @@ import { ThemeToggle } from "./theme";
 
 const STATUS_TEXT: Record<string, string> = { Draft: "準備中", Live: "進行中", Ended: "已結束" };
 const UNAVAILABLE_TEXT = "系統維護中或連不上，請稍後再試";
+// POLL_MS: a member removed meanwhile sees "請重新登入" without acting (US-CO-2.4).
+const POLL_MS = 10_000;
 
 type Created = { masterToken: string; recoveryCode: string };
 
@@ -45,6 +47,7 @@ function LoggedOut(props: { failed: boolean }) {
   return (
     <main class="recover">
       <h1>已登出</h1>
+      <p class="hint">已開啟的主控台仍可使用；要收回請同事把你移除再加回。</p>
       {props.failed && (
         <p class="bad" role="alert">
           這台裝置已登出；伺服器端的登入連結要到 30 天後才失效，懷疑外流請同事把你移除再加回
@@ -68,17 +71,35 @@ export function CompanyPage() {
   const [email, setEmail] = useState("");
   const range = dateRange(new Date());
 
-  // apply shows an answer that carries the page; a refusal never logs
-  // out on its own, an unavailable server keeps what is shown.
+  // refuse shows why a request was refused; a refused link asks to log in
+  // again, an unavailable server keeps what is shown.
+  const refuse = useCallback((o: Refusal | { kind: "error"; code: string }) => {
+    if (o.kind === "denied") setDenied(true);
+    else setError(o.kind === "error" ? (COMPANY_ERRORS[o.code] ?? UNAVAILABLE_TEXT) : UNAVAILABLE_TEXT);
+  }, []);
+
+  // apply shows an answer that carries the page.
   const apply = useCallback((o: CompanyOutcome): boolean => {
     if (o.kind === "ok") {
       setCompany(o.company);
       return true;
     }
-    if (o.kind === "denied") setDenied(true);
-    else setError(o.kind === "error" ? (COMPANY_ERRORS[o.code] ?? UNAVAILABLE_TEXT) : UNAVAILABLE_TEXT);
+    refuse(o);
     return false;
-  }, []);
+  }, [refuse]);
+
+  // The page reads itself again now and then; only a refused link changes
+  // what is shown, a passing failure stays quiet.
+  useEffect(() => {
+    if (!token || denied) return;
+    const id = setInterval(() => {
+      void getCompany(token).then((o) => {
+        if (o.kind === "ok") setCompany(o.company);
+        else if (o.kind === "denied") setDenied(true);
+      });
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [token, denied]);
 
   useEffect(() => {
     if (token) void getCompany(token).then(apply);
@@ -107,8 +128,7 @@ export function CompanyPage() {
       history.replaceState(null, "", "/company");
       setToken(null);
       setLoggedOut({ failed: false });
-      if (await postLogout(t)) location.replace("/login");
-      else setLoggedOut({ failed: true });
+      if (!(await postLogout(t))) setLoggedOut({ failed: true });
     });
 
   const createEvent = () =>
@@ -119,8 +139,7 @@ export function CompanyPage() {
         setDate("");
         setCreated({ masterToken: o.masterToken, recoveryCode: o.recoveryCode });
         void getCompany(token).then(apply);
-      } else if (o.kind === "denied") setDenied(true);
-      else setError(o.kind === "error" ? (COMPANY_ERRORS[o.code] ?? UNAVAILABLE_TEXT) : UNAVAILABLE_TEXT);
+      } else refuse(o);
     });
 
   const openConsole = (eventId: number) =>
@@ -130,8 +149,7 @@ export function CompanyPage() {
         rememberConsole(localStorage, eventId, await snapKey(o.token));
         // assign, not replace: Back returns to this page (US-CO-4.1).
         location.assign(`/#t=${o.token}`);
-      } else if (o.kind === "denied") setDenied(true);
-      else setError(o.kind === "error" ? (COMPANY_ERRORS[o.code] ?? UNAVAILABLE_TEXT) : UNAVAILABLE_TEXT);
+      } else refuse(o);
     });
 
   const addMember = () =>
