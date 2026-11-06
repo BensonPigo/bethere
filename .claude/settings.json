@@ -1,10 +1,10 @@
 {
   "permissions": {
     "deny": [
-      "Edit(/.quality.json)",
-      "Edit(/.quality-equivalents.json)",
+      "Edit(/.referee.json)",
+      "Edit(/.referee-equivalents.json)",
       "Edit(/.gitmodules)",
-      "Edit(/tools/quality/**)",
+      "Edit(/tools/referee/**)",
       "Edit(/.github/**)",
       "Edit(/.claude/settings.json)",
       "Edit(/.claude/hooks/**)"
