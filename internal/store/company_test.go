@@ -787,3 +787,32 @@ func TestUS_CO_1_4_LoginLinkLastsThirtyDays(t *testing.T) {
 		t.Errorf("at 30 days: err = %v, want ErrInvalidSession", err)
 	}
 }
+
+// US-O-11.1: a database failure at any step of a new company is returned
+// as it is and writes nothing; it is never taken for a refusal.
+func TestUS_O_11_1_CreateOrganizationFailuresWriteNothing(t *testing.T) {
+	for _, c := range []struct{ name, ddl string }{
+		{"counting companies", `ALTER TABLE organizations RENAME COLUMN created_at TO made_at`},
+		{"checking the email", `ALTER TABLE members RENAME COLUMN email TO mail`},
+		{"inserting the company", `CREATE TRIGGER no_org BEFORE INSERT ON organizations BEGIN SELECT RAISE(ABORT, 'broken'); END`},
+		{"inserting the member", `CREATE TRIGGER no_member BEFORE INSERT ON members BEGIN SELECT RAISE(ABORT, 'broken'); END`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t)
+			if err := f.s.IssueAdminLink(ctx, hash("admin")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.s.w.Exec(c.ddl); err != nil {
+				t.Fatal(err)
+			}
+			_, err := f.s.CreateOrganization(ctx, hash("admin"), "甲", "a@x.tw", before)
+			if err == nil || errors.Is(err, ErrInvalidAdmin) || errors.Is(err, ErrEmailTaken) || errors.Is(err, ErrTooManyOrganizations) {
+				t.Errorf("err = %v, want the database's own error", err)
+			}
+			var n int
+			if err := f.s.r.QueryRow(`SELECT count(*) FROM organizations`).Scan(&n); err != nil || n != 0 {
+				t.Errorf("companies = %d (%v), want none", n, err)
+			}
+		})
+	}
+}
