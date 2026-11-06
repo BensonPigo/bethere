@@ -84,8 +84,17 @@ func (s *Store) CreateAdminInvite(ctx context.Context, adminHash, codeHash []byt
 // AdminOverview is what the admin page lists (US-O-9.2): no token, code
 // or hash, no role, cue or guest.
 type AdminOverview struct {
-	Invites []AdminInvite
-	Events  []AdminEvent
+	Invites       []AdminInvite
+	Events        []AdminEvent
+	Organizations []AdminOrganization // no email (US-O-11.3)
+}
+
+type AdminOrganization struct {
+	ID        int64
+	Name      string
+	Members   int
+	Events    int
+	CreatedAt time.Time
 }
 
 type AdminInvite struct {
@@ -99,6 +108,8 @@ type AdminEvent struct {
 	Date      domain.Date
 	Status    domain.EventStatus // Draft, Live or EventEnded
 	CreatedAt time.Time
+	// Organization is the company's name; "" for an event of none.
+	Organization string
 }
 
 // AdminOverview reads the unused codes and every event, newest first, in
@@ -134,7 +145,8 @@ func (s *Store) AdminOverview(ctx context.Context, adminHash []byte, now time.Ti
 		return o, err
 	}
 
-	rows, err = tx.QueryContext(ctx, `SELECT id, created_at FROM events ORDER BY id DESC`)
+	rows, err = tx.QueryContext(ctx, `SELECT e.id, e.created_at, coalesce(o.name, '')
+		FROM events e LEFT JOIN organizations o ON o.id = e.organization_id ORDER BY e.id DESC`)
 	if err != nil {
 		return o, err
 	}
@@ -144,7 +156,7 @@ func (s *Store) AdminOverview(ctx context.Context, adminHash []byte, now time.Ti
 			ev AdminEvent
 			at int64
 		)
-		if err := rows.Scan(&ev.ID, &at); err != nil {
+		if err := rows.Scan(&ev.ID, &at, &ev.Organization); err != nil {
 			rows.Close()
 			return o, err
 		}
@@ -166,5 +178,32 @@ func (s *Store) AdminOverview(ctx context.Context, adminHash []byte, now time.Ti
 		}
 		o.Events = append(o.Events, ev)
 	}
-	return o, nil
+	o.Organizations, err = adminOrganizations(ctx, tx)
+	return o, err
+}
+
+// adminOrganizations lists every company, newest first, with how many
+// members and events it has.
+func adminOrganizations(ctx context.Context, tx *sql.Tx) ([]AdminOrganization, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT o.id, o.name, o.created_at,
+		(SELECT count(*) FROM members m WHERE m.organization_id = o.id),
+		(SELECT count(*) FROM events e WHERE e.organization_id = o.id)
+		FROM organizations o ORDER BY o.id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminOrganization
+	for rows.Next() {
+		var (
+			org AdminOrganization
+			at  int64
+		)
+		if err := rows.Scan(&org.ID, &org.Name, &at, &org.Members, &org.Events); err != nil {
+			return nil, err
+		}
+		org.CreatedAt = fromNS(at)
+		out = append(out, org)
+	}
+	return out, rows.Err()
 }

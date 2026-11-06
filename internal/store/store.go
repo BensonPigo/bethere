@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -45,6 +46,8 @@ var (
 type Store struct {
 	w *sql.DB // single writer connection
 	r *sql.DB // read-only pool
+	// membersClosed refuses every member link for this run (US-O-12.6).
+	membersClosed atomic.Bool
 }
 
 //go:embed migrations/*.sql

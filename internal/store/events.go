@@ -21,7 +21,8 @@ var (
 )
 
 // Actor is who makes a change. It comes only from proving a credential:
-// LookupToken (a role's link) or LookupRecoveryCode (an event's recovery
+// LookupToken (a role's link, or a member's console link acting as the
+// event's Master, api.md 10.2) or LookupRecoveryCode (an event's recovery
 // code). It carries that credential's hash, and every write checks again
 // that the credential is still valid and belongs to the event written, so
 // a revoked link, a reset code or a stale id (after a purge) cannot act.
@@ -32,6 +33,10 @@ type Actor struct {
 	tokenID int64   // actorRole: access_tokens.id of the link, logged by link changes (api.md section 3)
 	eventID int64   // event the credential was proved for
 	cred    *[]byte // SHA-256 of the token or recovery code; a pointer so no fmt verb prints it
+	// actorMember: the member, and the console link they act with (0 when
+	// they create an event on the company page).
+	memberID  int64
+	consoleID int64
 }
 
 type actorKind uint8
@@ -41,6 +46,7 @@ const (
 	actorRole
 	actorRecoveryCode
 	actorServer
+	actorMember // a member of a company: with a console link, the event's Master (api.md 10.2)
 )
 
 // GoString keeps %#v from printing the credential hash (tech-stack.md 2.1「日誌」).
@@ -55,6 +61,11 @@ func (a Actor) String() string {
 		return "recovery-code"
 	case actorServer:
 		return "server"
+	case actorMember:
+		if a.consoleID != 0 {
+			return fmt.Sprintf("member:%d/console:%d", a.memberID, a.consoleID)
+		}
+		return fmt.Sprintf("member:%d", a.memberID)
 	}
 	return ""
 }
@@ -76,11 +87,8 @@ type NewEvent struct {
 // role's token (access-control.md section 2). With an invite, a code that
 // is wrong, used or expired is ErrInvalidInvite and nothing is written.
 func (s *Store) CreateEvent(ctx context.Context, ne NewEvent, now time.Time) (int64, error) {
-	if !ne.Date.Valid() {
-		return 0, domain.ErrInvalidDate
-	}
-	if !domain.SupportedTimeZone(ne.TimeZone) {
-		return 0, ErrTimeZone
+	if err := checkNewEvent(ne); err != nil {
+		return 0, err
 	}
 	if ne.InviteHash != nil {
 		// A miss is answered from the read pool, so guessing never takes
@@ -106,33 +114,54 @@ func (s *Store) CreateEvent(ctx context.Context, ne NewEvent, now time.Time) (in
 			}
 			logged = map[string]int64{"inviteId": inviteID}
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO events
-			(name, event_date, timezone, status, recovery_code_hash, created_at)
-			VALUES (?, ?, ?, 'Draft', ?, ?)`,
-			ne.Name, ne.Date.String(),
-			ne.TimeZone, ne.RecoveryCodeHash, toNS(now))
-		if err != nil {
-			return err
-		}
-		if eventID, err = res.LastInsertId(); err != nil {
-			return err
-		}
-		res, err = tx.ExecContext(ctx, `INSERT INTO roles (event_id, name, type) VALUES (?, ?, ?)`,
-			eventID, ne.MasterName, domain.Master)
-		if err != nil {
-			return err
-		}
-		roleID, err := res.LastInsertId()
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
-			roleID, ne.MasterTokenHash, toNS(now)); err != nil {
-			return err
-		}
-		return logAction(ctx, tx, eventID, Actor{kind: actorServer}, "create-event", logged, now)
+		var err error
+		eventID, err = insertEvent(ctx, tx, ne, 0, Actor{kind: actorServer}, logged, now)
+		return err
 	})
 	return eventID, err
+}
+
+// checkNewEvent is what every new event must have, whoever creates it.
+func checkNewEvent(ne NewEvent) error {
+	if !ne.Date.Valid() {
+		return domain.ErrInvalidDate
+	}
+	if !domain.SupportedTimeZone(ne.TimeZone) {
+		return ErrTimeZone
+	}
+	return nil
+}
+
+// insertEvent writes a draft event, its Master role and that role's link,
+// and logs the creation, inside the caller's write transaction. orgID 0
+// is an event of no company (ADR-0039).
+func insertEvent(ctx context.Context, tx *sql.Tx, ne NewEvent, orgID int64, actor Actor, logged any, now time.Time) (int64, error) {
+	res, err := tx.ExecContext(ctx, `INSERT INTO events
+		(name, event_date, timezone, status, recovery_code_hash, created_at, organization_id)
+		VALUES (?, ?, ?, 'Draft', ?, ?, ?)`,
+		ne.Name, ne.Date.String(), ne.TimeZone, ne.RecoveryCodeHash, toNS(now),
+		sql.NullInt64{Int64: orgID, Valid: orgID != 0})
+	if err != nil {
+		return 0, err
+	}
+	eventID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	res, err = tx.ExecContext(ctx, `INSERT INTO roles (event_id, name, type) VALUES (?, ?, ?)`,
+		eventID, ne.MasterName, domain.Master)
+	if err != nil {
+		return 0, err
+	}
+	roleID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
+		roleID, ne.MasterTokenHash, toNS(now)); err != nil {
+		return 0, err
+	}
+	return eventID, logAction(ctx, tx, eventID, actor, "create-event", logged, now)
 }
 
 // Event returns an event and its current version.
@@ -182,7 +211,7 @@ func guard(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, now time
 // ended, which a client would take as its own event ending (api.md
 // section 6).
 func guardAs(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind actorKind, now time.Time) (domain.Event, int64, error) {
-	if actor.kind != kind || actor.cred == nil {
+	if !actsAs(actor, kind) || actor.cred == nil {
 		return domain.Event{}, 0, ErrNoActor
 	}
 	if actor.eventID != eventID {
@@ -198,12 +227,22 @@ func guardAs(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind a
 	return e, v, checkActor(ctx, tx, eventID, actor, kind)
 }
 
+// actsAs reports whether actor may act where kind is asked for: a member's
+// console link acts as the event's Master wherever a role may, never where
+// only the recovery code may (api.md 10.2).
+func actsAs(actor Actor, kind actorKind) bool {
+	return actor.kind == kind || kind == actorRole && actor.kind == actorMember && actor.consoleID != 0
+}
+
 func checkActor(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, kind actorKind) error {
-	if actor.kind != kind || actor.cred == nil {
+	if !actsAs(actor, kind) || actor.cred == nil {
 		return ErrNoActor
 	}
 	if actor.eventID != eventID {
 		return ErrCrossEvent
+	}
+	if actor.kind == actorMember {
+		return checkConsole(ctx, tx, eventID, actor)
 	}
 	var (
 		query = `SELECT 1 FROM access_tokens t JOIN roles r ON r.id = t.role_id
@@ -380,6 +419,10 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) 
 	// a failure here never keeps an event past its retention.
 	if _, err := s.w.ExecContext(ctx, `DELETE FROM invites WHERE expires_at <= ?`, toNS(now)); err != nil {
 		skipped = append(skipped, fmt.Errorf("invites: %w", err))
+	}
+	// Expired login links too (data-model.md「婚顧公司」).
+	if _, err := s.w.ExecContext(ctx, `DELETE FROM member_sessions WHERE expires_at <= ?`, toNS(now)); err != nil {
+		skipped = append(skipped, fmt.Errorf("member sessions: %w", err))
 	}
 	return deleted, errors.Join(skipped...)
 }

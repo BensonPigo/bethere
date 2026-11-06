@@ -33,7 +33,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -162,16 +161,12 @@ func maintenanceFromEnv(lookupEnv func(string) (string, bool)) (bool, error) {
 	return false, fmt.Errorf("BETHERE_MAINTENANCE=%q: only 1 (maintenance mode) or 0 is accepted", v)
 }
 
-// supportAddress is one plain address: nothing that could be read as
-// another scheme, a display name or a second recipient (US-O-8.2).
-var supportAddress = regexp.MustCompile(`^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$`)
-
 // supportEmailFromEnv reads BETHERE_SUPPORT_EMAIL (US-O-8.2): unset or
 // empty shows no address; a value that is not one plain address is dropped
 // with an error, which serve only logs: a support line never stops the site.
 func supportEmailFromEnv(lookupEnv func(string) (string, bool)) (string, error) {
 	v, _ := lookupEnv("BETHERE_SUPPORT_EMAIL")
-	if v == "" || supportAddress.MatchString(v) {
+	if v == "" || domain.IsPlainEmail(v) {
 		return v, nil
 	}
 	return "", fmt.Errorf("BETHERE_SUPPORT_EMAIL=%q is not one email address; no support address is shown", v)
