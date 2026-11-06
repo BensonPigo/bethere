@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -700,5 +701,19 @@ func TestDateRangeAndDayCount(t *testing.T) {
 	}
 	if want := time.Date(2199, 6, 6, 10, 0, 0, 0, taipei); !moved[0].ScheduledStart.Equal(want) {
 		t.Errorf("cue moved to %v, want %v", moved[0].ScheduledStart, want)
+	}
+}
+
+// US-O-11.2: an email of at most 254 characters, trimmed and lower-cased
+// only after the check.
+func TestUS_O_11_2_CleanEmail(t *testing.T) {
+	at254 := strings.Repeat("a", 254-len("@x.tw")) + "@x.tw"
+	if got, ok := CleanEmail(" " + strings.ToUpper(at254[:3]) + at254[3:] + " "); !ok || got != at254 {
+		t.Errorf("254 characters: %q %v", got, ok)
+	}
+	for _, bad := range []string{"a" + at254, "", "a@x", "王@x.tw", "a@x.tw, b@x.tw", "a@ｘ.tw"} {
+		if got, ok := CleanEmail(bad); ok {
+			t.Errorf("%q: accepted as %q", bad, got)
+		}
 	}
 }

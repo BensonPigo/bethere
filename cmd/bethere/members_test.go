@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -261,4 +262,37 @@ func TestUS_CO_4_6_CommandsRefuseAConsoleLink(t *testing.T) {
 
 func dateOf(t time.Time) domain.Date {
 	return domain.Date{Year: t.Year(), Month: t.Month(), Day: t.Day()}
+}
+
+// US-O-8.2: a bad support address is logged and shows none; a good one
+// logs nothing.
+func TestUS_O_8_2_SupportEmailLogsOnlyABadAddress(t *testing.T) {
+	for v, want := range map[string]string{"help@x.tw": "help@x.tw", "not an address": ""} {
+		logger, logs := logBuffer()
+		c := cli{lookupEnv: func(k string) (string, bool) { return v, k == "BETHERE_SUPPORT_EMAIL" }}
+		if got := supportEmail(c, logger); got != want {
+			t.Errorf("%q: %q, want %q", v, got, want)
+		}
+		if logged := strings.Contains(logs.String(), `"msg":"support email"`); logged != (want == "") {
+			t.Errorf("%q: logged %v: %s", v, logged, logs)
+		}
+	}
+}
+
+// US-O-12.2: any other failure of add-member is reported as it is.
+func TestUS_O_12_2_AddMemberReportsOtherFailures(t *testing.T) {
+	db := newDB(t)
+	st, _, _ := company(t, db)
+	st.Close()
+	raw, err := sql.Open("sqlite", db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`DROP TABLE console_tokens; DROP TABLE member_sessions; DROP TABLE members`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+	if r := runWith("", nil, "add-member", "-db", db, "-org", "1", "-email", "b@x.tw"); r.code != 1 || !strings.Contains(r.stderr, "no such table") {
+		t.Errorf("exit %d %q", r.code, r.stderr)
+	}
 }
