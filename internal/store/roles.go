@@ -152,8 +152,37 @@ func (s *Store) LookupToken(ctx context.Context, tokenHash []byte, now time.Time
 		return TokenOwner{}, err
 	}
 	defer tx.Rollback()
-	o, _, _, err := resolveToken(ctx, tx, tokenHash, now)
+	o, _, _, err := resolveToken(ctx, tx, tokenHash, now, s.consoles())
 	return o, err
+}
+
+// LookupRoleToken is LookupToken for a role's link only: a console link is
+// no link at all. The server commands that ask for the Master link use it
+// (api.md 10.2, US-CO-4.6).
+func (s *Store) LookupRoleToken(ctx context.Context, tokenHash []byte, now time.Time) (TokenOwner, error) {
+	tx, err := s.r.BeginTx(ctx, nil)
+	if err != nil {
+		return TokenOwner{}, err
+	}
+	defer tx.Rollback()
+	o, _, _, err := resolveToken(ctx, tx, tokenHash, now, consolesNone)
+	return o, err
+}
+
+// consoleRule is whether a lookup also tries the console links.
+type consoleRule uint8
+
+const (
+	consolesNone   consoleRule = iota // a role's link only
+	consolesOpen                      // console links resolve to their event's Master
+	consolesClosed                    // console links are ErrMembersClosed (US-O-12.6)
+)
+
+func (s *Store) consoles() consoleRule {
+	if s.membersClosed.Load() {
+		return consolesClosed
+	}
+	return consolesOpen
 }
 
 // resolveToken is the lookup of access-control.md 3.3 inside the caller's
@@ -162,7 +191,54 @@ func (s *Store) LookupToken(ctx context.Context, tokenHash []byte, now time.Time
 // then ErrEventEnded, otherwise the owner with its event and version. Any
 // other failure, a cancelled or expired context included, is returned as
 // is and never as ErrInvalidToken (tech-stack.md 2.1「逾時與錯誤」).
-func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time) (TokenOwner, domain.Event, int64, error) {
+//
+// A hash that is no role's link is tried as a member's console link
+// (api.md 10.2) unless rule says not to; only when both queries succeed
+// and find nothing is it ErrInvalidToken.
+func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Time, rule consoleRule) (TokenOwner, domain.Event, int64, error) {
+	o, err := lookupOwner(ctx, tx, tokenHash, rule)
+	if err != nil {
+		return TokenOwner{}, domain.Event{}, 0, err
+	}
+	e, v, err := loadEvent(ctx, tx, o.EventID)
+	if err != nil {
+		return TokenOwner{}, domain.Event{}, 0, err
+	}
+	if e.Ended(now) {
+		return TokenOwner{}, domain.Event{}, 0, ErrEventEnded
+	}
+	return o, e, v, nil
+}
+
+// lookupOwner finds whose link tokenHash is: a role's, else (unless rule
+// says not to) a member's console link. ErrInvalidToken only when every
+// query asked succeeded and found nothing.
+func lookupOwner(ctx context.Context, tx *sql.Tx, tokenHash []byte, rule consoleRule) (TokenOwner, error) {
+	o, err := resolveRoleToken(ctx, tx, tokenHash)
+	if errors.Is(err, sql.ErrNoRows) && rule != consolesNone {
+		o, err = consoleOwner(ctx, tx, tokenHash, rule)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		// database/sql reports a context cancelled before the row was read
+		// as the context's error, not ErrNoRows; checking ctx as well keeps
+		// a miss that raced with a cancellation from being trusted.
+		return TokenOwner{}, confirmedMiss(ctx, ErrInvalidToken)
+	}
+	return o, err
+}
+
+// consoleOwner is resolveConsole, and ErrMembersClosed for a console link
+// found while member links are closed (US-O-12.6).
+func consoleOwner(ctx context.Context, tx *sql.Tx, tokenHash []byte, rule consoleRule) (TokenOwner, error) {
+	o, err := resolveConsole(ctx, tx, tokenHash)
+	if err == nil && rule == consolesClosed {
+		return TokenOwner{}, ErrMembersClosed
+	}
+	return o, err
+}
+
+// resolveRoleToken is a role's active link; ErrNoRows passes up as is.
+func resolveRoleToken(ctx context.Context, tx *sql.Tx, tokenHash []byte) (TokenOwner, error) {
 	var (
 		o         TokenOwner
 		view      sql.NullString
@@ -172,29 +248,13 @@ func resolveToken(ctx context.Context, tx *sql.Tx, tokenHash []byte, now time.Ti
 		FROM access_tokens t JOIN roles r ON r.id = t.role_id
 		WHERE t.token_hash = ? AND t.revoked_at IS NULL`, tokenHash).
 		Scan(&o.TokenID, &o.RoleID, &o.EventID, &o.RoleType, &o.RoleName, &view, &noCheckIn)
-	if errors.Is(err, sql.ErrNoRows) {
-		// database/sql reports a context cancelled before the row was read
-		// as the context's error, not ErrNoRows; checking ctx as well keeps
-		// a miss that raced with a cancellation from being trusted.
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return TokenOwner{}, domain.Event{}, 0, ctxErr
-		}
-		return TokenOwner{}, domain.Event{}, 0, ErrInvalidToken
-	}
 	if err != nil {
-		return TokenOwner{}, domain.Event{}, 0, err
+		return TokenOwner{}, err
 	}
 	o.View = resolveView(o.RoleType, view)
 	o.ChecksIn = o.RoleType.ChecksIn(noCheckIn)
-	e, v, err := loadEvent(ctx, tx, o.EventID)
-	if err != nil {
-		return TokenOwner{}, domain.Event{}, 0, err
-	}
-	if e.Ended(now) {
-		return TokenOwner{}, domain.Event{}, 0, ErrEventEnded
-	}
 	o.Actor = Actor{kind: actorRole, roleID: o.RoleID, tokenID: o.TokenID, eventID: o.EventID, cred: credential(tokenHash)}
-	return o, e, v, nil
+	return o, nil
 }
 
 // LookupRecoveryCode proves a recovery code and returns the actor that may
@@ -244,21 +304,33 @@ func (s *Store) replaceMasterLink(ctx context.Context, actor Actor, eventID int6
 		if e.Ended(now) {
 			return domain.ErrEnded
 		}
-		var roleID int64
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM roles WHERE event_id = ? AND type = ?`, eventID, domain.Master).
-			Scan(&roleID); err != nil {
-			return notFound(err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
-			toNS(now), roleID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
-			roleID, tokenHash, toNS(now)); err != nil {
+		roleID, err := swapMasterToken(ctx, tx, eventID, tokenHash, now)
+		if err != nil {
 			return err
 		}
 		return logAction(ctx, tx, eventID, actor, "token.recover", map[string]any{"roleId": roleID}, now)
 	})
+}
+
+// swapMasterToken revokes the event's Master link, stores tokenHash as
+// the new one and deletes every member's console link of the event
+// (US-CO-4.5); it returns the Master role.
+func swapMasterToken(ctx context.Context, tx *sql.Tx, eventID int64, tokenHash []byte, now time.Time) (int64, error) {
+	var roleID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM roles WHERE event_id = ? AND type = ?`, eventID, domain.Master).
+		Scan(&roleID); err != nil {
+		return 0, notFound(err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE access_tokens SET revoked_at = ? WHERE role_id = ? AND revoked_at IS NULL`,
+		toNS(now), roleID); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens (role_id, token_hash, created_at) VALUES (?, ?, ?)`,
+		roleID, tokenHash, toNS(now)); err != nil {
+		return 0, err
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM console_tokens WHERE event_id = ?`, eventID)
+	return roleID, err
 }
 
 // ResetRecoveryCode gives the actor's event a new recovery code; the old

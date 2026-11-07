@@ -15,9 +15,19 @@ import (
 // link all answer the same 404 not_found; Gate closes them in maintenance.
 
 type adminOverviewResponse struct {
-	Result  string               `json:"result"` // "ok"
-	Invites []adminInviteSummary `json:"invites"`
-	Events  []adminEventSummary  `json:"events"`
+	Result        string               `json:"result"` // "ok"
+	Invites       []adminInviteSummary `json:"invites"`
+	Events        []adminEventSummary  `json:"events"`
+	Organizations []adminOrgSummary    `json:"organizations"`
+}
+
+// adminOrgSummary is a company without any email (US-O-11.3).
+type adminOrgSummary struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Members   int       `json:"members"`
+	Events    int       `json:"events"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type adminInviteSummary struct {
@@ -31,6 +41,8 @@ type adminEventSummary struct {
 	Date      string    `json:"date"`
 	Status    string    `json:"status"` // Draft, Live or Ended
 	CreatedAt time.Time `json:"createdAt"`
+	// Organization is the company's name, null for an event of none.
+	Organization *string `json:"organization"`
 }
 
 // adminInviteResponse carries the new code in this response only (US-O-10.2).
@@ -65,16 +77,56 @@ func (a *API) adminOverview(w http.ResponseWriter, r *http.Request) {
 		a.adminFailed(w, r, err)
 		return
 	}
-	resp := adminOverviewResponse{Result: "ok", Invites: []adminInviteSummary{}, Events: []adminEventSummary{}}
+	writeJSON(w, http.StatusOK, overviewResponse(o))
+}
+
+// overviewResponse shapes the overview: lists are never null.
+func overviewResponse(o store.AdminOverview) adminOverviewResponse {
+	resp := adminOverviewResponse{Result: "ok", Invites: []adminInviteSummary{}, Events: []adminEventSummary{},
+		Organizations: []adminOrgSummary{}}
 	for _, inv := range o.Invites {
 		resp.Invites = append(resp.Invites, adminInviteSummary{ID: inv.ID, ExpiresAt: inv.ExpiresAt})
 	}
 	for _, ev := range o.Events {
-		resp.Events = append(resp.Events, adminEventSummary{
-			ID: ev.ID, Name: ev.Name, Date: ev.Date.String(), Status: string(ev.Status), CreatedAt: ev.CreatedAt,
+		resp.Events = append(resp.Events, adminEventOf(ev))
+	}
+	for _, org := range o.Organizations {
+		resp.Organizations = append(resp.Organizations, adminOrgSummary{
+			ID: org.ID, Name: org.Name, Members: org.Members, Events: org.Events, CreatedAt: org.CreatedAt,
 		})
 	}
-	writeJSON(w, http.StatusOK, resp)
+	return resp
+}
+
+// adminEventOf is one event of the overview; its company is null when it
+// has none (US-O-11.3).
+func adminEventOf(ev store.AdminEvent) adminEventSummary {
+	var org *string
+	if ev.Organization != "" {
+		org = &ev.Organization
+	}
+	return adminEventSummary{
+		ID: ev.ID, Name: ev.Name, Date: ev.Date.String(), Status: string(ev.Status), CreatedAt: ev.CreatedAt,
+		Organization: org,
+	}
+}
+
+// adminBody proves the admin link before reading the body, so a
+// stranger's request is the same 404 whatever it sends; on failure it has
+// answered already.
+func (a *API) adminBody(w http.ResponseWriter, r *http.Request, hash []byte, fields fieldSet) (body, bool) {
+	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
+	err := a.store.CheckAdmin(ctx, hash)
+	cancel()
+	if err != nil {
+		a.adminFailed(w, r, err)
+		return body{}, false
+	}
+	b, ok := readBody(w, r, fields)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "bad_request")
+	}
+	return b, ok
 }
 
 // adminInvite is POST /api/admin/invites (US-O-10): an empty body, a new

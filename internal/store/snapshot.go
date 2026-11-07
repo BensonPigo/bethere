@@ -103,7 +103,7 @@ func (s *Store) Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (
 		return SnapshotData{}, err
 	}
 	defer tx.Rollback()
-	owner, e, v, err := resolveToken(ctx, tx, tokenHash, now)
+	owner, e, v, err := resolveToken(ctx, tx, tokenHash, now, s.consoles())
 	if err != nil {
 		return SnapshotData{}, err
 	}
@@ -167,7 +167,7 @@ func (s *Store) PreviewSnapshot(ctx context.Context, tokenHash []byte, roleID in
 		return TokenOwner{}, SnapshotData{}, err
 	}
 	defer tx.Rollback()
-	caller, e, v, err := resolveToken(ctx, tx, tokenHash, now)
+	caller, e, v, err := resolveToken(ctx, tx, tokenHash, now, s.consoles())
 	if err != nil {
 		return TokenOwner{}, SnapshotData{}, err
 	}
