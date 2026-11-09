@@ -443,7 +443,7 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 方法與路徑 | 憑證 | 本文 | 成功回應 |
 | --- | --- | --- | --- |
 | `POST /api/company/login` | 無（不讀取標頭） | `{"email":"…"}` | `{"result":"ok"}`：不論是不是成員、是否寄出（US-CO-1.3） |
-| `POST /api/company/login/confirm` | 登入信連結 | `{}` | `{"result":"ok","loginToken":"…"}`：新的登入連結，只在這次回應；查無、用過、過期、成員已移除一律 404 `not_found`（US-CO-1.5） |
+| `POST /api/company/login/confirm` | 登入信連結 | `{}` | `{"result":"ok","loginToken":"…"}`：新的登入連結，只在這次回應；查無、用過、過期、成員已移除一律 404 `not_found`（US-CO-1.10） |
 | `POST /api/company/logout` | 登入連結 | `{}` | `{"result":"ok"}`：作廢這一條登入連結 |
 | `GET /api/company` | 登入連結 | — | `{"result":"ok","organization":{"name":"…"},"me":n,"members":[{"id":n,"email":"…"}],"events":[{"id":n,"name":"…","date":"YYYY-MM-DD","status":"Draft\|Live\|Ended"}]}`；`events` 依 US-CO-3.1 排序 |
 | `POST /api/company/members/add` | 登入連結 | `{"email":"…"}` | 同 `GET /api/company` |
@@ -466,19 +466,18 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 - 本節的每個寫入端點（`logout` 除外）都在單一寫入交易內：再確認登入連結有效、呼叫者仍是成員 → 檢查 → 寫入；交易內查不到時回 404 `not_found`。
 - `login`：
   - 依序：email 格式（同 US-O-11.2）不符回 422 `invalid_email` → 沒有可用的寄信設定回 503 `mail_unavailable` → 單一寫入交易：
-    1. 數建立時間晚於「現在減 24 小時」的 LoginMail（不分是不是成員），達 2000 列回 422 `request_limit`；
-    2. 不論是不是成員，都存入一列 LoginMail，帶這個 email 的雜湊；
-    3. 找成員；是成員、這個 email 雜湊帶連結的列在最近 1 小時不到 5 列、最近 24 小時不到 10 列，而且全系統最近 24 小時帶連結的列不到 400 列時，這一列再帶成員、新登入信連結的雜湊（15 分鐘後失效）與「寄出」標記；全系統的 400 封剛用完時以 `mail` 開頭記錄一次；
-    4. 提交後回 `{"result":"ok"}`。
-  - 計數只用建立時間的下界；回應的內容不分是不是成員、有沒有寄出。兩條路都寫一列，但查詢與產生連結的工作不完全相同，回應時間不另外保證。
-  - 寄信在提交之後、回應之外另外進行（逾時 30 秒），不影響回應；失敗時以 `mail` 開頭記錄成員編號與錯誤，絕不記錄連結。服務停止時還沒寄出的信就不寄了，成員再要一次。
+    1. 找成員；是成員、他最近 24 小時的 LoginMail 不到 10 列、他公司最近 24 小時的不到 100 列、全系統最近 24 小時的不到 400 列時，存入一列 LoginMail（成員、公司、新登入信連結的雜湊，15 分鐘後失效）；全系統這一列剛好是第 400 列時以 `mail` 開頭記錄一次；
+    2. 否則（不是成員或超過上限）把固定的一列計數器 `login_noise` 加一，讓兩條路都做一次寫入；
+    3. 提交後回 `{"result":"ok"}`。
+  - 計數一律數 LoginMail 的列、只用建立時間的下界，不看 `tokenHash` 是否為空。回應的內容不分是不是成員、有沒有寄出；回應時間不另外保證。
+  - 寄信在提交之後、回應之外另外進行（逾時 30 秒），不影響回應；失敗時以 `mail` 開頭記錄成員編號與錯誤，絕不記錄連結。Gmail 回覆驗證失敗（SMTP 535）時，之後的 `login` 都回 503 `mail_unavailable`，直到服務重啟。服務停止時還沒寄出的信就不寄了，成員再要一次。
   - 信裡的連結是 `<網域>/login#t=<登入信連結>`，網域取自 `BETHERE_BASE_URL`，不取自請求的 `Host`。
 - `login/confirm`：單一寫入交易：找到登入信連結、`usedAt` 為空、未過期、成員仍在 → 填 `usedAt` → 若他已有 20 條有效登入連結就刪掉最舊的 → 存入新登入連結的雜湊（`verified` 為 1）。兩個請求同時用同一條登入信連結時只有一個成功。
 - **寄信的設定**（`tech-stack.md`「寄信」）：
   - `BETHERE_MAIL=smtp`：以 `BETHERE_MAIL_FROM`、`BETHERE_MAIL_PASSWORD` 經 `smtp.gmail.com:587`（STARTTLS）寄出；`BETHERE_BASE_URL` 必須是 `https://<主機>`，不帶路徑。
   - `BETHERE_MAIL=log`：不寄信，把收件人與連結寫進服務日誌（US-CO-1.14）；`BETHERE_BASE_URL` 必須是 `http://localhost` 或 `http://127.0.0.1`（可帶埠號）。
   - 未設定、其他值、缺任何一項或網域不合規則時，都當作沒有可用的寄信設定：以 `mail` 開頭記錄原因、照常啟動，`login` 回 503 `mail_unavailable`。寄信設定絕不讓服務起不來（同客服信箱）。
-- **測試期間的連結**（US-CO-1.13）：MemberSession 與 ConsoleToken 各加一個可為空的欄位 `verified`（ADR-0019）。這個版本產生的一律填 1；解析時只接受 1，空的當作查無。所以換上這個版本時，之前的連結全部失效；退回只需 email 的版本期間產生的，換回後也不接受。每日刪除清掉 `verified` 為空的列。`bethere features` 列出 `mail-login`。
+- **測試期間的連結**（US-CO-1.13）：MemberSession 與 ConsoleToken 各加一個可為空、**沒有預設值**的欄位 `verified`（ADR-0019），所以只需 email 的版本照它的寫法插入的列一定是空的（以測試固定：照 M4 的 INSERT 寫入的列被拒）。這個版本產生的一律填 1；解析時只接受 1，空的當作查無。所以換上這個版本時，之前的連結全部失效；退回只需 email 的版本期間產生的，換回後也不接受。每日刪除清掉 `verified` 為空的列。`bethere features` 列出 `mail-login`，準備腳本據此拒絕啟動只需 email 的版本（`tech-stack.md`「寄信」）。
 - `members/remove`：對象不屬於本公司回 404；是自己回 422 `cannot_remove_self`；刪除成員（登入連結與主控台連結隨外鍵一併刪除）。
 - `events/open`：活動不屬於本公司（含不存在、不屬於任何公司）回 404；這位成員對這場活動已有 10 條主控台連結時刪掉最舊的一條，再存入新的。活動已結束時照樣產生，開啟後照第 2.1 節回 `ended`。
 - `POST /api/company/events` 的名稱與日期檢查同 `POST /api/events`（第 3 節），不合格回 422 `invalid_event`；交易內數這家公司建立時間晚於「現在減 24 小時」的活動（只用下界），達 20 場回 422 `too_many_events` → 建立活動（`organizationId` 為本公司）→ 操作紀錄 `create-event`（actor 為成員）。
@@ -495,7 +494,6 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 來源錯誤 | 回應 |
 | --- | --- |
 | email 格式不符（登入、加入成員、建立公司） | 422 `invalid_email` |
-| 全系統 24 小時內已受理 2000 次登入要求 | 422 `request_limit` |
 | 主機沒有可用的寄信設定（登入） | 503 `mail_unavailable` |
 | email 已是成員 | 422 `email_taken` |
 | 公司已有 50 位成員 | 422 `too_many_members` |
