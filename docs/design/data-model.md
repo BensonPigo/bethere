@@ -187,12 +187,12 @@ id 永不重用。規則見 `api.md` 9.6。
 | 實體 | 欄位 | 說明 |
 | --- | --- | --- |
 | Organization | id, name, createdAt | 一家婚顧公司；由系統後台建立。名稱規則同活動名稱 |
-| Member | id, organizationId, email, createdAt | 一位成員。`email` 去除前後空白、轉小寫後儲存，全系統唯一（一個 email 只屬於一家公司）；移除時刪除這一列，連同他的 LoginMail、MemberSession 與 ConsoleToken；id 刪除後不再配發（操作紀錄以它記下是誰） |
-| LoginMail | id, memberId, tokenHash, createdAt, expiresAt, usedAt | 每個格式正確的登入要求一列（US-CO-1.3）。是成員且沒超過上限時帶成員與登入信連結的雜湊，15 分鐘後失效，用掉時填 `usedAt`；不是成員或超過上限時 `memberId`、`tokenHash` 為空，讓回應的快慢相同。每人每小時與全系統每 24 小時的上限都以帶連結的列的 `createdAt` 計算（只用下界），所以列保留 24 小時，之後由每日刪除清掉；成員被移除時一併刪除 |
+| Member | id, organizationId, email, createdAt | 一位成員。`email` 去除前後空白、轉小寫後儲存，全系統唯一（一個 email 只屬於一家公司）；移除時刪除這一列，連同他的 MemberSession 與 ConsoleToken（他的 LoginMail 留著，不再連到他）；id 刪除後不再配發（操作紀錄以它記下是誰） |
+| LoginMail | id, emailHash, memberId, tokenHash, mailed, createdAt, expiresAt, usedAt | 每個格式正確的登入要求一列（`api.md` 10.2），不分是不是成員，都帶 email 的 SHA-256（不存 email 本身）。寄出時另帶成員、登入信連結的雜湊（15 分鐘後失效，用掉時填 `usedAt`）與 `mailed` = 1。每個 email、全系統的寄信上限與全系統的受理上限都以 `createdAt` 計算（只用下界），所以列保留 24 小時，之後由每日刪除清掉。成員被移除時 `memberId` 設為空（`ON DELETE SET NULL`），連結隨之失效，列與計數留著；從備份還原時只清空 `tokenHash` |
 | MemberSession | id, memberId, tokenHash, createdAt, expiresAt, verified | 登入連結；只存雜湊，30 天後失效，登出時刪除；每位成員最多 20 列，再登入時刪掉最舊的。`verified` 為 1 才接受，空的是只需 email 的版本產生的（`api.md` 10.2） |
 | ConsoleToken | id, memberId, eventId, tokenHash, createdAt, verified | 成員對某場活動的主控台連結；驗證時解析成那場活動的 Master 角色，操作者記為這位成員（`access-control.md` 第 7 節）。每位成員對每場活動最多 10 列，再開啟時刪掉最舊的；以復原碼換發 Master 連結時刪除這場活動的全部。id 以 AUTOINCREMENT 產生，刪除後不再配發（操作紀錄以它記下是哪一條） |
 
-LoginMail、MemberSession 與 ConsoleToken 以外鍵連到 Member（`ON DELETE CASCADE`），ConsoleToken 也連到 Event（活動刪除時一併刪除）。Organization、Member、LoginMail、MemberSession 不屬於任何活動，每日刪除不碰它們，只清掉過期或 `verified` 為空的 MemberSession、`verified` 為空的 ConsoleToken，與建立超過 24 小時的 LoginMail。公司與它的活動不會被刪除（活動到結束後 80 天才刪），所以每家公司每天 20 場、系統後台每天 5 家的上限直接以 `Event.createdAt`、`Organization.createdAt` 計算。
+MemberSession 與 ConsoleToken 以外鍵連到 Member（`ON DELETE CASCADE`），LoginMail 以 `ON DELETE SET NULL` 連到 Member，ConsoleToken 也連到 Event（活動刪除時一併刪除）。Organization、Member、LoginMail、MemberSession 不屬於任何活動，每日刪除不碰它們，只清掉過期或 `verified` 為空的 MemberSession、`verified` 為空的 ConsoleToken，與建立超過 24 小時的 LoginMail。公司與它的活動不會被刪除（活動到結束後 80 天才刪），所以每家公司每天 20 場、系統後台每天 5 家的上限直接以 `Event.createdAt`、`Organization.createdAt` 計算。
 
 ### 平移紀錄
 不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。

@@ -462,15 +462,23 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
   - `lastSeenAt` 只屬於 `access_tokens`：`TokenID` 為 0 時 `LastSeen` 一律回報沒看過，主控台連結的使用不會算到任何角色連結。
   - 操作紀錄的 `byTokenId` 為 0（不是任何角色連結），`actor` 記 `member:<成員編號>/console:<主控台連結編號>`（取代第 4 節「都有操作者的 `byTokenId`」對這種請求的要求）。
   - 第 4 節權限表的 Master 欄、第 7 節與第 8 節的 Master 規則照常適用；主控台連結不在 Master 快照的角色連結裡。
-- **伺服器指令**（第 7 節）讀入「Master 連結」時用只查 `access_tokens` 的 `LookupRoleToken`，主控台連結當作查無；`LookupToken` 只給 API 用。`find-member`、`add-member`、`remove-member`、`issue-login-link`（US-O-12）不讀取任何憑證，與 `issue-admin-link` 相同；`issue-login-link` 照 `login/confirm` 的後半段產生登入連結，`-base-url` 規則同 `issue-admin-link`，不受寄信的上限。
+- **伺服器指令**（第 7 節）讀入「Master 連結」時用只查 `access_tokens` 的 `LookupRoleToken`，主控台連結當作查無；`LookupToken` 只給 API 用。`find-member`、`add-member`、`remove-member`、`issue-login-link`（US-O-12）不讀取任何憑證，與 `issue-admin-link` 相同；`issue-login-link` 照 `login/confirm` 的後半段產生登入連結（`verified` 為 1），`-base-url` 規則同 `issue-admin-link`，不受寄信的上限。
 - 本節的每個寫入端點（`logout` 除外）都在單一寫入交易內：再確認登入連結有效、呼叫者仍是成員 → 檢查 → 寫入；交易內查不到時回 404 `not_found`。
 - `login`：
-  - 依序：email 格式（同 US-O-11.2）不符回 422 `invalid_email` → 主機沒設定寄信回 503 `mail_unavailable` → 單一寫入交易：數建立時間晚於「現在減 24 小時」、帶連結的 LoginMail，達 400 列回 422 `mail_limit` → 找成員；是成員且他帶連結的 LoginMail 在最近 1 小時內不到 5 列時，存入一列帶成員與新登入信連結雜湊的 LoginMail（15 分鐘後失效），否則存入一列不帶成員與連結的（`data-model.md`），兩條路都寫一列，回應的快慢相同 → 提交後回 `{"result":"ok"}`。
+  - 依序：email 格式（同 US-O-11.2）不符回 422 `invalid_email` → 沒有可用的寄信設定回 503 `mail_unavailable` → 單一寫入交易：
+    1. 數建立時間晚於「現在減 24 小時」的 LoginMail（不分是不是成員），達 2000 列回 422 `request_limit`；
+    2. 不論是不是成員，都存入一列 LoginMail，帶這個 email 的雜湊；
+    3. 找成員；是成員、這個 email 雜湊帶連結的列在最近 1 小時不到 5 列、最近 24 小時不到 10 列，而且全系統最近 24 小時帶連結的列不到 400 列時，這一列再帶成員、新登入信連結的雜湊（15 分鐘後失效）與「寄出」標記；全系統的 400 封剛用完時以 `mail` 開頭記錄一次；
+    4. 提交後回 `{"result":"ok"}`。
+  - 計數只用建立時間的下界；回應的內容不分是不是成員、有沒有寄出。兩條路都寫一列，但查詢與產生連結的工作不完全相同，回應時間不另外保證。
   - 寄信在提交之後、回應之外另外進行（逾時 30 秒），不影響回應；失敗時以 `mail` 開頭記錄成員編號與錯誤，絕不記錄連結。服務停止時還沒寄出的信就不寄了，成員再要一次。
-  - 信裡的連結是 `<網域>/login#t=<登入信連結>`，網域取自主機設定（`tech-stack.md`「寄信」），不取自請求的 `Host`。
-- `login/confirm`：單一寫入交易：找到登入信連結、`usedAt` 為空、未過期、成員仍在 → 填 `usedAt` → 若他已有 20 條有效登入連結就刪掉最舊的 → 存入新登入連結的雜湊。兩個請求同時用同一條登入信連結時只有一個成功。
-- **寄信的設定**：`BETHERE_MAIL` 未設定時沒有寄信（`login` 回 503 `mail_unavailable`）；`log` 時不寄信，把收件人與連結寫進服務日誌（開發用，US-CO-1.14）；`smtp` 時以 `BETHERE_MAIL_FROM`、`BETHERE_MAIL_PASSWORD` 經 `smtp.gmail.com:587`（STARTTLS）寄出，連結的網域取自 `BETHERE_BASE_URL`（`https://<網域>`，不帶路徑）。其他值、`smtp` 缺任何一項或網域不是 `https://<主機>` 時，`serve` 拒絕啟動。
-- **測試期間的連結**（US-CO-1.13）：MemberSession 與 ConsoleToken 各加一個可為空的欄位 `verified`（ADR-0019）。這個版本產生的一律填 1；解析時只接受 1，空的當作查無。所以換上這個版本時，之前的連結全部失效；退回只需 email 的版本期間產生的，換回後也不接受。每日刪除清掉 `verified` 為空的列。
+  - 信裡的連結是 `<網域>/login#t=<登入信連結>`，網域取自 `BETHERE_BASE_URL`，不取自請求的 `Host`。
+- `login/confirm`：單一寫入交易：找到登入信連結、`usedAt` 為空、未過期、成員仍在 → 填 `usedAt` → 若他已有 20 條有效登入連結就刪掉最舊的 → 存入新登入連結的雜湊（`verified` 為 1）。兩個請求同時用同一條登入信連結時只有一個成功。
+- **寄信的設定**（`tech-stack.md`「寄信」）：
+  - `BETHERE_MAIL=smtp`：以 `BETHERE_MAIL_FROM`、`BETHERE_MAIL_PASSWORD` 經 `smtp.gmail.com:587`（STARTTLS）寄出；`BETHERE_BASE_URL` 必須是 `https://<主機>`，不帶路徑。
+  - `BETHERE_MAIL=log`：不寄信，把收件人與連結寫進服務日誌（US-CO-1.14）；`BETHERE_BASE_URL` 必須是 `http://localhost` 或 `http://127.0.0.1`（可帶埠號）。
+  - 未設定、其他值、缺任何一項或網域不合規則時，都當作沒有可用的寄信設定：以 `mail` 開頭記錄原因、照常啟動，`login` 回 503 `mail_unavailable`。寄信設定絕不讓服務起不來（同客服信箱）。
+- **測試期間的連結**（US-CO-1.13）：MemberSession 與 ConsoleToken 各加一個可為空的欄位 `verified`（ADR-0019）。這個版本產生的一律填 1；解析時只接受 1，空的當作查無。所以換上這個版本時，之前的連結全部失效；退回只需 email 的版本期間產生的，換回後也不接受。每日刪除清掉 `verified` 為空的列。`bethere features` 列出 `mail-login`。
 - `members/remove`：對象不屬於本公司回 404；是自己回 422 `cannot_remove_self`；刪除成員（登入連結與主控台連結隨外鍵一併刪除）。
 - `events/open`：活動不屬於本公司（含不存在、不屬於任何公司）回 404；這位成員對這場活動已有 10 條主控台連結時刪掉最舊的一條，再存入新的。活動已結束時照樣產生，開啟後照第 2.1 節回 `ended`。
 - `POST /api/company/events` 的名稱與日期檢查同 `POST /api/events`（第 3 節），不合格回 422 `invalid_event`；交易內數這家公司建立時間晚於「現在減 24 小時」的活動（只用下界），達 20 場回 422 `too_many_events` → 建立活動（`organizationId` 為本公司）→ 操作紀錄 `create-event`（actor 為成員）。
@@ -478,8 +486,8 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 - 以復原碼換發 Master 連結（第 3 節）在同一交易內刪除這場活動所有的主控台連結。
 - **從備份還原**（US-O-12.5、US-O-12.6）：
   - 「成員連結待清除」標記是資料庫所在目錄下的 `member-reset.pending`（正式為 `/var/lib/bethere/member-reset.pending`；路徑由 `-db` 推得，測試服務各自獨立）。準備腳本在 `litestream restore` **之前**與 `maintenance.forced` 一起建立並 `sync`，所以還原中途當機也不會少了它；`maintenance.sh off` 與 `init-db.sh` 不碰它。
-  - `serve` 開啟資料庫後、開始接受請求前讀一次這個標記（標記只會在服務停止時建立）。存在時，在單一交易內刪除所有登入連結、登入信連結（整個 LoginMail）與主控台連結，提交後刪掉標記；交易或刪標記失敗時以 `member-reset` 開頭記錄錯誤、照常啟動，這次執行視為「待清除」。交易提交後、刪標記前當機，下次啟動再清一次，結果相同。
-  - 「待清除」時，所有路由之前的單一檢查（不論是否維護模式）讓本節的公司端點與解析成主控台連結的請求一律回 503 `maintenance`；查不到的連結照常回 `invalid`。
+  - `serve` 開啟資料庫後、開始接受請求前讀一次這個標記（標記只會在服務停止時建立）。存在時，在單一交易內刪除所有登入連結與主控台連結，並清空所有 LoginMail 的登入信連結雜湊（列留著，計數不變），提交後刪掉標記；交易或刪標記失敗時以 `member-reset` 開頭記錄錯誤、照常啟動，這次執行視為「待清除」。交易提交後、刪標記前當機，下次啟動再清一次，結果相同。
+  - 「待清除」時，所有路由之前的單一檢查（不論是否維護模式）讓本節的公司端點與查得到的主控台連結（不論 `verified`）的請求一律回 503 `maintenance`；查不到的連結照常回 `invalid`。
 - 維護模式（第 8 節）：本節所有端點與 `/api/admin/` 在所有路由之前回 503 `maintenance`，不論標頭帶的是哪一種連結（登入不讀標頭，帶 Master 連結也不放行）；以主控台連結呼叫的 Master 端點照 Master 的規則放行。
 
 ### 10.3 錯誤（追加到第 6 節）
@@ -487,8 +495,8 @@ Token 或其雜湊、復原碼雜湊、其他角色的 `roleNote`、未指派給
 | 來源錯誤 | 回應 |
 | --- | --- |
 | email 格式不符（登入、加入成員、建立公司） | 422 `invalid_email` |
-| 全系統 24 小時內已寄 400 封登入信 | 422 `mail_limit` |
-| 主機沒設定寄信（登入） | 503 `mail_unavailable` |
+| 全系統 24 小時內已受理 2000 次登入要求 | 422 `request_limit` |
+| 主機沒有可用的寄信設定（登入） | 503 `mail_unavailable` |
 | email 已是成員 | 422 `email_taken` |
 | 公司已有 50 位成員 | 422 `too_many_members` |
 | 移除自己 | 422 `cannot_remove_self` |

@@ -78,7 +78,7 @@
 | 作業系統更新 | 平時開啟 Debian `unattended-upgrades`（只套安全更新、不自動重開機）；凍結期開始時套用一次更新並重開機驗證，之後停用自動更新到活動結束 |
 | 健康檢查 | `/healthz` 執行一次唯讀查詢（走唯讀連線池，不受寫入鎖影響），3 秒內沒成功就回 503，外部監控因此看得到資料庫讀不到；寫不進去（例如磁碟滿）不在這個檢查內 |
 | 監控與告警 | Cloud Monitoring Uptime Check 從外部探測 `/healthz`；另一個探測看備份新鮮度端點（本機變動超過 5 分鐘未複製即失敗，尚待確認 Litestream 能否提供）；告警平時送開發者 email，凍結期改送備援操作者的手機推播與簡訊。開發期主機平時關機，告警以 `ops/gcp/power.sh` 跟著開關。不在 VM 安裝代理程式（ADR-0024） |
-| 寄信 | 成員的登入信（ADR-0040）以一個專用 Gmail 的應用程式密碼經 `smtp.gmail.com:587`（STARTTLS）寄出；GCE 封鎖的是 25 埠，587 不受影響。寄件地址放在專案層級的 metadata `bethere-mail-from`，密碼放在 Secret Manager 的 `bethere-mail-password`，只有 VM 的服務帳號能讀這一個 secret；兩者都由 `ops/gcp/mail.sh` 設定（密碼從標準輸入讀，不進指令列與歷史紀錄），重建 VM 也沿用。準備腳本每次啟動讀取兩者與 VM 的 `bethere-domain`，寫入只有 root 能讀的 `/run/bethere/mail.env`（`BETHERE_MAIL=smtp` 等，`api.md` 10.2）；任何一項讀不到就不寫，服務照常啟動、登入顯示寄不出去（US-CO-1.7），不擋婚禮。測試服務不設定寄信 |
+| 寄信 | 成員的登入信（ADR-0040）以一個專用 Gmail 的應用程式密碼經 `smtp.gmail.com:587`（STARTTLS）寄出；GCE 封鎖的是 25 埠，587 不受影響。寄件地址放在專案層級的 metadata `bethere-mail-from`，密碼放在 Secret Manager 的 `bethere-mail-password`（有專案檢視權限的人讀得到 metadata、讀不到它；專案擁有者與能登入主機的人讀得到，`access-control.md` 第 1 節「寄信帳號外流」）；兩者都由 `ops/gcp/mail.sh` 設定（密碼從標準輸入讀，不進指令列與歷史紀錄），重建 VM 也沿用。準備腳本每次啟動讀取兩者與 VM 的 `bethere-domain`，寫入只有 root 能讀的 `/run/bethere/mail.env`（`BETHERE_MAIL=smtp` 等，`api.md` 10.2）；同客服信箱，寫入前過濾：寄件地址只接受客服信箱的同一個格式，應用程式密碼去掉空白後只接受 16 個小寫英文字母，網域只接受主機名稱的字元，所以值裡的換行無法多加一個變數。服務設定裡 `mail.env` 排在 `maintenance.env` 之前，就算多出變數也蓋不掉維護旗標。任何一項讀不到或不合格就不寫，服務照常啟動、登入顯示寄不出去（US-CO-1.12），不擋婚禮。準備腳本只寫 `smtp`，絕不寫 `log`。測試服務不設定寄信 |
 
 **為什麼不用 Cloud Run**：容器的檔案系統是暫時的，平台可能隨時替換實例，部署時新舊實例還會短暫並存，SQLite 會出現兩個寫入者；要用就得改成 Cloud SQL，資料層要重新設計，成本也更高。**為什麼不用負載平衡器**：Google 的 HTTPS 負載平衡器每月約 US$18，對單一 VM 沒有必要，TLS 交給 Caddy。
 
