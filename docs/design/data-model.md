@@ -189,7 +189,7 @@ id 永不重用。規則見 `api.md` 9.6。
 | --- | --- | --- |
 | Organization | id, name, createdAt | 一家婚顧公司；由系統後台建立。名稱規則同活動名稱 |
 | Member | id, organizationId, email, createdAt | 一位成員。`email` 去除前後空白、轉小寫後儲存，全系統唯一（一個 email 只屬於一家公司）；移除時刪除這一列，連同他的 MemberSession 與 ConsoleToken（他的 LoginMail 留著，不再連到他）；id 刪除後不再配發（操作紀錄以它記下是誰） |
-| LoginMail | id, memberId, organizationId, tokenHash, createdAt, expiresAt, usedAt | 一封寄出的登入信（`api.md` 10.2）。帶登入信連結的雜湊，15 分鐘後失效，用掉時填 `usedAt`。每位成員、每家公司與全系統的寄信上限都數這裡的列（以 `createdAt`、只用下界），所以列保留 24 小時，之後由每日刪除清掉；最多每天 400 列。成員被移除時 `memberId` 設為空（`ON DELETE SET NULL`），連結隨之失效，列留著讓公司與全系統的計數不變；從備份還原時只清空 `tokenHash`。不是成員或超過上限的要求不寫這裡，只把一列計數器 `login_noise` 加一 |
+| LoginMail | id, memberId, organizationId, tokenHash, createdAt, expiresAt, usedAt | 一封寄出的登入信（`api.md` 10.2）。帶登入信連結的雜湊，15 分鐘後失效，用掉時填 `usedAt`。每位成員、每家公司與全系統的寄信上限都數這裡的列（以 `createdAt`、只用下界），所以列保留 24 小時，之後由每日刪除清掉；最多每天 400 列。成員被移除時 `memberId` 設為空（`ON DELETE SET NULL`），連結隨之失效，列留著讓公司與全系統的計數不變；`organizationId` 連到永不刪除的 Organization；從備份還原時只清空 `tokenHash`。不是成員或超過上限的要求什麼都不寫 |
 | MemberSession | id, memberId, tokenHash, createdAt, expiresAt, verified | 登入連結；只存雜湊，30 天後失效，登出時刪除；每位成員最多 20 列，再登入時刪掉最舊的。`verified` 為 1 才接受，空的是只需 email 的版本產生的（`api.md` 10.2） |
 | ConsoleToken | id, memberId, eventId, tokenHash, createdAt, verified | 成員對某場活動的主控台連結；驗證時解析成那場活動的 Master 角色，操作者記為這位成員（`access-control.md` 第 7 節）。每位成員對每場活動最多 10 列，再開啟時刪掉最舊的；以復原碼換發 Master 連結時刪除這場活動的全部。id 以 AUTOINCREMENT 產生，刪除後不再配發（操作紀錄以它記下是哪一條） |
 
