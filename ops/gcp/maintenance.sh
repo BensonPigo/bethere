@@ -8,6 +8,7 @@
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 MARKER=/var/lib/bethere/maintenance.forced
+MEMBER_RESET=/var/lib/bethere/member-reset.pending
 
 case "${1:-}" in
   on) want=1 ;;
@@ -30,10 +31,13 @@ if [ -n "$want" ]; then
   }
 fi
 
-state="$(vm_ssh "cat /run/bethere/maintenance.env 2>/dev/null; if [ -e $MARKER ]; then echo marker=present; else echo marker=absent; fi")"
+state="$(vm_ssh "cat /run/bethere/maintenance.env 2>/dev/null; if [ -e $MARKER ]; then echo marker=present; else echo marker=absent; fi; if [ -e $MEMBER_RESET ]; then echo member_reset=pending; fi")"
 echo "metadata bethere-maintenance=$(gc compute instances describe "$VM" --zone "$ZONE" \
   --format='value(metadata.items.bethere-maintenance)')"
 echo "$state"
+if grep -qx member_reset=pending <<<"$state"; then
+  echo "成員連結尚未清除: company pages and console links stay closed (the wedding is not affected); see journalctl -u bethere | grep member-reset, then restart the service with a release that clears them (US-O-12.6)" >&2
+fi
 running="$(sed -n 's/^BETHERE_MAINTENANCE=//p' <<<"$state")"
 if [ -z "$running" ]; then
   echo "the service has not started since boot (no /run/bethere/maintenance.env); see journalctl -u bethere" >&2

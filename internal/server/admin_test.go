@@ -50,7 +50,7 @@ func TestUS_O_9_2_Overview(t *testing.T) {
 	e.post(pathAdminInvites, admin, map[string]any{}).wantResult(t, "ok")
 	r := e.do(http.MethodGet, pathAdminOverview, admin, "")
 	r.wantResult(t, "ok")
-	wantKeys(t, "overview", r.body, "result", "invites", "events")
+	wantKeys(t, "overview", r.body, "result", "invites", "events", "organizations")
 	invites, _ := r.body["invites"].([]any)
 	events, _ := r.body["events"].([]any)
 	if len(invites) != 1 || len(events) != 1 {
@@ -58,7 +58,7 @@ func TestUS_O_9_2_Overview(t *testing.T) {
 	}
 	wantKeys(t, "invite", invites[0].(map[string]any), "id", "expiresAt")
 	ev := events[0].(map[string]any)
-	wantKeys(t, "event", ev, "id", "name", "date", "status", "createdAt")
+	wantKeys(t, "event", ev, "id", "name", "date", "status", "createdAt", "organization")
 	if ev["name"] != "婚宴" || ev["date"] != "2027-06-06" || ev["status"] != "Draft" {
 		t.Errorf("event = %v", ev)
 	}

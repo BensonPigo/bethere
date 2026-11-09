@@ -60,6 +60,12 @@ func allFieldSets() []namedFieldSet {
 		{"createEventFields", "createEventFields", createEventFields},
 		{"recoverFields", "recoverFields", recoverFields},
 		{"adminInvite", "fieldSet{}", fieldSet{}},
+		{"emailFields", "emailFields", emailFields},
+		{"logoutFields", "logoutFields", logoutFields},
+		{"removeMemberFields", "removeMemberFields", removeMemberFields},
+		{"companyEventFields", "companyEventFields", companyEventFields},
+		{"openConsoleFields", "openConsoleFields", openConsoleFields},
+		{"organizationFields", "organizationFields", organizationFields},
 	}
 }
 
@@ -138,6 +144,13 @@ func fieldMappingCases() map[string]struct {
 		},
 		"recoverFields": {`{"recoveryCode":"r-456"}`, body{text: "r-456"}},
 		"fieldSet{}":    {`{}`, body{}},
+		// The company page (api.md section 10).
+		"emailFields":        {`{"email":"a@x.tw"}`, body{email: "a@x.tw"}},
+		"logoutFields":       {`{}`, body{}},
+		"removeMemberFields": {`{"memberId":19}`, body{memberID: 19}},
+		"companyEventFields": {`{"name":"小明與小華","date":"2027-06-07"}`, body{name: "小明與小華", date: "2027-06-07"}},
+		"openConsoleFields":  {`{"eventId":24}`, body{eventID: 24}},
+		"organizationFields": {`{"name":"甲婚顧","email":"b@x.tw"}`, body{name: "甲婚顧", email: "b@x.tw"}},
 	}
 }
 

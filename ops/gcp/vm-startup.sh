@@ -60,9 +60,11 @@ YML
       # checked it (US-O-2). The marker is on disk before the restore, so a
       # crash after it can never start the restored data open. It is removed
       # by ops/gcp/maintenance.sh off, and by ops/gcp/init-db.sh for a new,
-      # empty database.
-      touch /var/lib/bethere/maintenance.forced
-      sync /var/lib/bethere/maintenance.forced /var/lib/bethere
+      # empty database. member-reset.pending makes serve clear every company
+      # member's link of the backup before it takes a request; only serve
+      # removes it, after the clearing worked (US-O-12.5).
+      touch /var/lib/bethere/maintenance.forced /var/lib/bethere/member-reset.pending
+      sync /var/lib/bethere/maintenance.forced /var/lib/bethere/member-reset.pending /var/lib/bethere
       runuser -u bethere -- /opt/bethere/litestream restore -config /etc/litestream.yml -if-replica-exists -integrity-check quick "$db"
       if [ -e "$db" ]; then chmod 600 "$db"; fi
     fi ;;

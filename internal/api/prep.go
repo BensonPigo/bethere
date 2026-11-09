@@ -259,29 +259,21 @@ func (a *API) previewRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
+	a.sendPreview(w, r, hash, b.roleID)
+}
+
+// sendPreview reads the caller and roleID's snapshot data in one read
+// again and answers previewRole.
+func (a *API) sendPreview(w http.ResponseWriter, r *http.Request, hash []byte, roleID int64) {
 	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
 	defer cancel()
-	now = a.now()
-	caller, d, err := a.store.PreviewSnapshot(ctx, hash, b.roleID, now)
-	if err != nil && caller.TokenID == 0 {
-		a.lookupFailed(w, r, err)
+	now := a.now()
+	caller, d, err := a.store.PreviewSnapshot(ctx, hash, roleID, now)
+	if !a.previewAllowed(w, r, caller, err) {
 		return
 	}
-	if !allowed(capLinks, caller.RoleType) {
-		writeError(w, http.StatusForbidden, "forbidden")
-		return
-	}
-	if err != nil {
+	if err := previewable(d.Owner.RoleType); err != nil {
 		a.writeFailed(w, r, err)
-		return
-	}
-	switch t := d.Owner.RoleType; {
-	case t == domain.Master:
-		a.writeFailed(w, r, store.ErrMasterRole)
-		return
-	case !t.HasOwnCues() && t != domain.Host:
-		// A type not opened yet has no snapshot: the same 404 as no role.
-		a.writeFailed(w, r, store.ErrRoleNotFound)
 		return
 	}
 	snap, err := a.buildSnapshot(d, now)
@@ -290,6 +282,43 @@ func (a *API) previewRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rolePreviewResponse{Result: "ok", Preview: snap})
+}
+
+// previewAllowed answers a preview's failed read or a caller without the
+// capability, and reports whether the preview may go on.
+func (a *API) previewAllowed(w http.ResponseWriter, r *http.Request, caller store.TokenOwner, err error) bool {
+	if unresolved(caller, err) {
+		a.lookupFailed(w, r, err)
+		return false
+	}
+	if !allowed(capLinks, caller.RoleType) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return false
+	}
+	if err != nil {
+		a.writeFailed(w, r, err)
+		return false
+	}
+	return true
+}
+
+// unresolved is a read that failed before the caller was known: a
+// console link's caller has no TokenID but does have a role (api.md 10.2).
+func unresolved(caller store.TokenOwner, err error) bool {
+	return err != nil && caller.RoleID == 0
+}
+
+// previewable is why a role of type t has no preview: the Master's own
+// console, or a type not opened yet, which has no snapshot and answers
+// the same 404 as no role.
+func previewable(t domain.RoleType) error {
+	if t == domain.Master {
+		return store.ErrMasterRole
+	}
+	if !t.HasOwnCues() && t != domain.Host {
+		return store.ErrRoleNotFound
+	}
+	return nil
 }
 
 // readAsMaster resolves the token and reads the caller's snapshot data in
