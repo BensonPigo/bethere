@@ -84,8 +84,17 @@ func (s *Store) CreateAdminInvite(ctx context.Context, adminHash, codeHash []byt
 // AdminOverview is what the admin page lists (US-O-9.2): no token, code
 // or hash, no role, cue or guest.
 type AdminOverview struct {
-	Invites []AdminInvite
-	Events  []AdminEvent
+	Invites       []AdminInvite
+	Events        []AdminEvent
+	Organizations []AdminOrganization // no email (US-O-11.3)
+}
+
+type AdminOrganization struct {
+	ID        int64
+	Name      string
+	Members   int
+	Events    int
+	CreatedAt time.Time
 }
 
 type AdminInvite struct {
@@ -99,10 +108,12 @@ type AdminEvent struct {
 	Date      domain.Date
 	Status    domain.EventStatus // Draft, Live or EventEnded
 	CreatedAt time.Time
+	// Organization is the company's name; "" for an event of none.
+	Organization string
 }
 
-// AdminOverview reads the unused codes and every event, newest first, in
-// one read transaction that proves the admin link first.
+// AdminOverview reads the unused codes, every event and every company,
+// newest first, in one read transaction that proves the admin link first.
 func (s *Store) AdminOverview(ctx context.Context, adminHash []byte, now time.Time) (AdminOverview, error) {
 	var o AdminOverview
 	tx, err := s.r.BeginTx(ctx, nil)
@@ -113,58 +124,105 @@ func (s *Store) AdminOverview(ctx context.Context, adminHash []byte, now time.Ti
 	if err := checkAdmin(ctx, tx, adminHash); err != nil {
 		return o, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, expires_at FROM invites WHERE expires_at > ? ORDER BY id DESC`, toNS(now))
-	if err != nil {
+	if o.Invites, err = adminInvites(ctx, tx, now); err != nil {
 		return o, err
 	}
+	if o.Events, err = adminEvents(ctx, tx, now); err != nil {
+		return o, err
+	}
+	o.Organizations, err = adminOrganizations(ctx, tx)
+	return o, err
+}
+
+// adminInvites lists the codes still usable, newest first.
+func adminInvites(ctx context.Context, tx *sql.Tx, now time.Time) ([]AdminInvite, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, expires_at FROM invites WHERE expires_at > ? ORDER BY id DESC`, toNS(now))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminInvite
 	for rows.Next() {
 		var (
 			inv     AdminInvite
 			expires int64
 		)
 		if err := rows.Scan(&inv.ID, &expires); err != nil {
-			rows.Close()
-			return o, err
+			return nil, err
 		}
 		inv.ExpiresAt = fromNS(expires)
-		o.Invites = append(o.Invites, inv)
+		out = append(out, inv)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return o, err
-	}
+	return out, rows.Err()
+}
 
-	rows, err = tx.QueryContext(ctx, `SELECT id, created_at FROM events ORDER BY id DESC`)
+// adminEvents lists every event, newest first, with its company and its
+// status as of now.
+func adminEvents(ctx context.Context, tx *sql.Tx, now time.Time) ([]AdminEvent, error) {
+	created, err := adminEventRows(ctx, tx)
 	if err != nil {
-		return o, err
+		return nil, err
 	}
-	var created []AdminEvent
-	for rows.Next() {
-		var (
-			ev AdminEvent
-			at int64
-		)
-		if err := rows.Scan(&ev.ID, &at); err != nil {
-			rows.Close()
-			return o, err
-		}
-		ev.CreatedAt = fromNS(at)
-		created = append(created, ev)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return o, err
-	}
+	var out []AdminEvent
 	for _, ev := range created {
 		e, _, err := loadEvent(ctx, tx, ev.ID)
 		if err != nil {
-			return o, err
+			return nil, err
 		}
 		ev.Name, ev.Date, ev.Status = e.Name, e.Date, e.Status
 		if e.Ended(now) {
 			ev.Status = EventEnded
 		}
-		o.Events = append(o.Events, ev)
+		out = append(out, ev)
 	}
-	return o, nil
+	return out, nil
+}
+
+// adminEventRows reads every event's id, creation and company, newest first.
+func adminEventRows(ctx context.Context, tx *sql.Tx) ([]AdminEvent, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT e.id, e.created_at, coalesce(o.name, '')
+		FROM events e LEFT JOIN organizations o ON o.id = e.organization_id ORDER BY e.id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminEvent
+	for rows.Next() {
+		var (
+			ev AdminEvent
+			at int64
+		)
+		if err := rows.Scan(&ev.ID, &at, &ev.Organization); err != nil {
+			return nil, err
+		}
+		ev.CreatedAt = fromNS(at)
+		out = append(out, ev)
+	}
+	return out, rows.Err()
+}
+
+// adminOrganizations lists every company, newest first, with how many
+// members and events it has.
+func adminOrganizations(ctx context.Context, tx *sql.Tx) ([]AdminOrganization, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT o.id, o.name, o.created_at,
+		(SELECT count(*) FROM members m WHERE m.organization_id = o.id),
+		(SELECT count(*) FROM events e WHERE e.organization_id = o.id)
+		FROM organizations o ORDER BY o.id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AdminOrganization
+	for rows.Next() {
+		var (
+			org AdminOrganization
+			at  int64
+		)
+		if err := rows.Scan(&org.ID, &org.Name, &at, &org.Members, &org.Events); err != nil {
+			return nil, err
+		}
+		org.CreatedAt = fromNS(at)
+		out = append(out, org)
+	}
+	return out, rows.Err()
 }

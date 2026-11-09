@@ -72,6 +72,17 @@ type Store interface {
 	CheckAdmin(ctx context.Context, tokenHash []byte) error
 	AdminOverview(ctx context.Context, adminHash []byte, now time.Time) (store.AdminOverview, error)
 	CreateAdminInvite(ctx context.Context, adminHash, codeHash []byte, now time.Time) (int64, error)
+	// Wedding planner companies (api.md section 10).
+	CreateOrganization(ctx context.Context, adminHash []byte, name, email string, now time.Time) (int64, error)
+	Login(ctx context.Context, email string, sessionHash []byte, now time.Time) error
+	Logout(ctx context.Context, sessionHash []byte) error
+	CheckSession(ctx context.Context, sessionHash []byte, now time.Time) error
+	Company(ctx context.Context, sessionHash []byte, now time.Time) (store.Company, error)
+	AddMember(ctx context.Context, sessionHash []byte, email string, now time.Time) (by, added int64, err error)
+	RemoveMember(ctx context.Context, sessionHash []byte, memberID int64, now time.Time) (by int64, err error)
+	CreateCompanyEvent(ctx context.Context, sessionHash []byte, ne store.NewEvent, now time.Time) (int64, error)
+	OpenConsole(ctx context.Context, sessionHash []byte, eventID int64, consoleHash []byte, now time.Time) error
+	MembersClosed() bool
 }
 
 const (
@@ -159,6 +170,15 @@ func (a *API) Register(mux *http.ServeMux) {
 	// The admin page, with the admin link only (US-O-9, US-O-10).
 	handle("GET /api/admin/overview", a.adminOverview)
 	handle("POST /api/admin/invites", a.adminInvite)
+	handle("POST /api/admin/organizations", a.adminOrganization)
+	// The company page, with a member's login link (api.md section 10).
+	handle("POST /api/company/login", a.login)
+	handle("POST /api/company/logout", a.logout)
+	handle("GET /api/company", a.getCompany)
+	handle("POST /api/company/members/add", a.companyChange(emailFields, a.addMember))
+	handle("POST /api/company/members/remove", a.companyChange(removeMemberFields, a.removeMember))
+	handle("POST /api/company/events", a.companyEvent)
+	handle("POST /api/company/events/open", a.openConsole)
 }
 
 // Routes lists the patterns Register added, so tests can try every one.
@@ -174,7 +194,8 @@ func (a *API) LastSeen(tokenID int64) (time.Time, bool) {
 }
 
 // seen records a successful authentication (tech-stack.md 2.1「lastSeenAt」): called only after the
-// store confirmed the token and its event.
+// store confirmed the token and its event. A member's console link has no
+// access_tokens.id (TokenID 0), which LastSeen never reports (api.md 10.2).
 func (a *API) seen(o store.TokenOwner, at time.Time) {
 	a.mu.Lock()
 	a.lastSeen[o.TokenID] = at
@@ -453,6 +474,10 @@ func (a *API) lookupFailed(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, http.StatusOK, resultResponse{Result: "invalid"})
 	case errors.Is(err, store.ErrEventEnded):
 		writeJSON(w, http.StatusOK, resultResponse{Result: "ended"})
+	case errors.Is(err, store.ErrMembersClosed):
+		// A console link while the reset after a restore is not done:
+		// offline to the client, never "invalid" (US-O-12.6).
+		writeError(w, http.StatusServiceUnavailable, "maintenance")
 	default:
 		a.internal(w, r, err)
 	}
@@ -497,12 +522,7 @@ var domainErrors = []struct {
 // ending. ErrNoActor, ErrCrossEvent, ErrNotFound, ErrUnknownOp,
 // ErrMultipleInProgress, database errors and timeouts all fall to 500.
 func (a *API) writeFailed(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, store.ErrInvalidToken):
-		writeJSON(w, http.StatusOK, resultResponse{Result: "invalid"})
-		return
-	case errors.Is(err, domain.ErrEnded), errors.Is(err, store.ErrEventEnded):
-		writeJSON(w, http.StatusOK, resultResponse{Result: "ended"})
+	if writeResult(w, err) {
 		return
 	}
 	for _, d := range domainErrors {
@@ -511,14 +531,35 @@ func (a *API) writeFailed(w http.ResponseWriter, r *http.Request, err error) {
 			return
 		}
 	}
-	// A cue id from the request that is not in the caller's event, another
-	// event's included: the same 404 as one that does not exist, without a
-	// result (api.md section 6). store.ErrNotFound stays a 500.
-	if errors.Is(err, domain.ErrCueNotFound) || errors.Is(err, store.ErrRoleNotFound) || errors.Is(err, store.ErrItemNotFound) {
+	if missingID(err) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
 	a.internal(w, r, err)
+}
+
+// writeResult answers a write that found its credential invalid, its
+// event ended or member links closed (US-O-12.6), and reports whether it
+// did.
+func writeResult(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, store.ErrInvalidToken):
+		writeJSON(w, http.StatusOK, resultResponse{Result: "invalid"})
+	case errors.Is(err, domain.ErrEnded), errors.Is(err, store.ErrEventEnded):
+		writeJSON(w, http.StatusOK, resultResponse{Result: "ended"})
+	case errors.Is(err, store.ErrMembersClosed):
+		writeError(w, http.StatusServiceUnavailable, "maintenance")
+	default:
+		return false
+	}
+	return true
+}
+
+// missingID is an id from the request that is not in the caller's event,
+// another event's included: the same 404 as one that does not exist,
+// without a result (api.md section 6). store.ErrNotFound stays a 500.
+func missingID(err error) bool {
+	return errors.Is(err, domain.ErrCueNotFound) || errors.Is(err, store.ErrRoleNotFound) || errors.Is(err, store.ErrItemNotFound)
 }
 
 // internal logs the error with the route only, never headers, bodies,

@@ -33,7 +33,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -51,7 +50,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|version|features> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|find-member|add-member|remove-member|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -68,49 +67,54 @@ func main() {
 // errUsage marks a mistake in the command line (exit status 2).
 var errUsage = errors.New("usage")
 
+// commands are the subcommands, by name.
+var commands = map[string]func([]string, cli) error{
+	"version": func(_ []string, c cli) error {
+		fmt.Fprintln(c.stdout, version)
+		return nil
+	},
+	// The VM's start script asks before starting in maintenance mode, so
+	// a release without it is refused rather than left open (US-O-2.1).
+	"features": func(_ []string, c cli) error {
+		fmt.Fprintln(c.stdout, "maintenance")
+		return nil
+	},
+	"serve":               serve,
+	"create-event":        createEvent,
+	"add-role":            addRole,
+	"import-rundown":      importRundown,
+	"create-invite":       createInvite,
+	"reset-recovery-code": resetRecoveryCode,
+	"issue-admin-link":    issueAdminLink,
+	"find-member":         findMember,
+	"add-member":          addMember,
+	"remove-member":       removeMember,
+}
+
 func run(args []string, c cli) int {
 	if len(args) < 1 {
 		fmt.Fprintln(c.stderr, usage)
 		return 2
 	}
-	var err error
-	switch args[0] {
-	case "serve":
-		err = serve(args[1:], c)
-	case "create-event":
-		err = createEvent(args[1:], c)
-	case "add-role":
-		err = addRole(args[1:], c)
-	case "import-rundown":
-		err = importRundown(args[1:], c)
-	case "create-invite":
-		err = createInvite(args[1:], c)
-	case "reset-recovery-code":
-		err = resetRecoveryCode(args[1:], c)
-	case "issue-admin-link":
-		err = issueAdminLink(args[1:], c)
-	case "version":
-		fmt.Fprintln(c.stdout, version)
-		return 0
-	case "features":
-		// The VM's start script asks before starting in maintenance mode, so
-		// a release without it is refused rather than left open (US-O-2.1).
-		fmt.Fprintln(c.stdout, "maintenance")
-		return 0
-	default:
+	cmd, ok := commands[args[0]]
+	if !ok {
 		fmt.Fprintf(c.stderr, "unknown command %q\n%s\n", args[0], usage)
 		return 2
 	}
-	switch {
-	case err == nil:
+	return exitCode(args[0], cmd(args[1:], c), c)
+}
+
+// exitCode reports a subcommand's error: 2 for a mistake in the command
+// line, 1 for anything else.
+func exitCode(name string, err error, c cli) int {
+	if err == nil {
 		return 0
-	case errors.Is(err, errUsage):
-		fmt.Fprintf(c.stderr, "bethere %s: %v\n", args[0], err)
-		return 2
-	default:
-		fmt.Fprintf(c.stderr, "bethere %s: %v\n", args[0], err)
-		return 1
 	}
+	fmt.Fprintf(c.stderr, "bethere %s: %v\n", name, err)
+	if errors.Is(err, errUsage) {
+		return 2
+	}
+	return 1
 }
 
 // parseFlags parses fs and refuses positional arguments, so nothing such
@@ -162,62 +166,70 @@ func maintenanceFromEnv(lookupEnv func(string) (string, bool)) (bool, error) {
 	return false, fmt.Errorf("BETHERE_MAINTENANCE=%q: only 1 (maintenance mode) or 0 is accepted", v)
 }
 
-// supportAddress is one plain address: nothing that could be read as
-// another scheme, a display name or a second recipient (US-O-8.2).
-var supportAddress = regexp.MustCompile(`^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$`)
-
 // supportEmailFromEnv reads BETHERE_SUPPORT_EMAIL (US-O-8.2): unset or
 // empty shows no address; a value that is not one plain address is dropped
 // with an error, which serve only logs: a support line never stops the site.
 func supportEmailFromEnv(lookupEnv func(string) (string, bool)) (string, error) {
 	v, _ := lookupEnv("BETHERE_SUPPORT_EMAIL")
-	if v == "" || supportAddress.MatchString(v) {
+	if v == "" || domain.IsPlainEmail(v) {
 		return v, nil
 	}
 	return "", fmt.Errorf("BETHERE_SUPPORT_EMAIL=%q is not one email address; no support address is shown", v)
 }
 
-func serve(args []string, c cli) error {
+// serveOptions is what serve reads from its flags and environment.
+type serveOptions struct {
+	addr, dbPath        string
+	create, maintenance bool
+}
+
+func readServeOptions(args []string, c cli) (serveOptions, error) {
+	var o serveOptions
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	addr := fs.String("addr", "127.0.0.1:8080", "listen address (Caddy proxies to it)")
-	dbPath := fs.String("db", "", "database file (required)")
+	fs.StringVar(&o.addr, "addr", "127.0.0.1:8080", "listen address (Caddy proxies to it)")
+	fs.StringVar(&o.dbPath, "db", "", "database file (required)")
 	if err := parseFlags(fs, args, c); err != nil {
-		return err
+		return o, err
 	}
-	if err := required("db", *dbPath); err != nil {
-		return err
+	if err := required("db", o.dbPath); err != nil {
+		return o, err
 	}
-	create, err := initFromEnv(c.lookupEnv)
-	if err != nil {
-		return err
+	var err error
+	if o.create, err = initFromEnv(c.lookupEnv); err != nil {
+		return o, err
 	}
-	maintenance, err := maintenanceFromEnv(c.lookupEnv)
+	o.maintenance, err = maintenanceFromEnv(c.lookupEnv)
+	return o, err
+}
+
+func serve(args []string, c cli) error {
+	opt, err := readServeOptions(args, c)
 	if err != nil {
 		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	st, err := store.Open(ctx, *dbPath, create)
+	st, err := store.Open(ctx, opt.dbPath, opt.create)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
 
 	logger := slog.New(slog.NewJSONHandler(c.stdout, nil))
-	support, err := supportEmailFromEnv(c.lookupEnv)
-	if err != nil {
-		logger.Error("support email", "err", err)
-	}
+	// Before any request: after a restore no member link of the backup
+	// works (US-O-12.5).
+	resetAfterRestore(ctx, st, opt.dbPath, logger)
+	support := supportEmail(c, logger)
 	srv := &http.Server{
-		Addr: *addr,
+		Addr: opt.addr,
 		Handler: server.New(server.Config{
 			Static:       web.Dist(),
 			Store:        st,
 			Now:          time.Now, // the system clock only (api.md section 1)
 			Version:      version,
 			Logger:       logger,
-			Maintenance:  maintenance,
+			Maintenance:  opt.maintenance,
 			SupportEmail: support,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -232,9 +244,34 @@ func serve(args []string, c cli) error {
 		srv.Shutdown(shutdownCtx)
 	}()
 
-	// The daily cleanup (US-O-5) stops with the server, before the store
-	// closes. It waits out maintenance mode: nothing is deleted while the
-	// Master checks a restored database.
+	purged := startPurge(ctx, st, opt.maintenance, logger)
+	defer func() {
+		stop()
+		<-purged
+	}()
+
+	logger.Info("listening", "addr", opt.addr, "version", version, "maintenance", opt.maintenance)
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+// supportEmail is the support address to show, or "" with the error
+// logged: a support line never stops the site (US-O-8.2).
+func supportEmail(c cli, logger *slog.Logger) string {
+	support, err := supportEmailFromEnv(c.lookupEnv)
+	if err != nil {
+		logger.Error("support email", "err", err)
+	}
+	return support
+}
+
+// startPurge runs the daily cleanup (US-O-5) until ctx ends; the channel
+// closes when it has stopped, so serve stops it before the store closes.
+// It waits out maintenance mode: nothing is deleted while the Master
+// checks a restored database.
+func startPurge(ctx context.Context, st *store.Store, maintenance bool, logger *slog.Logger) <-chan struct{} {
 	purged := make(chan struct{})
 	go func() {
 		defer close(purged)
@@ -244,16 +281,7 @@ func serve(args []string, c cli) error {
 		}
 		purgeDaily(ctx, st.PurgeEnded, time.Now, 24*time.Hour, logger)
 	}()
-	defer func() {
-		stop()
-		<-purged
-	}()
-
-	logger.Info("listening", "addr", *addr, "version", version, "maintenance", maintenance)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
+	return purged
 }
 
 // openExisting opens the database named by -db, never creating one (api.md section 7).
@@ -586,21 +614,28 @@ func askMaster(ctx context.Context, st *store.Store, c cli) (store.TokenOwner, e
 	return proveMaster(ctx, st, token)
 }
 
-// proveMaster looks the token up and accepts only a valid Master link.
+// proveMaster looks the token up and accepts only a valid Master link: a
+// member's console link is no link here (US-CO-4.6).
 func proveMaster(ctx context.Context, st *store.Store, token string) (store.TokenOwner, error) {
-	owner, err := st.LookupToken(ctx, auth.HashToken(token), time.Now())
-	switch {
-	case errors.Is(err, store.ErrInvalidToken):
-		return store.TokenOwner{}, errors.New("the Master link is invalid or was replaced")
-	case errors.Is(err, store.ErrEventEnded):
-		return store.TokenOwner{}, errors.New("the event of this link has ended")
-	case err != nil:
-		return store.TokenOwner{}, err
+	owner, err := st.LookupRoleToken(ctx, auth.HashToken(token), time.Now())
+	if err != nil {
+		return store.TokenOwner{}, masterLinkError(err)
 	}
 	if owner.RoleType != domain.Master {
 		return store.TokenOwner{}, errors.New("this is not the Master link")
 	}
 	return owner, nil
+}
+
+// masterLinkError says why a Master link was not taken.
+func masterLinkError(err error) error {
+	switch {
+	case errors.Is(err, store.ErrInvalidToken):
+		return errors.New("the Master link is invalid or was replaced")
+	case errors.Is(err, store.ErrEventEnded):
+		return errors.New("the event of this link has ended")
+	}
+	return err
 }
 
 // readSecretLine reads one line: from the terminal without echo, or from

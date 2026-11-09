@@ -4,7 +4,7 @@
 // code is shown once and forgotten when the page is left.
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { CopyBox } from "./controls";
-import { getOverview, postInvite } from "./admin";
+import { getOverview, postInvite, postOrganization } from "./admin";
 import type { OverviewOutcome } from "./admin";
 import { tokenFromHash } from "./env";
 import { DEFAULT_TZ, dateInZone } from "./format";
@@ -15,6 +15,10 @@ const ADMIN_TEXT = {
   maintenance: "系統維護中，請稍後再試",
   failure: "連不上伺服器，請再試一次",
   tooMany: "今天發的邀請碼已達上限，明天再發",
+  invalidName: "公司名稱不正確",
+  invalidEmail: "email 格式不正確",
+  taken: "這個 email 已經是成員",
+  tooManyOrgs: "今天建立的公司已達上限，明天再建",
 } as const;
 
 const STATUS_TEXT: Record<string, string> = { Draft: "準備中", Live: "進行中", Ended: "已結束" };
@@ -27,6 +31,8 @@ export function AdminPage() {
   const [code, setCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [orgName, setOrgName] = useState("");
+  const [orgEmail, setOrgEmail] = useState("");
 
   const load = useCallback(async () => {
     if (token) setOverview(await getOverview(token));
@@ -48,6 +54,22 @@ export function AdminPage() {
     setBusy(false);
     if (o.kind === "ok") {
       setCode(o.code);
+      void load();
+    } else {
+      setError(ADMIN_TEXT[o.kind]);
+    }
+  };
+
+  // US-O-11.1: a company and its first member.
+  const createOrg = async () => {
+    if (busy || !token) return;
+    setBusy(true);
+    setError("");
+    const o = await postOrganization(token, orgName, orgEmail);
+    setBusy(false);
+    if (o.kind === "ok") {
+      setOrgName("");
+      setOrgEmail("");
       void load();
     } else {
       setError(ADMIN_TEXT[o.kind]);
@@ -101,6 +123,28 @@ export function AdminPage() {
             {overview.events.map((e) => (
               <li key={e.id}>
                 {e.name}・{e.date}・{STATUS_TEXT[e.status] ?? e.status}・{day(e.createdAt)} 建立
+                {e.organization ? `・${e.organization}` : ""}
+              </li>
+            ))}
+          </ul>
+          <h2>婚顧公司（{overview.organizations?.length ?? 0}）</h2>
+          <label class="field">
+            公司名稱
+            <input type="text" autoComplete="off" value={orgName} disabled={busy}
+              onInput={(e) => setOrgName((e.currentTarget as HTMLInputElement).value)} />
+          </label>
+          <label class="field">
+            第一位成員的 email
+            <input type="email" autoComplete="off" inputMode="email" autoCapitalize="off" spellcheck={false}
+              value={orgEmail} disabled={busy} onInput={(e) => setOrgEmail((e.currentTarget as HTMLInputElement).value)} />
+          </label>
+          <button class="confirm" disabled={busy || orgName.trim() === "" || orgEmail.trim() === ""} onClick={() => void createOrg()}>
+            建立公司
+          </button>
+          <ul class="admin-list">
+            {(overview.organizations ?? []).map((o) => (
+              <li key={o.id}>
+                第 {o.id} 家・{o.name}・成員 {o.members}・活動 {o.events}・{day(o.createdAt)} 建立
               </li>
             ))}
           </ul>
