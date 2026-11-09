@@ -33,7 +33,7 @@ func newCompany(t *testing.T) company {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.s.Login(ctx, "a@x.tw", hash("sa"), before); err != nil {
+	if err := f.s.IssueLoginLink(ctx, "a@x.tw", hash("sa"), before); err != nil {
 		t.Fatal(err)
 	}
 	return company{f: f, orgID: id}
@@ -137,7 +137,7 @@ func TestUS_O_11_3_OverviewListsCompanies(t *testing.T) {
 
 func TestUS_CO_1_2_LoginMakesALinkForAMember(t *testing.T) {
 	c := newCompany(t)
-	if err := c.f.s.Login(ctx, "nobody@x.tw", hash("sn"), before); !errors.Is(err, ErrNotMember) {
+	if err := c.f.s.IssueLoginLink(ctx, "nobody@x.tw", hash("sn"), before); !errors.Is(err, ErrNotMember) {
 		t.Errorf("not a member: err = %v, want ErrNotMember", err)
 	}
 	if _, err := c.f.s.Company(ctx, hash("sn"), before); !errors.Is(err, ErrInvalidSession) {
@@ -145,7 +145,7 @@ func TestUS_CO_1_2_LoginMakesALinkForAMember(t *testing.T) {
 	}
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	if err := c.f.s.Login(cancelled, "nobody@x.tw", hash("sc"), before); err == nil || errors.Is(err, ErrNotMember) {
+	if err := c.f.s.IssueLoginLink(cancelled, "nobody@x.tw", hash("sc"), before); err == nil || errors.Is(err, ErrNotMember) {
 		t.Errorf("cancelled: err = %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestUS_CO_1_4_LoginLinkExpires(t *testing.T) {
 // Logging out ends this link only (US-CO-1.4).
 func TestUS_CO_1_4_LogoutEndsThisLinkOnly(t *testing.T) {
 	c := newCompany(t)
-	if err := c.f.s.Login(ctx, "a@x.tw", hash("sa2"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("sa2"), before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.Logout(ctx, hash("sa")); err != nil {
@@ -194,7 +194,7 @@ func TestUS_CO_1_4_LogoutEndsThisLinkOnly(t *testing.T) {
 func TestUS_CO_1_8_SessionsPerMember(t *testing.T) {
 	c := newCompany(t)         // "sa" is the first
 	for i := 1; i <= 20; i++ { // US-CO-1.8: 20
-		if err := c.f.s.Login(ctx, "a@x.tw", hash(fmt.Sprintf("s%d", i)), before); err != nil {
+		if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash(fmt.Sprintf("s%d", i)), before); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -215,7 +215,7 @@ func TestUS_CO_2_1_AddMember(t *testing.T) {
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "b@x.tw", hash("sb"), before); err != nil {
 		t.Errorf("the new member logs in: %v", err)
 	}
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); !errors.Is(err, ErrEmailTaken) {
@@ -249,7 +249,7 @@ func TestUS_CO_2_4_RemoveMemberEndsTheirLinks(t *testing.T) {
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "b@x.tw", hash("sb"), before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.OpenConsole(ctx, hash("sb"), ev, hash("cb"), before); err != nil {
@@ -301,7 +301,7 @@ func TestUS_CO_2_3_ConcurrentMutualRemovalKeepsOne(t *testing.T) {
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "b@x.tw", hash("sb"), before); err != nil {
 		t.Fatal(err)
 	}
 	a, b := c.member(t, "a@x.tw"), c.member(t, "b@x.tw")
@@ -341,7 +341,7 @@ func TestUS_CO_2_4_RemovalRacingAConsoleLeavesNoLink(t *testing.T) {
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "b@x.tw", hash("sb"), before); err != nil {
 		t.Fatal(err)
 	}
 	b := c.member(t, "b@x.tw")
@@ -372,7 +372,7 @@ func TestUS_CO_3_1_CompanyEventsInOrder(t *testing.T) {
 	c.event(t, "sa", "九日", 9)
 	c.event(t, "sa", "一日", 1)
 	june5 := at(10, 0).AddDate(0, 0, -1) // the 1st and 3rd ended
-	if err := c.f.s.Login(ctx, "a@x.tw", hash("june5"), june5); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("june5"), june5); err != nil {
 		t.Fatal(err)
 	}
 	got, err := c.f.s.Company(ctx, hash("june5"), june5)
@@ -397,7 +397,7 @@ func TestUS_CO_3_5_EventsBelongToTheirCompany(t *testing.T) {
 	if _, err := c.f.s.CreateOrganization(ctx, hash("admin"), "乙", "z@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.Login(ctx, "z@x.tw", hash("sz"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "z@x.tw", hash("sz"), before); err != nil {
 		t.Fatal(err)
 	}
 	other, err := c.f.s.Company(ctx, hash("sz"), before)
@@ -511,7 +511,7 @@ func TestUS_CO_2_4_StaleConsoleActorCannotWrite(t *testing.T) {
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.f.s.Login(ctx, "b@x.tw", hash("sb"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "b@x.tw", hash("sb"), before); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.OpenConsole(ctx, hash("sb"), ev, hash("cb"), before); err != nil {
@@ -561,7 +561,7 @@ func TestUS_CO_4_4_EndedEventsConsoleIsEnded(t *testing.T) {
 	c := newCompany(t)
 	ev := c.event(t, "sa", "甲婚宴", 7)
 	late := at(9, 0).AddDate(0, 0, 3)
-	if err := c.f.s.Login(ctx, "a@x.tw", hash("late"), late); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("late"), late); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.f.s.OpenConsole(ctx, hash("late"), ev, hash("ca"), late); err != nil {
@@ -604,7 +604,7 @@ func TestUS_O_12_6_ClosedMemberAccess(t *testing.T) {
 	}
 	c.f.s.CloseMemberAccess()
 	checks := map[string]error{
-		"login":   c.f.s.Login(ctx, "a@x.tw", hash("s2"), before),
+		"login":   c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("s2"), before),
 		"logout":  c.f.s.Logout(ctx, hash("sa")),
 		"add":     func() error { _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); return err }(),
 		"open":    c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("c2"), before),
@@ -649,7 +649,7 @@ func TestUS_O_12_5_ResetMemberAccess(t *testing.T) {
 	if _, err := c.f.s.LookupToken(ctx, hash("ca"), before); !errors.Is(err, ErrInvalidToken) {
 		t.Errorf("console link: err = %v", err)
 	}
-	if err := c.f.s.Login(ctx, "a@x.tw", hash("again"), before); err != nil {
+	if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("again"), before); err != nil {
 		t.Errorf("the member logs in again: %v", err)
 	}
 }

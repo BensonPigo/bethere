@@ -5,34 +5,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/BensonPigo/bethere/internal/store"
 )
-
-// syncBuffer is serve's stdout, read while serve writes it.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 // runServe runs serve with env until its log shows want, then stops it
 // with SIGINT as systemd would and returns the log.

@@ -74,7 +74,8 @@ type Store interface {
 	CreateAdminInvite(ctx context.Context, adminHash, codeHash []byte, now time.Time) (int64, error)
 	// Wedding planner companies (api.md section 10).
 	CreateOrganization(ctx context.Context, adminHash []byte, name, email string, now time.Time) (int64, error)
-	Login(ctx context.Context, email string, sessionHash []byte, now time.Time) error
+	MemberByEmail(ctx context.Context, email string) (int64, error)
+	ConfirmLoginMail(ctx context.Context, mailHash, sessionHash []byte, now time.Time) error
 	Logout(ctx context.Context, sessionHash []byte) error
 	CheckSession(ctx context.Context, sessionHash []byte, now time.Time) error
 	Company(ctx context.Context, sessionHash []byte, now time.Time) (store.Company, error)
@@ -100,6 +101,14 @@ type Config struct {
 	Logger *slog.Logger
 	// Maintenance lets only the Master through (Gate, US-O-2).
 	Maintenance bool
+	// LoginMail takes a member's number for a login mail; nil is no usable
+	// mail setup, and the login answers mail_unavailable (US-CO-1.12).
+	LoginMail Enqueuer
+}
+
+// Enqueuer is the login mail queue (loginmail.Queue).
+type Enqueuer interface {
+	Enqueue(memberID int64)
 }
 
 // API holds the handlers and the in-memory lastSeenAt of every token
@@ -109,6 +118,7 @@ type API struct {
 	now         func() time.Time
 	logger      *slog.Logger
 	maintenance bool
+	loginMail   Enqueuer
 	routes      []string
 
 	mu sync.Mutex
@@ -122,7 +132,8 @@ func New(cfg Config) *API {
 	if cfg.Store == nil || cfg.Now == nil || cfg.Logger == nil {
 		panic("api: Store, Now and Logger are required")
 	}
-	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, maintenance: cfg.Maintenance, lastSeen: map[int64]time.Time{}}
+	return &API{store: cfg.Store, now: cfg.Now, logger: cfg.Logger, maintenance: cfg.Maintenance, loginMail: cfg.LoginMail,
+		lastSeen: map[int64]time.Time{}}
 }
 
 // Register adds the endpoints to mux (api.md section 3).
@@ -173,6 +184,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	handle("POST /api/admin/organizations", a.adminOrganization)
 	// The company page, with a member's login link (api.md section 10).
 	handle("POST /api/company/login", a.login)
+	handle("POST /api/company/login/confirm", a.confirmLogin)
 	handle("POST /api/company/logout", a.logout)
 	handle("GET /api/company", a.getCompany)
 	handle("POST /api/company/members/add", a.companyChange(emailFields, a.addMember))

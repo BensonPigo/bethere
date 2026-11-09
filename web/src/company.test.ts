@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { companyOutcome, consoleOutcome, createdOutcome, loginOutcome, rememberConsole } from "./company";
+import { companyOutcome, confirmOutcome, consoleOutcome, createdOutcome, loginOutcome, rememberConsole } from "./company";
 import { organizationOutcome, overviewOutcome } from "./admin";
 
 const TOKEN = "abcdefghijklmnopqrstuv"; // 22 characters
@@ -28,14 +28,27 @@ const page = {
   events: [{ id: 7, name: "甲婚宴", date: "2027-06-20", status: "Draft" }],
 };
 
-describe("US-CO-1 login answers", () => {
-  it("reads a login link, a stranger's email and everything else", () => {
-    expect(loginOutcome(200, { result: "ok", loginToken: TOKEN })).toEqual({ kind: "ok", token: TOKEN });
-    expect(loginOutcome(200, { result: "ok", loginToken: "short" }).kind).toBe("unavailable");
-    expect(loginOutcome(422, { error: "not_member" }).kind).toBe("notMember");
+describe("US-CO-1.2, 1.3, 1.12 login answers", () => {
+  it("reads a sent mail, a wrong email, no mail setup and everything else", () => {
+    expect(loginOutcome(200, { result: "ok" })).toEqual({ kind: "sent" });
+    expect(loginOutcome(200, { result: "invalid" }).kind).toBe("unavailable");
+    expect(loginOutcome(422, { error: "invalid_email" }).kind).toBe("invalidEmail");
+    expect(loginOutcome(503, { error: "mail_unavailable" }).kind).toBe("mailUnavailable");
     expect(loginOutcome(422, { error: "other" }).kind).toBe("unavailable");
     expect(loginOutcome(503, { error: "maintenance" }).kind).toBe("unavailable");
     expect(loginOutcome(500, undefined).kind).toBe("unavailable");
+  });
+});
+
+describe("US-CO-1.10 a login mail's link traded", () => {
+  it("reads a login link, a refused link and everything else", () => {
+    expect(confirmOutcome(200, { result: "ok", loginToken: TOKEN })).toEqual({ kind: "ok", token: TOKEN });
+    expect(confirmOutcome(200, { result: "ok", loginToken: "short" }).kind).toBe("unavailable");
+    expect(confirmOutcome(200, { result: "x", loginToken: TOKEN }).kind).toBe("unavailable");
+    expect(confirmOutcome(404, { error: "not_found" }).kind).toBe("denied");
+    expect(confirmOutcome(404, { error: "other" }).kind).toBe("unavailable");
+    expect(confirmOutcome(503, { error: "maintenance" }).kind).toBe("unavailable");
+    expect(confirmOutcome(500, undefined).kind).toBe("unavailable");
   });
 });
 

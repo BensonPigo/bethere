@@ -33,7 +33,15 @@ install_bin() { # name version object
 }
 
 case "$1" in
-  bethere) v="$(md bethere-version)"; install_bin bethere "$v" "bethere/$v/bethere" ;;
+  # An email-only release (no mail-login, M4 and before) never starts, for
+  # the real service and the test one alike (US-CO-1.13, tech-stack.md
+  # 「寄信」): a release that cannot answer counts as one.
+  bethere)
+    v="$(md bethere-version)"; install_bin bethere "$v" "bethere/$v/bethere"
+    features="$(runuser -u bethere -- /opt/bethere/bethere features)" || features=""
+    if ! printf '%s\n' "$features" | grep -qx mail-login; then
+      echo "the installed release $v lets members in with an email only (no mail-login); refusing to start" >&2; exit 1
+    fi ;;
   # The real service only: Litestream, its config, and a restore when the
   # database is missing (tech-stack.md section 3, "服務啟動"). A failed restore
   # stops here; a restore that finds no backup leaves no file, and bethere
@@ -108,6 +116,26 @@ YML
     [[ "$e" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || e=""
     mkdir -p /run/bethere
     printf 'BETHERE_SUPPORT_EMAIL=%s\n' "$e" > /run/bethere/support.env ;;
+  # The login mail (ADR-0040, tech-stack.md「寄信」): the sender in project
+  # metadata, the app password in Secret Manager, the links' domain from
+  # this VM. It never stops the start: anything missing or odd writes no
+  # file, and serve then answers that mail is unavailable. Each value is
+  # filtered to its own characters, so a line break cannot add a variable.
+  mail)
+    rm -f /run/bethere/mail.env
+    mdp() { curl -fsS -m 5 -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/$1" 2>/dev/null; }
+    from="$(mdp project/attributes/bethere-mail-from || true)"
+    domain="$(mdp instance/attributes/bethere-domain || true)"
+    pw="$(timeout 20 gcloud secrets versions access latest --secret=bethere-mail-password --quiet 2>/dev/null | tr -d ' ' || true)"
+    if [[ "$from" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] && [[ "$pw" =~ ^[a-z]{16}$ ]] &&
+      [[ "$domain" =~ ^[a-z0-9.-]+$ ]]; then
+      mkdir -p /run/bethere
+      (umask 077; printf 'BETHERE_MAIL=smtp\nBETHERE_MAIL_FROM=%s\nBETHERE_MAIL_PASSWORD=%s\nBETHERE_BASE_URL=https://%s\n' \
+        "$from" "$pw" "$domain" > /run/bethere/mail.env.new)
+      mv -f /run/bethere/mail.env.new /run/bethere/mail.env
+    else
+      echo "mail: no usable sender, app password or domain; login mails are off" >&2
+    fi ;;
   caddy)
     v="$(md caddy-version)"; install_bin caddy "$v" "caddy/$v/caddy"
     printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$(md bethere-domain)" > /etc/caddy/Caddyfile
@@ -132,10 +160,13 @@ ExecStartPre=+/opt/bethere/prepare.sh bethere
 ExecStartPre=+/opt/bethere/prepare.sh backup
 ExecStartPre=+/opt/bethere/prepare.sh maintenance
 ExecStartPre=+/opt/bethere/prepare.sh support
+ExecStartPre=+/opt/bethere/prepare.sh mail
 # "unread" refuses to start; the file written by the step above replaces it.
 Environment=BETHERE_MAINTENANCE=unread
-# The support file is read first, so the maintenance flag always has the last word.
+# The support and mail files are read first, so the maintenance flag always
+# has the last word.
 EnvironmentFile=-/run/bethere/support.env
+EnvironmentFile=-/run/bethere/mail.env
 EnvironmentFile=-/run/bethere/maintenance.env
 # The database is never created here (tech-stack.md 2.1「不自動建庫」): the first
 # deployment creates it once with ops/gcp/init-db.sh. Litestream copies every

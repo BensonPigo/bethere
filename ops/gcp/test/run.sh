@@ -128,6 +128,17 @@ fresh; run env PROJECT=test-proj "$OPS/deploy.sh"
 check "deploy without a version lists, newest first, and changes nothing" \
   'said "previous: $P" && grep -A1 newest "$FAKE/out" | grep -q bbb-20261027000000 && ! called add-metadata'
 
+# Email-only releases (US-CO-1.13): refused before anything changes.
+fresh; echo "$N" > "$FAKE/emailonly"; run env PROJECT=test-proj "$OPS/deploy.sh" "$N"
+check "deploy of an email-only release: refused, nothing changed" '! called add-metadata && said "email only"'
+fresh; echo "features.txt" > "$FAKE/missing"; run env PROJECT=test-proj "$OPS/deploy.sh" "$N"
+check "deploy of a release without features.txt: refused" '! called add-metadata && said "email only"'
+ARGS=("$N"); fresh; echo "$N" > "$FAKE/emailonly"; rebuild
+check "rebuild to an email-only release: stops before deleting" 'stopped "email only"'
+fresh; echo "$P" > "$FAKE/emailonly"; run env PROJECT=test-proj "$OPS/deploy.sh"
+check "deploy lists whether the running and previous releases may be deployed" \
+  'said "running:  $V   (mail-login)" && said "previous: $P   (EMAIL-ONLY: cannot be deployed)"'
+
 # Monitoring (US-O-7) and power.
 mon() { run env PROJECT=test-proj "$@" "$OPS/monitoring.sh"; }
 power() { run env PROJECT=test-proj "$@" "$OPS/power.sh" "$POWER"; }
@@ -186,5 +197,19 @@ check "support address set: in project metadata, no restart, says when it shows"
   'grep -qx help@example.com "$FAKE/project.support" && ! called "compute ssh" && said "next start"'
 ADDR=none; support
 check "support address none: removed" '! test -e "$FAKE/project.support" && said "set to none"'
+
+# The login mail's sender (ADR-0040).
+mailset() { printf '%s\n' "$PW" | run env PROJECT=test-proj "$OPS/mail.sh" "$ADDR"; }
+ADDR='a b@gmail.com'; PW=abcdabcdabcdabcd; fresh; mailset
+check "mail sender that is not one address: refused, nothing set" 'said "not one email address" && ! called secrets && ! called project-info'
+ADDR=bethere@gmail.com; PW=short; fresh; mailset
+check "app password not 16 letters: refused, nothing set" 'said "16 lowercase letters" && ! called secrets && ! called project-info'
+PW='abcd efgh ijkl mnop'; fresh; mailset
+check "mail sender set: password in Secret Manager without spaces, address in metadata, no restart" \
+  '[ "$(cat "$FAKE/secret")" = abcdefghijklmnop ] && grep -qx bethere@gmail.com "$FAKE/project.mailfrom" && called "secretmanager.secretAccessor" && ! called "compute ssh" && ! grep -q abcdefghijklmnop "$FAKE/calls"'
+PW=qrstqrstqrstqrst; mailset
+check "mail sender set again: a new version of the same secret" '[ "$(grep -c "secrets create" "$FAKE/calls")" = 1 ] && [ "$(cat "$FAKE/secret")" = qrstqrstqrstqrst ]'
+ADDR=none; mailset
+check "mail none: address and secret removed" '! test -e "$FAKE/project.mailfrom" && ! test -e "$FAKE/secret.exists" && said "stop"'
 
 exit $failed

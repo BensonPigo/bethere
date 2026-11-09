@@ -16,7 +16,11 @@ export type Company = { name: string; me: number; members: Member[]; events: Com
 export type Refusal = { kind: "denied" } | { kind: "unavailable" };
 
 export type CompanyOutcome = { kind: "ok"; company: Company } | Refusal | { kind: "error"; code: string };
-export type LoginOutcome = { kind: "ok"; token: string } | { kind: "notMember" } | { kind: "unavailable" };
+// LoginOutcome is the login's answer (US-CO-1.2, 1.3, 1.12): "sent" for
+// every email of the right form, member or not.
+export type LoginOutcome = { kind: "sent" } | { kind: "invalidEmail" } | { kind: "mailUnavailable" } | { kind: "unavailable" };
+// ConfirmOutcome is the trade of a login mail's link (US-CO-1.10).
+export type ConfirmOutcome = { kind: "ok"; token: string } | Refusal;
 export type CreatedOutcome = { kind: "ok"; eventId: number; masterToken: string; recoveryCode: string } | Refusal | { kind: "error"; code: string };
 export type ConsoleOutcome = { kind: "ok"; token: string } | Refusal | { kind: "error"; code: string };
 
@@ -64,9 +68,16 @@ export function companyOutcome(status: number, body: unknown): CompanyOutcome {
 
 export function loginOutcome(status: number, body: unknown): LoginOutcome {
   const b = (body ?? {}) as Body;
-  if (status === 200 && b.result === "ok" && isToken(b.loginToken)) return { kind: "ok", token: b.loginToken };
-  if (status === 422 && b.error === "not_member") return { kind: "notMember" };
+  if (status === 200 && b.result === "ok") return { kind: "sent" };
+  if (status === 422 && b.error === "invalid_email") return { kind: "invalidEmail" };
+  if (status === 503 && b.error === "mail_unavailable") return { kind: "mailUnavailable" };
   return { kind: "unavailable" };
+}
+
+export function confirmOutcome(status: number, body: unknown): ConfirmOutcome {
+  const b = (body ?? {}) as Body;
+  if (status === 200 && b.result === "ok" && isToken(b.loginToken)) return { kind: "ok", token: b.loginToken };
+  return refusal(status, b) ?? { kind: "unavailable" };
 }
 
 export function createdOutcome(status: number, body: unknown): CreatedOutcome {
@@ -98,6 +109,10 @@ export async function postLogin(email: string): Promise<LoginOutcome> {
   const r = await postNoToken("/api/company/login", { email }, COMPANY_TIMEOUT_MS);
   return r ? loginOutcome(r.status, r.body) : { kind: "unavailable" };
 }
+
+// postConfirm trades a login mail's link, in the header only.
+export const postConfirm = (mailToken: string) =>
+  send("POST", "/api/company/login/confirm", {}, mailToken, confirmOutcome, UNAVAILABLE);
 
 async function send<T>(method: "GET" | "POST", path: string, body: unknown, token: string,
   read: (status: number, body: unknown) => T, none: T): Promise<T> {

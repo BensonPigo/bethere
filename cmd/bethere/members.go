@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/BensonPigo/bethere/internal/auth"
 	"github.com/BensonPigo/bethere/internal/domain"
 	"github.com/BensonPigo/bethere/internal/store"
 )
@@ -151,5 +152,42 @@ func removeMember(args []string, c cli) error {
 		return err
 	}
 	fmt.Fprintf(c.stdout, "Removed %s from company %d (%s); their links no longer work.\n", email, id, name)
+	return nil
+}
+
+// issueLoginLink prints a new login link for a member, for when login
+// mails do not arrive (US-O-12.8); the developer hands it over.
+func issueLoginLink(args []string, c cli) error {
+	var rawBase string
+	dbPath, email, err := memberFlags("issue-login-link", args, c, func(fs *flag.FlagSet) {
+		fs.StringVar(&rawBase, "base-url", "", "https://<host> the link points to (required)")
+	})
+	if err != nil {
+		return err
+	}
+	if err := required("base-url", rawBase); err != nil {
+		return err
+	}
+	base, err := parseBaseURL(rawBase)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	st, err := openExisting(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	token, err := auth.NewToken()
+	if err != nil {
+		return err
+	}
+	switch err := st.IssueLoginLink(ctx, email, auth.HashToken(token), time.Now()); {
+	case errors.Is(err, store.ErrNotMember):
+		return fmt.Errorf("%s is a member of no company; no link was made", email)
+	case err != nil:
+		return err
+	}
+	fmt.Fprintf(c.stdout, "Login link for %s (shown only this once; it works for 30 days):\n  %s/company#t=%s\n", email, base, token)
 	return nil
 }

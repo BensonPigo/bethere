@@ -12,8 +12,23 @@ case "$args" in
     elif has "--filter=name="; then cat "$FAKE/vm.zone"
     else echo bethere-1; fi ;;
   *" auth print-access-token "*) echo token ;;
+  *" compute project-info add-metadata "*" bethere-mail-from="*) sed -n 's/.*bethere-mail-from=\([^ ]*\).*/\1/p' <<<"$args" > "$FAKE/project.mailfrom" ;;
   *" compute project-info add-metadata "*) sed -n 's/.*bethere-support-email=\([^ ]*\).*/\1/p' <<<"$args" > "$FAKE/project.support" ;;
+  *" compute project-info remove-metadata "*"bethere-mail-from"*) rm -f "$FAKE/project.mailfrom" ;;
   *" compute project-info remove-metadata "*) rm -f "$FAKE/project.support" ;;
+  # Secret Manager: the secret exists once $FAKE/secret.exists does; its
+  # latest version is $FAKE/secret.
+  *" services enable "*) ;;
+  *" secrets describe "*) [ -e "$FAKE/secret.exists" ] || exit 1 ;;
+  *" secrets create "*) touch "$FAKE/secret.exists" ;;
+  *" secrets versions add "*) cat > "$FAKE/secret" ;;
+  *" secrets delete "*) rm -f "$FAKE/secret.exists" "$FAKE/secret" ;;
+  *" secrets add-iam-policy-binding "*) ;;
+  # A release's features: an email-only one is named in $FAKE/emailonly.
+  *" storage cat "*)
+    for m in $(cat "$FAKE/missing" 2>/dev/null); do has "$m" && exit 1; done
+    for v in $(cat "$FAKE/emailonly" 2>/dev/null); do has "/$v/" && { echo maintenance; exit 0; }; done
+    printf 'maintenance\nmail-login\n' ;;
   *" compute instances describe "*" --format=value(status) "*) cat "$FAKE/vm.status" 2>/dev/null || echo RUNNING ;;
   *" compute instances start "*) echo RUNNING > "$FAKE/vm.status" ;;
   *" compute instances stop "*) echo TERMINATED > "$FAKE/vm.status" ;;

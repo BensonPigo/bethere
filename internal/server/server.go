@@ -26,6 +26,9 @@ type Config struct {
 	// SupportEmail is shown to Masters and on the way in (US-O-8); empty
 	// shows none.
 	SupportEmail string
+	// LoginMail is the login mail queue; nil when mail is not set up
+	// (US-CO-1.12).
+	LoginMail api.Enqueuer
 }
 
 func New(cfg Config) http.Handler {
@@ -66,7 +69,7 @@ func New(cfg Config) http.Handler {
 
 	// The token-authenticated API (api.md section 3). The prototype's
 	// POST /api/report is gone (api.md section 3).
-	a := api.New(api.Config{Store: cfg.Store, Now: cfg.Now, Logger: cfg.Logger, Maintenance: cfg.Maintenance})
+	a := api.New(api.Config{Store: cfg.Store, Now: cfg.Now, Logger: cfg.Logger, Maintenance: cfg.Maintenance, LoginMail: cfg.LoginMail})
 	a.Register(mux)
 
 	index := func(w http.ResponseWriter, r *http.Request) {

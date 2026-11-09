@@ -13,6 +13,7 @@ import (
 const (
 	pathAdminOrgs     = "/api/admin/organizations"
 	pathCompanyLogin  = "/api/company/login"
+	pathLoginConfirm  = "/api/company/login/confirm"
 	pathCompanyLogout = "/api/company/logout"
 	pathCompany       = "/api/company"
 	pathMemberAdd     = "/api/company/members/add"
@@ -30,13 +31,43 @@ func (e *env) company() (admin, session string) {
 	return admin, e.login("a@x.tw")
 }
 
+// login asks for a login mail, takes its link from the outbox and trades
+// it for a login link, as a member's page does (US-CO-1.3, 1.10).
 func (e *env) login(email string) string {
 	e.t.Helper()
-	r := e.post(pathCompanyLogin, "", map[string]any{"email": email})
-	r.wantResult(e.t, "ok")
+	return e.confirm(e.mailLink(email)).loginToken(e.t)
+}
+
+// mailLink asks for a login mail to email and returns its link's token.
+func (e *env) mailLink(email string) string {
+	e.t.Helper()
+	before := len(e.outbox.sent())
+	e.post(pathCompanyLogin, "", map[string]any{"email": email}).wantResult(e.t, "ok")
+	e.mailq.SendWaiting(bg)
+	sent := e.outbox.sent()
+	if len(sent) != before+1 {
+		e.t.Fatalf("mails after a login = %d, want %d", len(sent), before+1)
+	}
+	tok, ok := strings.CutPrefix(sent[len(sent)-1].link, "https://bethere.test/login#t=")
+	if !ok || auth.CheckToken(tok) != nil {
+		e.t.Fatalf("mail link = %q", sent[len(sent)-1].link)
+	}
+	return tok
+}
+
+// confirm trades a login mail's link for a login link.
+func (e *env) confirm(mailToken string) resp {
+	e.t.Helper()
+	return e.do(http.MethodPost, pathLoginConfirm, mailToken, `{}`)
+}
+
+func (r resp) loginToken(t *testing.T) string {
+	t.Helper()
+	r.wantResult(t, "ok")
+	wantKeys(t, "confirm", r.body, "result", "loginToken")
 	tok, _ := r.body["loginToken"].(string)
 	if auth.CheckToken(tok) != nil {
-		e.t.Fatalf("loginToken = %q", tok)
+		t.Fatalf("loginToken = %q", tok)
 	}
 	return tok
 }
@@ -149,16 +180,31 @@ func TestUS_O_11_3_OverviewHasCompanies(t *testing.T) {
 	}
 }
 
-// US-CO-1.2, 1.3: logging in with an email; one of no company or not an
-// email answers the same.
-func TestUS_CO_1_2_Login(t *testing.T) {
+// US-CO-1.2, 1.3: a login asks for a login mail; an email of the wrong
+// form is refused, every other one gets the same answer and only a
+// member's gets a mail.
+func TestUS_CO_1_2_LoginAnswers(t *testing.T) {
 	e := newEnv(t)
-	e.company()
-	for _, email := range []string{"nobody@x.tw", "not-an-email", ""} {
-		e.post(pathCompanyLogin, "", map[string]any{"email": email}).wantError(t, http.StatusUnprocessableEntity, "not_member")
+	e.company() // a@x.tw has had one mail
+	for _, email := range []string{"not-an-email", "", "a@x", "a b@x.tw"} {
+		e.post(pathCompanyLogin, "", map[string]any{"email": email}).wantError(t, http.StatusUnprocessableEntity, "invalid_email")
 	}
 	e.do(http.MethodPost, pathCompanyLogin, "", `{"email":"a@x.tw","x":1}`).wantError(t, http.StatusBadRequest, "bad_request")
-	session := e.login(" A@x.TW ")
+	stranger := e.post(pathCompanyLogin, "", map[string]any{"email": "nobody@x.tw"})
+	member := e.post(pathCompanyLogin, "", map[string]any{"email": " A@x.TW "})
+	for _, r := range []resp{stranger, member} {
+		r.wantResult(t, "ok")
+		wantKeys(t, "login", r.body, "result")
+	}
+	if stranger.Body.String() != member.Body.String() {
+		t.Errorf("a stranger's answer %q differs from a member's %q", stranger.Body.String(), member.Body.String())
+	}
+	e.mailq.SendWaiting(bg)
+	sent := e.outbox.sent()
+	if len(sent) != 2 || sent[1].to != "a@x.tw" {
+		t.Fatalf("mails = %v, want one more to a@x.tw", sent)
+	}
+	session := e.confirm(strings.TrimPrefix(sent[1].link, "https://bethere.test/login#t=")).loginToken(t)
 	r := e.do(http.MethodGet, pathCompany, session, "")
 	r.wantResult(t, "ok")
 	wantKeys(t, "company", r.body, "result", "organization", "me", "members", "events")

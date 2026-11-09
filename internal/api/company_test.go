@@ -76,12 +76,15 @@ func TestUS_O_11_1_AdminOrganizationAnswers(t *testing.T) {
 
 // US-CO-3.2: every answer of a new event on the company page.
 func TestUS_CO_3_2_CompanyEventAnswers(t *testing.T) {
-	send, admin, _ := companyMux(t)
+	send, admin, st := companyMux(t)
 	if status, _ := send(http.MethodPost, "/api/admin/organizations", admin, `{"name":"甲","email":"a@x.tw"}`); status != 200 {
 		t.Fatal(status)
 	}
-	_, login := send(http.MethodPost, "/api/company/login", "", `{"email":"a@x.tw"}`)
-	session, _ := login["loginToken"].(string)
+	session, _ := auth.NewToken()
+	loc, _ := time.LoadLocation("Asia/Taipei")
+	if err := st.IssueLoginLink(context.Background(), "a@x.tw", auth.HashToken(session), time.Date(2027, 6, 6, 9, 0, 0, 0, loc)); err != nil {
+		t.Fatal(err)
+	}
 	for _, c := range []struct {
 		token, body string
 		status      int

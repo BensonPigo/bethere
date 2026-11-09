@@ -227,14 +227,20 @@ func lookupOwner(ctx context.Context, tx *sql.Tx, tokenHash []byte, rule console
 	return o, err
 }
 
-// consoleOwner is resolveConsole, and ErrMembersClosed for a console link
-// found while member links are closed (US-O-12.6).
+// consoleOwner is resolveConsole: ErrMembersClosed for any console link
+// found while member links are closed (US-O-12.6), verified or not, and
+// ErrNoRows for one an email-only release made (US-CO-1.13).
 func consoleOwner(ctx context.Context, tx *sql.Tx, tokenHash []byte, rule consoleRule) (TokenOwner, error) {
-	o, err := resolveConsole(ctx, tx, tokenHash)
-	if err == nil && rule == consolesClosed {
+	o, verified, err := resolveConsole(ctx, tx, tokenHash)
+	switch {
+	case err != nil:
+		return o, err
+	case rule == consolesClosed:
 		return TokenOwner{}, ErrMembersClosed
+	case !verified:
+		return TokenOwner{}, sql.ErrNoRows
 	}
-	return o, err
+	return o, nil
 }
 
 // resolveRoleToken is a role's active link; ErrNoRows passes up as is.

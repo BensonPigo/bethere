@@ -34,7 +34,9 @@ domain_ok() { [[ "$1" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]]; }
 
 # check_release refuses a version that is malformed or not in the release
 # bucket, together with the Caddy and Litestream builds a VM downloads at
-# boot, before anything on the VM changes.
+# boot, before anything on the VM changes; and an email-only release, whose
+# features.txt lacks mail-login or is missing (M4 and before; US-CO-1.13,
+# tech-stack.md「寄信」). The VM checks the installed release again.
 check_release() {
   if ! version_ok "$1"; then
     echo "not a release version: $1 (e.g. c406027-20261027032903)" >&2
@@ -45,7 +47,12 @@ check_release() {
     gc storage objects describe "gs://$RELEASE_BUCKET/$object" >/dev/null ||
       { echo "missing gs://$RELEASE_BUCKET/$object (ops/gcp/release.sh uploads it)" >&2; return 1; }
   done
+  mail_login "$1" ||
+    { echo "$1 lets members in with an email only (no mail-login in its features.txt); it is never deployed" >&2; return 1; }
 }
+
+# mail_login: the release's features.txt lists mail-login.
+mail_login() { gc storage cat "gs://$RELEASE_BUCKET/bethere/$1/features.txt" 2>/dev/null | grep -qx mail-login; }
 
 # vm_ssh runs a command on the VM; its errors stay visible, the IAP
 # tunnel's performance warnings do not.
