@@ -21,7 +21,10 @@ type fakeAPI struct {
 	eventOf  map[string]string
 	writes   []string
 	bodies   []map[string]any
-	status   int // when set, every answer
+	status   int             // when set, every answer
+	checkIns []string        // "<token> <true|false>"
+	noCheck  map[string]bool // tokens whose check-in is forbidden
+	checkErr int             // when set, every check-in's answer
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +37,10 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	master, ok := f.eventOf[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 	if !ok {
 		fmt.Fprint(w, `{"result":"invalid"}`)
+		return
+	}
+	if r.URL.Path == "/api/checkin" {
+		f.checkIn(w, r)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -55,6 +62,21 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("ETag", tag)
 	fmt.Fprintf(w, `{"result":"ok","snapshot":{"eventVersion":%d,"cues":[{"id":7,"status":"Done"},{"id":8,"status":"Pending"},{"id":9,"status":"Pending"}]}}`, f.versions[master])
+}
+
+func (f *fakeAPI) checkIn(w http.ResponseWriter, r *http.Request) {
+	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	switch {
+	case f.checkErr != 0:
+		w.WriteHeader(f.checkErr)
+	case f.noCheck[tok]:
+		w.WriteHeader(http.StatusForbidden)
+	default:
+		var body map[string]bool
+		json.NewDecoder(r.Body).Decode(&body)
+		f.checkIns = append(f.checkIns, fmt.Sprintf("%s %v", tok, body["checkedIn"]))
+		fmt.Fprint(w, `{"result":"ok","snapshot":{}}`)
+	}
 }
 
 func token(event, i int) string { return fmt.Sprintf("%02d%020d", event, i) }
@@ -201,5 +223,70 @@ func TestUS_O_13_5_NextWriteWithNoPendingCue(t *testing.T) {
 	kind, body := nextWrite(1, &snapshot{EventVersion: 4})
 	if kind != "shift" || body["fromCueId"] != int64(0) || body["version"] != int64(4) {
 		t.Errorf("%s %v", kind, body)
+	}
+}
+
+// US-O-13.5: each event's roles check in and out in turn; a role that may
+// not check in is skipped from then on and not counted.
+func TestUS_O_13_5_RolesCheckInInTurn(t *testing.T) {
+	f, srv, links := newFake(t, 2, 3) // per event: Master and roles 1, 2
+	f.noCheck = map[string]bool{token(1, 1): true}
+	cfg := quick(links, srv)
+	cfg.CheckInEvery = 25 * ms
+	res := Run(context.Background(), cfg)
+	if len(res.Errors) != 0 {
+		t.Fatalf("errors: %v", res.Errors)
+	}
+	var e1, e2 []string
+	for _, c := range f.checkIns {
+		if strings.HasPrefix(c, token(1, 0)[:2]) {
+			e1 = append(e1, c)
+		} else {
+			e2 = append(e2, c)
+		}
+	}
+	// Event 1: role 1 is refused once, then only role 2, in and out.
+	want1 := []string{token(1, 2) + " true", token(1, 2) + " false", token(1, 2) + " true"}
+	want2 := []string{token(2, 1) + " true", token(2, 2) + " true", token(2, 1) + " false", token(2, 2) + " false"}
+	for i := range want1 {
+		if i >= len(e1) || e1[i] != want1[i] {
+			t.Fatalf("event 1 check-ins %v, want %v first", e1, want1)
+		}
+	}
+	for i := range want2 {
+		if i >= len(e2) || e2[i] != want2[i] {
+			t.Fatalf("event 2 check-ins %v, want %v first", e2, want2)
+		}
+	}
+	for _, c := range f.checkIns {
+		if strings.HasPrefix(c, token(1, 0)) || strings.HasPrefix(c, token(2, 0)) {
+			t.Errorf("a Master checked in: %s", c)
+		}
+	}
+}
+
+func TestUS_O_13_8_CheckInFailuresCount(t *testing.T) {
+	f, srv, links := newFake(t, 1, 2)
+	f.checkErr = http.StatusInternalServerError
+	cfg := quick(links, srv)
+	cfg.CheckInEvery = 25 * ms
+	res := Run(context.Background(), cfg)
+	if res.Errors["checkin status 500"] == 0 {
+		t.Errorf("errors = %v", res.Errors)
+	}
+	srv.Close()
+	res = Run(context.Background(), cfg)
+	if res.Errors["checkin transport"] == 0 {
+		t.Errorf("errors = %v", res.Errors)
+	}
+}
+
+func TestUS_O_13_5_AllRolesRefuseCheckIn(t *testing.T) {
+	f, srv, links := newFake(t, 1, 2)
+	f.noCheck = map[string]bool{token(1, 1): true}
+	cfg := quick(links, srv)
+	cfg.CheckInEvery = 25 * ms
+	if res := Run(context.Background(), cfg); len(res.Errors) != 0 || len(f.checkIns) != 0 {
+		t.Errorf("errors %v, check-ins %v", res.Errors, f.checkIns)
 	}
 }
