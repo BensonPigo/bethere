@@ -37,7 +37,7 @@ func company(t *testing.T, db string) (*store.Store, int64, []byte) {
 		t.Fatal(err)
 	}
 	session := auth.HashToken(mustToken(t))
-	if err := st.Login(ctx, "a@x.tw", session, time.Now()); err != nil {
+	if err := st.IssueLoginLink(ctx, "a@x.tw", session, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	return st, org, session
@@ -82,7 +82,7 @@ func TestUS_O_12_5_ResetAfterRestore(t *testing.T) {
 	if !strings.Contains(logs.String(), `"msg":"member-reset: every member's login and console link was cleared after the restore"`) {
 		t.Errorf("log = %s", logs)
 	}
-	if err := st.Login(ctx, "a@x.tw", auth.HashToken(mustToken(t)), time.Now()); err != nil {
+	if err := st.IssueLoginLink(ctx, "a@x.tw", auth.HashToken(mustToken(t)), time.Now()); err != nil {
 		t.Errorf("member links are open again: %v", err)
 	}
 }
@@ -120,7 +120,7 @@ func TestUS_O_12_6_FailedResetKeepsTheMarker(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Errorf("the marker went: %v", err)
 	}
-	if err := st.Login(context.Background(), "a@x.tw", auth.HashToken(mustToken(t)), time.Now()); !errors.Is(err, store.ErrMembersClosed) {
+	if err := st.IssueLoginLink(context.Background(), "a@x.tw", auth.HashToken(mustToken(t)), time.Now()); !errors.Is(err, store.ErrMembersClosed) {
 		t.Errorf("err = %v, want ErrMembersClosed", err)
 	}
 	if !strings.Contains(logs.String(), `"msg":"member-reset: clearing the links failed`) {
@@ -294,5 +294,78 @@ func TestUS_O_12_2_AddMemberReportsOtherFailures(t *testing.T) {
 	raw.Close()
 	if r := runWith("", nil, "add-member", "-db", db, "-org", "1", "-email", "b@x.tw"); r.code != 1 || !strings.Contains(r.stderr, "no such table") {
 		t.Errorf("exit %d %q", r.code, r.stderr)
+	}
+}
+
+// US-O-12.8: the developer's login link for a member when mail is down.
+func TestUS_O_12_8_IssueLoginLink(t *testing.T) {
+	db := newDB(t)
+	st, _, _ := company(t, db)
+	r := runWith("", nil, "issue-login-link", "-db", db, "-email", " A@x.TW ", "-base-url", "https://bethere.tw/")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	_, link, ok := strings.Cut(r.stdout, "  https://bethere.tw/company#t=")
+	tok := strings.TrimSpace(link)
+	if !ok || auth.CheckToken(tok) != nil || !strings.Contains(r.stdout, "a@x.tw") {
+		t.Fatalf("stdout = %q", r.stdout)
+	}
+	if err := st.CheckSession(context.Background(), auth.HashToken(tok), time.Now()); err != nil {
+		t.Errorf("the printed link: %v", err)
+	}
+	for _, c := range []struct {
+		args []string
+		code int
+		want string
+	}{
+		{[]string{"-db", db, "-email", "nobody@x.tw", "-base-url", base}, 1, "member of no company"},
+		{[]string{"-db", db, "-email", "a@x.tw"}, 2, "-base-url"},
+		{[]string{"-db", db, "-email", "a@x.tw", "-base-url", "http://bethere.tw"}, 2, "https://<host>"},
+		{[]string{"-db", db, "-email", "not-an-email", "-base-url", base}, 2, "not one plain email"},
+		{[]string{"-db", db + ".missing", "-email", "a@x.tw", "-base-url", base}, 1, ""},
+	} {
+		r := runWith("", nil, append([]string{"issue-login-link"}, c.args...)...)
+		if r.code != c.code || !strings.Contains(r.stderr, c.want) || r.stdout != "" {
+			t.Errorf("%v: exit %d, stderr %q, stdout %q", c.args, r.code, r.stderr, r.stdout)
+		}
+	}
+}
+
+// api.md 10.2: serve starts the login mail worker only with a usable mail
+// setup; without one it logs why and the login answers mail_unavailable.
+func TestUS_CO_1_12_StartLoginMail(t *testing.T) {
+	db := newDB(t)
+	st, _, _ := company(t, db)
+	id, err := st.MemberByEmail(context.Background(), "a@x.tw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	logger, logs := logBuffer()
+	q, done := startLoginMail(context.Background(), st, cli{lookupEnv: func(string) (string, bool) { return "", false }}, logger)
+	if q != nil {
+		t.Errorf("queue without a setup = %v", q)
+	}
+	<-done
+	if !strings.Contains(logs.String(), `"msg":"mail setup"`) || !strings.Contains(logs.String(), "BETHERE_MAIL is not set") {
+		t.Errorf("log = %s", logs.String())
+	}
+
+	var out syncBuffer
+	ctx, cancel := context.WithCancel(context.Background())
+	env := map[string]string{"BETHERE_MAIL": "log", "BETHERE_BASE_URL": "http://localhost:8080"}
+	q, done = startLoginMail(ctx, st, cli{lookupEnv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }},
+		slog.New(slog.NewJSONHandler(&out, nil)))
+	q.Enqueue(id)
+	for deadline := time.Now().Add(5 * time.Second); !strings.Contains(out.String(), `"link":"http://localhost:8080/login#t=`); {
+		if time.Now().After(deadline) {
+			t.Fatalf("no mail in the log: %s", out.String())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the worker did not stop")
 	}
 }

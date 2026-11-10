@@ -514,10 +514,12 @@ func TestUS_O_8_2_SupportEmailFromEnv(t *testing.T) {
 }
 
 // US-O-2.1: the start script asks the release whether it knows
-// maintenance mode before starting it in that mode.
-func TestUS_O_2_1_FeaturesListsMaintenance(t *testing.T) {
+// maintenance mode before starting it in that mode; US-CO-1.13: the
+// release scripts and the start script refuse a release without
+// mail-login.
+func TestUS_O_2_1_FeaturesListsMaintenanceAndMailLogin(t *testing.T) {
 	r := runWith("", nil, "features")
-	if r.code != 0 || r.stdout != "maintenance\n" {
+	if r.code != 0 || r.stdout != "maintenance\nmail-login\n" {
 		t.Errorf("features: %d %q", r.code, r.stdout)
 	}
 }

@@ -12,9 +12,13 @@ source "$(dirname "$0")/env.sh"
 meta() { gc compute instances describe "$VM" --zone "$ZONE" --format="value(metadata.items.$1)"; }
 current="$(meta bethere-version)"
 
+# label: whether a version may be deployed (check_release, mail-login).
+label() { if mail_login "$1"; then echo "mail-login"; else echo "EMAIL-ONLY: cannot be deployed"; fi; }
+
 if [ $# -eq 0 ]; then
-  echo "running:  $current"
-  echo "previous: $(meta bethere-previous-version)   <- roll back to this one"
+  previous="$(meta bethere-previous-version)"
+  echo "running:  $current   ($(label "$current"))"
+  echo "previous: $previous   ($(label "$previous"))   <- roll back to this one"
   echo "newest uploads (not all were deployed):"
   gc storage ls "gs://$RELEASE_BUCKET/bethere/" | sed 's#.*/bethere/##; s#/$##' | sort -t- -k2 -r | head -5 | sed 's/^/  /'
   exit 0

@@ -22,6 +22,7 @@ func (e *env) maintenance() {
 		Version:     "test-1",
 		Logger:      slog.New(slog.NewJSONHandler(e.logs, nil)),
 		Maintenance: true,
+		LoginMail:   e.mailq,
 	})
 }
 

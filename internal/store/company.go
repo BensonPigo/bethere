@@ -18,9 +18,10 @@ import (
 
 var (
 	// ErrInvalidSession is a login link that is unknown, expired, logged
-	// out or of a removed member (US-CO-1.5); the four are never told apart.
+	// out, of a removed member or of an email-only release (US-CO-1.5,
+	// US-CO-1.13); they are never told apart.
 	ErrInvalidSession = errors.New("not a valid login link")
-	// ErrNotMember is an email of no company (US-CO-1.3).
+	// ErrNotMember is an email of no company (US-CO-1.3, US-O-12.8).
 	ErrNotMember = errors.New("no member with this email")
 	// ErrEmailTaken is an email already of some company (US-O-11.2).
 	ErrEmailTaken = errors.New("this email is a member already")
@@ -56,15 +57,22 @@ func (s *Store) CloseMemberAccess() { s.membersClosed.Store(true) }
 // MembersClosed reports whether member links are closed for this run.
 func (s *Store) MembersClosed() bool { return s.membersClosed.Load() }
 
-// ResetMemberAccess deletes every login and console link in one write
-// (US-O-12.5); serve calls it before taking requests after a restore.
+// ResetMemberAccess deletes every login and console link and clears every
+// login mail's link in one write (US-O-12.5); serve calls it before taking
+// requests after a restore. The login mails stay, so the limits keep
+// counting them (US-CO-1.11).
 func (s *Store) ResetMemberAccess(ctx context.Context) error {
 	return s.write(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM member_sessions`); err != nil {
-			return err
+		for _, stmt := range []string{
+			`DELETE FROM member_sessions`,
+			`DELETE FROM console_tokens`,
+			`UPDATE login_mails SET token_hash = NULL`,
+		} {
+			if _, err := tx.ExecContext(ctx, stmt); err != nil {
+				return err
+			}
 		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM console_tokens`)
-		return err
+		return nil
 	})
 }
 
@@ -137,10 +145,10 @@ func insertMember(ctx context.Context, tx *sql.Tx, orgID int64, email string, no
 	return id, err
 }
 
-// Login stores a new login link for the member with this email (US-CO-1.2);
-// the member's oldest is deleted once they hold SessionsPerMember
-// (US-CO-1.8). The email is cleaned by the caller.
-func (s *Store) Login(ctx context.Context, email string, sessionHash []byte, now time.Time) error {
+// IssueLoginLink stores a new login link for the member with this email,
+// for the developer's command when mail is down (US-O-12.8). The email is
+// cleaned by the caller.
+func (s *Store) IssueLoginLink(ctx context.Context, email string, sessionHash []byte, now time.Time) error {
 	if err := s.membersOpen(); err != nil {
 		return err
 	}
@@ -153,15 +161,21 @@ func (s *Store) Login(ctx context.Context, email string, sessionHash []byte, now
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM member_sessions WHERE member_id = ? AND id NOT IN
-			(SELECT id FROM member_sessions WHERE member_id = ? AND expires_at > ? ORDER BY id DESC LIMIT ?)`,
-			memberID, memberID, toNS(now), SessionsPerMember-1); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO member_sessions (member_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)`,
-			memberID, sessionHash, toNS(now), toNS(now.Add(SessionLife)))
-		return err
+		return insertSession(ctx, tx, memberID, sessionHash, now)
 	})
+}
+
+// insertSession stores a verified login link for the member, deleting
+// their oldest once they hold SessionsPerMember (US-CO-1.8).
+func insertSession(ctx context.Context, tx *sql.Tx, memberID int64, sessionHash []byte, now time.Time) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM member_sessions WHERE member_id = ? AND id NOT IN
+		(SELECT id FROM member_sessions WHERE member_id = ? AND expires_at > ? AND verified = 1 ORDER BY id DESC LIMIT ?)`,
+		memberID, memberID, toNS(now), SessionsPerMember-1); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO member_sessions (member_id, token_hash, created_at, expires_at, verified)
+		VALUES (?, ?, ?, ?, 1)`, memberID, sessionHash, toNS(now), toNS(now.Add(SessionLife)))
+	return err
 }
 
 // Logout deletes this login link only (US-CO-1.4).
@@ -170,7 +184,7 @@ func (s *Store) Logout(ctx context.Context, sessionHash []byte) error {
 		return err
 	}
 	return s.write(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM member_sessions WHERE token_hash = ?`, sessionHash)
+		res, err := tx.ExecContext(ctx, `DELETE FROM member_sessions WHERE token_hash = ? AND verified = 1`, sessionHash)
 		if err != nil {
 			return err
 		}
@@ -201,7 +215,7 @@ type member struct {
 func sessionMember(ctx context.Context, q querier, sessionHash []byte, now time.Time) (member, error) {
 	var m member
 	err := q.QueryRowContext(ctx, `SELECT m.id, m.organization_id FROM member_sessions s JOIN members m ON m.id = s.member_id
-		WHERE s.token_hash = ? AND s.expires_at > ?`, sessionHash, toNS(now)).Scan(&m.id, &m.orgID)
+		WHERE s.token_hash = ? AND s.expires_at > ? AND s.verified = 1`, sessionHash, toNS(now)).Scan(&m.id, &m.orgID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, confirmedMiss(ctx, ErrInvalidSession)
 	}
@@ -415,7 +429,7 @@ func (s *Store) OpenConsole(ctx context.Context, sessionHash []byte, eventID int
 			m.id, eventID, m.id, eventID, ConsolesPerMemberEvent-1); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO console_tokens (member_id, event_id, token_hash, created_at) VALUES (?, ?, ?, ?)`,
+		_, err := tx.ExecContext(ctx, `INSERT INTO console_tokens (member_id, event_id, token_hash, created_at, verified) VALUES (?, ?, ?, ?, 1)`,
 			m.id, eventID, consoleHash, toNS(now))
 		return err
 	})
@@ -423,27 +437,29 @@ func (s *Store) OpenConsole(ctx context.Context, sessionHash []byte, eventID int
 
 // resolveConsole is the second half of resolveToken (api.md 10.2): a
 // console link of a member still in the company that owns the event,
-// resolved to that event's Master. ErrNoRows passes up as is.
-func resolveConsole(ctx context.Context, tx *sql.Tx, tokenHash []byte) (TokenOwner, error) {
+// resolved to that event's Master, and whether this release made it
+// (US-CO-1.13). ErrNoRows passes up as is.
+func resolveConsole(ctx context.Context, tx *sql.Tx, tokenHash []byte) (TokenOwner, bool, error) {
 	var (
 		o                   TokenOwner
 		consoleID, memberID int64
+		verified            sql.NullInt64
 	)
-	err := tx.QueryRowContext(ctx, `SELECT c.id, c.member_id, r.id, r.event_id, r.name
+	err := tx.QueryRowContext(ctx, `SELECT c.id, c.member_id, c.verified, r.id, r.event_id, r.name
 		FROM console_tokens c
 		JOIN members m ON m.id = c.member_id
 		JOIN events e ON e.id = c.event_id AND e.organization_id = m.organization_id
 		JOIN roles r ON r.event_id = c.event_id AND r.type = ?
 		WHERE c.token_hash = ?`, domain.Master, tokenHash).
-		Scan(&consoleID, &memberID, &o.RoleID, &o.EventID, &o.RoleName)
+		Scan(&consoleID, &memberID, &verified, &o.RoleID, &o.EventID, &o.RoleName)
 	if err != nil {
-		return o, err
+		return o, false, err
 	}
 	o.RoleType = domain.Master
 	o.View = domain.Master.DefaultView()
 	o.Actor = Actor{kind: actorMember, roleID: o.RoleID, eventID: o.EventID, memberID: memberID, consoleID: consoleID,
 		cred: credential(tokenHash)}
-	return o, nil
+	return o, verified.Int64 == 1, nil
 }
 
 // checkConsole proves a member's console link again inside a write.
@@ -452,7 +468,7 @@ func checkConsole(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor) e
 	err := tx.QueryRowContext(ctx, `SELECT 1 FROM console_tokens c
 		JOIN members m ON m.id = c.member_id
 		JOIN events e ON e.id = c.event_id AND e.organization_id = m.organization_id
-		WHERE c.token_hash = ? AND c.id = ? AND c.member_id = ? AND c.event_id = ?`,
+		WHERE c.token_hash = ? AND c.id = ? AND c.member_id = ? AND c.event_id = ? AND c.verified = 1`,
 		*actor.cred, actor.consoleID, actor.memberID, eventID).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return confirmedMiss(ctx, ErrInvalidToken)

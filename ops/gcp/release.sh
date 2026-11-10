@@ -6,6 +6,10 @@ cd "$(dirname "$0")/../.."
 
 make release
 VERSION="$(cat build/release/LATEST)"
+# The release's features, read before deploying it (check_release); the
+# Linux build does not run here, so the same code prints them.
+go run ./cmd/bethere features > "build/release/$VERSION/features.txt"
+gc storage cp --no-clobber "build/release/$VERSION/features.txt" "gs://$RELEASE_BUCKET/bethere/$VERSION/features.txt"
 gc storage cp --no-clobber "build/release/$VERSION/bethere" "gs://$RELEASE_BUCKET/bethere/$VERSION/bethere"
 
 # Mirror the pinned Caddy so recovery does not depend on GitHub.

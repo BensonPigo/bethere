@@ -453,15 +453,25 @@ func purgeEvents(ctx context.Context, tx *sql.Tx, ids []int64, now time.Time) (d
 	return deleted, skipped, nil
 }
 
-// purgeExpired deletes the expired invite codes (US-M-17.11) and login
-// links (data-model.md「婚顧公司」), each in a write of its own so a failure
-// here never keeps an event past its retention.
+// purgeExpired deletes the expired invite codes (US-M-17.11), the expired
+// login links and those of an email-only release, the console links of an
+// email-only release, and the login mails past the limits' 24 hours
+// (data-model.md「婚顧公司」), each in a write of its own so a failure here
+// never keeps an event past its retention.
 func (s *Store) purgeExpired(ctx context.Context, now time.Time) []error {
 	var errs []error
-	for _, table := range []string{"invites", "member_sessions"} {
-		// Table names are constants, not input.
-		if _, err := s.w.ExecContext(ctx, `DELETE FROM `+table+` WHERE expires_at <= ?`, toNS(now)); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", table, err))
+	for _, p := range []struct {
+		table, where string
+		args         []any
+	}{
+		{"invites", `expires_at <= ?`, []any{toNS(now)}},
+		{"member_sessions", `expires_at <= ? OR verified IS NULL`, []any{toNS(now)}},
+		{"console_tokens", `verified IS NULL`, nil},
+		{"login_mails", `created_at <= ?`, []any{toNS(now.Add(-MailWindow))}},
+	} {
+		// Table names and conditions are constants, not input.
+		if _, err := s.w.ExecContext(ctx, `DELETE FROM `+p.table+` WHERE `+p.where, p.args...); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", p.table, err))
 		}
 	}
 	return errs

@@ -21,6 +21,7 @@ import (
 
 	"github.com/BensonPigo/bethere/internal/auth"
 	"github.com/BensonPigo/bethere/internal/domain"
+	"github.com/BensonPigo/bethere/internal/loginmail"
 	"github.com/BensonPigo/bethere/internal/store"
 )
 
@@ -176,6 +177,9 @@ type env struct {
 	stylistBTok string
 	recovery    string
 	cue         map[string]int64 // by title
+
+	mailq  *loginmail.Queue
+	outbox *outbox
 }
 
 func newToken(t *testing.T) string {
@@ -244,14 +248,45 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 
+	logger := slog.New(slog.NewJSONHandler(e.logs, nil))
+	e.outbox = &outbox{}
+	e.mailq = loginmail.New(loginmail.Config{Store: e.fs, Sender: e.outbox, BaseURL: "https://bethere.test",
+		Now: e.clock, Logger: logger, Every: time.Hour})
 	e.h = New(Config{
-		Static:  fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>BeThere</title>")}},
-		Store:   e.fs,
-		Now:     e.clock,
-		Version: "test-1",
-		Logger:  slog.New(slog.NewJSONHandler(e.logs, nil)),
+		Static:    fstest.MapFS{"index.html": {Data: []byte("<!doctype html><title>BeThere</title>")}},
+		Store:     e.fs,
+		Now:       e.clock,
+		Version:   "test-1",
+		Logger:    logger,
+		LoginMail: e.mailq,
 	})
 	return e
+}
+
+// outbox keeps the login mails sent, instead of Gmail.
+type outbox struct {
+	mu    sync.Mutex
+	mails []sentMail
+	err   error // every send fails with it when set
+}
+
+type sentMail struct{ to, link string }
+
+func (o *outbox) Send(_ context.Context, to, link string) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.err != nil {
+		return o.err
+	}
+	o.mails = append(o.mails, sentMail{to, link})
+	return nil
+}
+
+// sent is every mail sent so far.
+func (o *outbox) sent() []sentMail {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]sentMail(nil), o.mails...)
 }
 
 func (e *env) clock() time.Time {

@@ -39,8 +39,11 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/BensonPigo/bethere/internal/api"
 	"github.com/BensonPigo/bethere/internal/auth"
 	"github.com/BensonPigo/bethere/internal/domain"
+	"github.com/BensonPigo/bethere/internal/loginmail"
+	"github.com/BensonPigo/bethere/internal/mail"
 	"github.com/BensonPigo/bethere/internal/rundown"
 	"github.com/BensonPigo/bethere/internal/server"
 	"github.com/BensonPigo/bethere/internal/store"
@@ -50,7 +53,7 @@ import (
 // version is set at build time: -ldflags "-X main.version=..."
 var version = "dev"
 
-const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|find-member|add-member|remove-member|version|features> -db <path> ..."
+const usage = "usage: bethere <serve|create-event|add-role|import-rundown|create-invite|reset-recovery-code|issue-admin-link|find-member|add-member|remove-member|issue-login-link|version|features> -db <path> ..."
 
 // cli is the process environment a subcommand may use. Tests replace it.
 type cli struct {
@@ -74,9 +77,12 @@ var commands = map[string]func([]string, cli) error{
 		return nil
 	},
 	// The VM's start script asks before starting in maintenance mode, so
-	// a release without it is refused rather than left open (US-O-2.1).
+	// a release without it is refused rather than left open (US-O-2.1);
+	// the release scripts and the start script refuse a release without
+	// mail-login, an email-only one (US-CO-1.13, tech-stack.md「寄信」).
 	"features": func(_ []string, c cli) error {
 		fmt.Fprintln(c.stdout, "maintenance")
+		fmt.Fprintln(c.stdout, "mail-login")
 		return nil
 	},
 	"serve":               serve,
@@ -89,6 +95,7 @@ var commands = map[string]func([]string, cli) error{
 	"find-member":         findMember,
 	"add-member":          addMember,
 	"remove-member":       removeMember,
+	"issue-login-link":    issueLoginLink,
 }
 
 func run(args []string, c cli) int {
@@ -221,6 +228,11 @@ func serve(args []string, c cli) error {
 	// works (US-O-12.5).
 	resetAfterRestore(ctx, st, opt.dbPath, logger)
 	support := supportEmail(c, logger)
+	queue, mailed := startLoginMail(ctx, st, c, logger)
+	defer func() {
+		stop()
+		<-mailed // the worker ends, then its last log line, before the store closes
+	}()
 	srv := &http.Server{
 		Addr: opt.addr,
 		Handler: server.New(server.Config{
@@ -231,6 +243,7 @@ func serve(args []string, c cli) error {
 			Logger:       logger,
 			Maintenance:  opt.maintenance,
 			SupportEmail: support,
+			LoginMail:    queue,
 		}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -265,6 +278,27 @@ func supportEmail(c cli, logger *slog.Logger) string {
 		logger.Error("support email", "err", err)
 	}
 	return support
+}
+
+// startLoginMail starts the login mail queue's worker when the
+// environment has a usable mail setup (api.md 10.2); otherwise it logs why
+// and returns a nil queue, so the login answers mail_unavailable: mail
+// never stops the site. The channel closes once the worker has stopped.
+func startLoginMail(ctx context.Context, st *store.Store, c cli, logger *slog.Logger) (api.Enqueuer, <-chan struct{}) {
+	done := make(chan struct{})
+	setup, err := mail.FromEnv(c.lookupEnv, logger)
+	if err != nil {
+		logger.Warn("mail setup", "err", err)
+		close(done)
+		return nil, done
+	}
+	q := loginmail.New(loginmail.Config{Store: st, Sender: setup.Sender, BaseURL: setup.BaseURL,
+		Now: time.Now, Logger: logger, Every: time.Minute})
+	go func() {
+		defer close(done)
+		q.Run(ctx)
+	}()
+	return q, done
 }
 
 // startPurge runs the daily cleanup (US-O-5) until ctx ends; the channel

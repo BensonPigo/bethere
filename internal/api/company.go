@@ -28,7 +28,12 @@ var (
 	maxCompanyNameRunes = maxEventNameRunes // US-O-11.1: the rule of an event's name
 )
 
+// loginResponse is the same for every email of the right form (US-CO-1.3).
 type loginResponse struct {
+	Result string `json:"result"` // "ok"
+}
+
+type confirmResponse struct {
 	Result     string `json:"result"` // "ok"
 	LoginToken string `json:"loginToken"`
 }
@@ -85,7 +90,7 @@ var companyErrors = []struct {
 	{store.ErrInvalidSession, http.StatusNotFound, "not_found"},
 	{store.ErrNotFound, http.StatusNotFound, "not_found"},
 	{store.ErrMembersClosed, http.StatusServiceUnavailable, "maintenance"},
-	{store.ErrNotMember, http.StatusUnprocessableEntity, "not_member"},
+	{store.ErrInvalidLoginMail, http.StatusNotFound, "not_found"},
 	{store.ErrEmailTaken, http.StatusUnprocessableEntity, "email_taken"},
 	{store.ErrTooManyMembers, http.StatusUnprocessableEntity, "too_many_members"},
 	{store.ErrCannotRemoveSelf, http.StatusUnprocessableEntity, "cannot_remove_self"},
@@ -107,8 +112,9 @@ func (a *API) companyFailed(w http.ResponseWriter, r *http.Request, err error) {
 	a.internal(w, r, err)
 }
 
-// login is POST /api/company/login (US-CO-1.2): the email in the body,
-// never a header. An email of no company or not an email answers the same.
+// login is POST /api/company/login (US-CO-1.1–1.3): the email in the body,
+// never a header. It only reads: a member goes into the login mail queue,
+// and every email of the right form gets the same answer.
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	b, ok := readBody(w, r, emailFields)
 	if !ok {
@@ -117,7 +123,36 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	}
 	email, ok := domain.CleanEmail(b.email)
 	if !ok {
-		writeError(w, http.StatusUnprocessableEntity, "not_member")
+		writeError(w, http.StatusUnprocessableEntity, "invalid_email")
+		return
+	}
+	if a.loginMail == nil {
+		writeError(w, http.StatusServiceUnavailable, "mail_unavailable")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
+	defer cancel()
+	id, err := a.store.MemberByEmail(ctx, email)
+	switch {
+	case err == nil:
+		a.loginMail.Enqueue(id)
+	case !errors.Is(err, store.ErrNotMember):
+		a.companyFailed(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, loginResponse{Result: "ok"})
+}
+
+// confirmLogin is POST /api/company/login/confirm (US-CO-1.10): a login
+// mail's link in the header, traded once for a new login link.
+func (a *API) confirmLogin(w http.ResponseWriter, r *http.Request) {
+	mailHash, ok := bearerHash(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found")
+		return
+	}
+	if _, ok := readBody(w, r, logoutFields); !ok {
+		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
 	token, err := auth.NewToken()
@@ -127,11 +162,11 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), createTimeout)
 	defer cancel()
-	if err := a.store.Login(ctx, email, auth.HashToken(token), a.now()); err != nil {
+	if err := a.store.ConfirmLoginMail(ctx, mailHash, auth.HashToken(token), a.now()); err != nil {
 		a.companyFailed(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, loginResponse{Result: "ok", LoginToken: token})
+	writeJSON(w, http.StatusOK, confirmResponse{Result: "ok", LoginToken: token})
 }
 
 // session proves the login link before anything else and returns its
