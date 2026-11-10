@@ -21,7 +21,7 @@
 - 監控（US-O-7）：`ALERT_EMAIL=<信箱> ops/gcp/monitoring.sh` 建立外部探測與告警，網站打不開時約 3～5 分鐘後寄信，恢復時再寄一封。開發期主機平時關機，一律以 `ops/gcp/power.sh on|off` 開關，告警跟著開關；在 Cloud 網頁主控台直接關機，告警會一直寄信。`ops/gcp/power.sh status` 顯示主機與告警的狀態；重建或主機狀態不明時先看它，告警沒開就執行 `ops/gcp/power.sh on`（主機已開也可以，只會打開告警）。凍結期起主機一直開著，**不要**執行 `power.sh off`：它會連告警一起關掉。
 - 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
 - 負載測試（US-O-13）：只在暫存專案。`ops/gcp/setup.sh` → `ops/gcp/release.sh` → `ops/gcp/create-vm.sh <版本>` → `ops/gcp/init-db.sh` → `ops/gcp/maintenance.sh off` → `ops/gcp/loadtest-setup.sh > links.txt`（3 場活動的 150 條連結，正式專案拒絕執行）→ 在東京另開一台發起測試的主機（`asia-northeast1`，不掛服務帳號，只開 IAP 的 ssh），把 `GOOS=linux go build ./cmd/loadtest` 的執行檔與連結檔複製過去，以 `systemd-run` 執行 `loadtest -links links.txt -out result.json`（預設 60 分鐘，沒通過時結束碼為 1）。測完 `gcloud projects delete <暫存專案>`，連結檔一併刪除。
-- 在主機上以 `sqlite3` 等工具改資料列不必重啟（觸發器照樣記下）；改了 `data_generation` 或資料庫結構時，重啟服務（`ops/gcp/deploy.sh <目前版本>`，凍結期間也可以），讓記憶體中的活動資料重新讀取（ADR-0041）。從備份還原一律在服務啟動之前。
+- 資料庫結構只由遷移改變：不要在主機上以 `sqlite3` 等工具建立、刪除或重建表與觸發器，也不要改 `data_generation`，否則輪詢可能一直拿到舊資料（ADR-0041）。改資料列不必重啟（觸發器照樣記下）。從備份還原一律在服務啟動之前。
 - 活動前 7 天起凍結部署。
 
 ```mermaid
