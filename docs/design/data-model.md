@@ -198,7 +198,7 @@ MemberSession 與 ConsoleToken 以外鍵連到 Member（`ON DELETE CASCADE`）�
 ### 資料世代（ADR-0041）
 | 實體 | 欄位 | 說明 |
 | --- | --- | --- |
-| DataGeneration | epoch, n | 恰好一列。`epoch` 是建立時的隨機編號；`n` 是計數器，任何一張表（SQLite 與 Litestream 自己的表除外）的新增、修改、刪除都由觸發器加 1，只增不減；不屬於任何活動，每日刪除不碰它 |
+| DataGeneration | n | 恰好一列的計數器；任何一張表（SQLite 與 Litestream 自己的表除外）的新增、修改、刪除都由觸發器加 1，只增不減；不屬於任何活動，每日刪除不碰它 |
 
 ### 平移紀錄
 不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。
