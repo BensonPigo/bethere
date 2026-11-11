@@ -48,6 +48,8 @@ type Store struct {
 	r *sql.DB // read-only pool
 	// membersClosed refuses every member link for this run (US-O-12.6).
 	membersClosed atomic.Bool
+	// cache is the event data polls share (ADR-0041).
+	cache snapshotCache
 }
 
 //go:embed migrations/*.sql

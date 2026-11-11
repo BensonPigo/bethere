@@ -402,6 +402,8 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) 
 	if err != nil {
 		return nil, err
 	}
+	// Committed: nothing read before it stays in memory (US-O-14.6).
+	s.cache.clear()
 	skipped = append(skipped, s.purgeExpired(ctx, now)...)
 	return deleted, errors.Join(skipped...)
 }
