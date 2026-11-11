@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 const master = "mmmmmmmmmmmmmmmmmmmmmm"
@@ -120,3 +121,17 @@ func TestCloneTransport(t *testing.T) {
 type roundTripper struct{}
 
 func (roundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, errors.New("no") }
+
+// US-O-13.4, 13.5, 13.7–13.9: the defaults are the spec's run.
+func TestUS_O_13_Defaults(t *testing.T) {
+	o, err := parseOptions([]string{"-links", "l", "-out", "o"}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := options{links: "l", out: "o", duration: 60 * time.Minute, interval: 2 * time.Second, opEvery: time.Minute,
+		checkInEvery: 10 * time.Second, drain: 10 * time.Second, timeout: 10 * time.Second, window: 10 * time.Minute,
+		updateLimit: 2400 * time.Millisecond, writeLimit: 400 * time.Millisecond}
+	if o != want {
+		t.Errorf("defaults\n%+v\nwant\n%+v", o, want)
+	}
+}

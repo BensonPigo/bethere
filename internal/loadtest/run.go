@@ -73,12 +73,22 @@ func Run(ctx context.Context, cfg Config) Result {
 func (r *runner) start(devCtx, opCtx context.Context, wg *sync.WaitGroup, i int, d *Device, ops *[]Op) {
 	l, cfg := r.cfg.Links[i], r.cfg
 	d.Event = l.Event
-	offset := cfg.Interval * time.Duration(i) / time.Duration(len(cfg.Links))
+	offset := staggered(cfg.Interval, i, len(cfg.Links))
 	wg.Go(func() { r.device(devCtx, l, offset, d) })
 	if l.Master {
-		first := 2*cfg.Interval + cfg.OpEvery*time.Duration(l.Event)/time.Duration(eventCount(cfg.Links))
-		wg.Go(func() { *ops = r.master(opCtx, l, first) })
+		wg.Go(func() { *ops = r.master(opCtx, l, masterStart(cfg, l.Event)) })
 	}
+}
+
+// staggered is the k-th of n starts spread over period.
+func staggered(period time.Duration, k, n int) time.Duration {
+	return period * time.Duration(k) / time.Duration(n)
+}
+
+// masterStart is when an event's Master first writes: after two polls,
+// the events spread over OpEvery (US-O-13.5).
+func masterStart(cfg Config, event int) time.Duration {
+	return 2*cfg.Interval + staggered(cfg.OpEvery, event, eventCount(cfg.Links))
 }
 
 // inOrder is every Master's writes in the order they were answered.
@@ -309,7 +319,7 @@ func (r *runner) startCheckIns(ctx context.Context, wg *sync.WaitGroup) {
 		return
 	}
 	for event, roles := range rolesByEvent(r.cfg.Links) {
-		first := r.cfg.CheckInEvery * time.Duration(event) / time.Duration(eventCount(r.cfg.Links))
+		first := staggered(r.cfg.CheckInEvery, event, eventCount(r.cfg.Links))
 		wg.Go(func() { r.checkIns(ctx, roles, first) })
 	}
 }

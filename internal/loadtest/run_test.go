@@ -290,3 +290,79 @@ func TestUS_O_13_5_AllRolesRefuseCheckIn(t *testing.T) {
 		t.Errorf("errors %v, check-ins %v", res.Errors, f.checkIns)
 	}
 }
+
+// US-O-13.4, 13.5: devices, Masters and check-ins start spread out.
+func TestUS_O_13_5_Staggered(t *testing.T) {
+	if got := staggered(60*time.Second, 1, 3); got != 20*time.Second {
+		t.Errorf("staggered = %v, want 20s", got)
+	}
+	links := []Link{{Event: 1}, {Event: 2}, {Event: 3}}
+	cfg := Config{Links: links, Interval: 2 * time.Second, OpEvery: time.Minute}
+	if got := masterStart(cfg, 2); got != 44*time.Second { // 2 polls + 2/3 of a minute
+		t.Errorf("masterStart = %v, want 44s", got)
+	}
+}
+
+// A device notes only a newer version, once.
+func TestUS_O_13_6_DeviceSeesEachVersionOnce(t *testing.T) {
+	var d Device
+	seen := d.see(&snapshot{EventVersion: 3}, 0)
+	seen = d.see(&snapshot{EventVersion: 3}, seen)
+	seen = d.see(nil, seen)
+	seen = d.see(&snapshot{EventVersion: 2}, seen)
+	if seen != 3 || len(d.Sights) != 1 || d.Sights[0].Version != 3 {
+		t.Errorf("seen %d, sights %+v", seen, d.Sights)
+	}
+}
+
+// US-O-13.4: the first poll is unconditional; later ones carry the ETag,
+// which a 304 keeps.
+func TestUS_O_13_4_PollCarriesTheETag(t *testing.T) {
+	l := Link{Base: "https://t.example", Token: token(1, 0)}
+	if req := poll(context.Background(), l, ""); req.Header.Get("If-None-Match") != "" || len(req.Header.Values("If-None-Match")) != 0 {
+		t.Error("an empty ETag was sent")
+	}
+	if req := poll(context.Background(), l, `"7"`); req.Header.Get("If-None-Match") != `"7"` {
+		t.Error("the ETag was not sent")
+	}
+	_, srv, links := newFake(t, 1, 1)
+	r := &runner{cfg: Config{}, errs: map[string]int{}}
+	snap, tag, err := r.get(context.Background(), srv.Client(), links[0], "")
+	if err != nil || snap == nil || tag != `"1"` {
+		t.Fatalf("first: %v %q %v", snap, tag, err)
+	}
+	snap, tag, err = r.get(context.Background(), srv.Client(), links[0], `"1"`)
+	if err != nil || snap != nil || tag != `"1"` {
+		t.Errorf("304: %v %q %v", snap, tag, err)
+	}
+}
+
+// Only a 200 "ok" with a snapshot is an answer.
+func TestUS_O_13_8_OkAnswer(t *testing.T) {
+	snap := &snapshot{}
+	for _, c := range []struct {
+		status int
+		a      answer
+		want   bool
+	}{
+		{200, answer{Result: "ok", Snapshot: snap}, true},
+		{500, answer{Result: "ok", Snapshot: snap}, false},
+		{200, answer{Result: "invalid", Snapshot: snap}, false},
+		{200, answer{Result: "ok"}, false},
+	} {
+		if got := c.a.ok(c.status); got != c.want {
+			t.Errorf("%d %+v: %v", c.status, c.a, got)
+		}
+	}
+}
+
+// US-O-13.5: no check-ins when they are off.
+func TestUS_O_13_5_CheckInsOff(t *testing.T) {
+	f, srv, links := newFake(t, 1, 3)
+	cfg := quick(links, srv)
+	cfg.CheckInEvery = 0
+	Run(context.Background(), cfg)
+	if len(f.checkIns) != 0 {
+		t.Errorf("check-ins %v", f.checkIns)
+	}
+}
