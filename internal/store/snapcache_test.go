@@ -38,7 +38,7 @@ func (s *Store) cached(id int64) bool {
 func (s *Store) cachedN() (int64, bool) {
 	s.cache.mu.Lock()
 	defer s.cache.mu.Unlock()
-	return s.cache.gen.n, s.cache.set
+	return s.cache.gen.n, s.cache.events != nil
 }
 
 func generationOf(t *testing.T, s *Store) int64 {
@@ -149,9 +149,9 @@ func TestUS_O_14_2_PollsUseTheCacheWhileNothingChanges(t *testing.T) {
 	}
 	// What the cache holds is what is answered: planted, it shows.
 	f.s.cache.mu.Lock()
-	ce := f.s.cache.events[f.eventID]
-	ce.data.Cues = nil
-	f.s.cache.events[f.eventID] = ce
+	d := f.s.cache.events[f.eventID]
+	d.Cues = nil
+	f.s.cache.events[f.eventID] = d
 	f.s.cache.mu.Unlock()
 	if d, _ := f.s.PollSnapshot(ctx, hash("master"), at(12, 0)); len(d.Cues) != 0 {
 		t.Fatal("the poll did not use the cache")
@@ -429,28 +429,31 @@ func TestUS_O_14_8_ActionLogIndex(t *testing.T) {
 func TestUS_O_14_2_CacheRules(t *testing.T) {
 	var c snapshotCache
 	g := func(schema, n int64) generation { return generation{schema, n} }
-	c.put(g(1, 5), 1, cachedEvent{version: 1})
-	c.put(g(1, 5), 2, cachedEvent{version: 2})
+	c.put(g(1, 5), 1, SnapshotData{Version: 1})
+	c.put(g(1, 5), 2, SnapshotData{Version: 2})
 	if _, ok := c.get(g(1, 5), 2); !ok || len(c.events) != 2 {
 		t.Error("one generation did not merge")
 	}
-	c.put(g(1, 4), 3, cachedEvent{})
+	c.put(g(1, 4), 3, SnapshotData{})
 	if _, ok := c.get(g(1, 4), 3); ok || len(c.events) != 2 {
 		t.Error("an older generation was stored")
 	}
-	c.put(g(1, 6), 3, cachedEvent{})
+	c.put(g(1, 6), 3, SnapshotData{})
 	if _, ok := c.get(g(1, 5), 1); ok || len(c.events) != 1 {
 		t.Error("a newer generation kept the older events")
 	}
-	c.put(g(2, 1), 4, cachedEvent{})
+	c.put(g(2, 1), 4, SnapshotData{})
 	if _, ok := c.get(g(2, 1), 4); !ok || len(c.events) != 1 {
 		t.Error("another schema did not replace")
 	}
 	if _, ok := c.get(g(2, 2), 4); ok {
 		t.Error("a different generation was used")
 	}
+	if _, ok := c.get(g(1, 1), 4); ok {
+		t.Error("another schema with the same n was used")
+	}
 	c.clear()
-	if _, ok := c.get(g(2, 1), 4); ok || c.set {
+	if _, ok := c.get(g(2, 1), 4); ok || c.events != nil {
 		t.Error("clear kept something")
 	}
 }
