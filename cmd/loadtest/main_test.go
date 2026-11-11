@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -133,5 +134,22 @@ func TestUS_O_13_Defaults(t *testing.T) {
 		updateLimit: 2400 * time.Millisecond, writeLimit: 400 * time.Millisecond}
 	if o != want {
 		t.Errorf("defaults\n%+v\nwant\n%+v", o, want)
+	}
+}
+
+// The command exits 1 and says why when a run cannot start or did not
+// pass; the test runs itself as the command.
+func TestMainExitsOnError(t *testing.T) {
+	if os.Getenv("LOADTEST_AS_MAIN") == "1" {
+		os.Args = []string{"loadtest"}
+		main()
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMainExitsOnError$")
+	cmd.Env = append(os.Environ(), "LOADTEST_AS_MAIN=1")
+	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(out), "loadtest: -links and -out are required") {
+		t.Errorf("err = %v, output %s", err, out)
 	}
 }
