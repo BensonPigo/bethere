@@ -327,6 +327,34 @@ func TestUS_O_14_4_NoGenerationReadsDirectly(t *testing.T) {
 	}
 }
 
+// A cancellation that comes after the transaction began fails the
+// generation's read and is still the context's error, never a missing link.
+func TestUS_O_14_4_CancelledAfterBeginIsNotInvalid(t *testing.T) {
+	f := newFixture(t)
+	read, cancel := context.WithCancel(ctx)
+	afterPollBegin = cancel
+	t.Cleanup(func() { afterPollBegin = nil })
+	if _, err := f.s.PollSnapshot(read, hash("master"), at(12, 0)); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+// A read that fails partway is an error, never a missing link, and is not
+// kept.
+func TestUS_O_14_4_FailedReadIsNotKept(t *testing.T) {
+	f := newFixture(t)
+	if _, err := f.s.w.Exec(`DROP TABLE cue_acks`); err != nil { // loadAcks fails
+		t.Fatal(err)
+	}
+	_, err := f.s.PollSnapshot(ctx, hash("master"), at(12, 0))
+	if err == nil || errors.Is(err, ErrInvalidToken) || errors.Is(err, ErrEventEnded) {
+		t.Errorf("err = %v, want the database's error", err)
+	}
+	if _, set := f.s.cachedN(); set {
+		t.Error("a failed read was kept")
+	}
+}
+
 func TestUS_O_14_4_CancelledReadIsNotKept(t *testing.T) {
 	f := newFixture(t)
 	read, cancel := context.WithCancel(ctx)
@@ -403,7 +431,7 @@ func TestUS_O_14_6_EndedEventsAndThePurge(t *testing.T) {
 }
 
 // US-O-14.7: Snapshot, used by writes and previews, reads the database
-// and leaves the cache alone.
+// and leaves the cache alone: it neither fills it nor reads from it.
 func TestUS_O_14_7_SnapshotDoesNotUseTheCache(t *testing.T) {
 	f := newFixture(t)
 	if _, err := f.s.Snapshot(ctx, hash("master"), at(12, 0)); err != nil {
@@ -411,6 +439,15 @@ func TestUS_O_14_7_SnapshotDoesNotUseTheCache(t *testing.T) {
 	}
 	if _, set := f.s.cachedN(); set {
 		t.Error("Snapshot filled the cache")
+	}
+	samePoll(t, f.s, "master", at(12, 0))
+	f.s.cache.mu.Lock()
+	d := f.s.cache.events[f.eventID]
+	d.Cues = nil
+	f.s.cache.events[f.eventID] = d
+	f.s.cache.mu.Unlock()
+	if d, err := f.s.Snapshot(ctx, hash("master"), at(12, 0)); err != nil || len(d.Cues) != 3 {
+		t.Errorf("Snapshot read the cache: %d cues (%v)", len(d.Cues), err)
 	}
 }
 

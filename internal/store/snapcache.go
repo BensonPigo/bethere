@@ -65,8 +65,8 @@ func (c *snapshotCache) clear() {
 }
 
 // beforeCacheStore, when set by a test, runs before a poll stores what it
-// read.
-var beforeCacheStore func()
+// read; afterPollBegin runs right after a poll's transaction begins.
+var beforeCacheStore, afterPollBegin func()
 
 // PollSnapshot is Snapshot for GET /api/snapshot (api.md section 7 item
 // 2): one read transaction that reads the data generation first, looks the
@@ -79,6 +79,9 @@ func (s *Store) PollSnapshot(ctx context.Context, tokenHash []byte, now time.Tim
 		return SnapshotData{}, err
 	}
 	defer tx.Rollback()
+	if afterPollBegin != nil {
+		afterPollBegin()
+	}
 	g, err := readGeneration(ctx, tx)
 	if err != nil {
 		return s.uncached(ctx, tx, tokenHash, now)
