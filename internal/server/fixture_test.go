@@ -93,6 +93,14 @@ func (f *faultStore) Snapshot(ctx context.Context, h []byte, now time.Time) (sto
 	return f.Store.Snapshot(ctx, h, now)
 }
 
+func (f *faultStore) PollSnapshot(ctx context.Context, h []byte, now time.Time) (store.SnapshotData, error) {
+	f.recordDeadline(ctx)
+	if f.snapshotErr != nil {
+		return store.SnapshotData{}, f.snapshotErr
+	}
+	return f.Store.PollSnapshot(ctx, h, now)
+}
+
 func (f *faultStore) around(ctx context.Context, now time.Time, write func(context.Context, time.Time) error) error {
 	if f.beforeWrite != nil {
 		f.beforeWrite()

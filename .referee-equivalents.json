@@ -1,4 +1,22 @@
 [
+    {
+    "file": "internal/store/snapcache.go",
+    "function": "newer",
+    "line_text": "return c.events == nil || g.schema != c.gen.schema || g.n > c.gen.n",
+    "mutator": "CONDITIONALS_BOUNDARY",
+    "column": 60,
+    "reason": "n 相等時結構版本也相等的情況，put 已先由 same(g) 處理，走不到 newer；結構版本不同時前一個條件已成立",
+    "approved_by": "Benson"
+  },
+  {
+    "file": "internal/loadtest/run.go",
+    "function": "checkIns",
+    "line_text": "for tries := 0; tries < len(roles); tries++ {",
+    "mutator": "CONDITIONALS_BOUNDARY",
+    "column": 25,
+    "reason": "多出的一圈只在所有角色都不能打卡時發生，那一圈也只是檢查 skip 後跳過，不送出任何請求",
+    "approved_by": "Benson"
+  },
   {
     "file": "internal/api/body.go",
     "function": "readBody, readInt",

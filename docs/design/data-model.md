@@ -195,6 +195,11 @@ id 永不重用。規則見 `api.md` 9.6。
 
 MemberSession 與 ConsoleToken 以外鍵連到 Member（`ON DELETE CASCADE`），LoginMail 以 `ON DELETE SET NULL` 連到 Member，ConsoleToken 也連到 Event（活動刪除時一併刪除）。Organization、Member、LoginMail、MemberSession 不屬於任何活動，每日刪除不碰它們，只清掉過期或 `verified` 為空的 MemberSession、`verified` 為空的 ConsoleToken，與建立超過 24 小時的 LoginMail。公司與它的活動不會被刪除（活動到結束後 80 天才刪），所以每家公司每天 20 場、系統後台每天 5 家的上限直接以 `Event.createdAt`、`Organization.createdAt` 計算。
 
+### 資料世代（ADR-0041）
+| 實體 | 欄位 | 說明 |
+| --- | --- | --- |
+| DataGeneration | n | 恰好一列的計數器；任何一張表（SQLite 與 Litestream 自己的表除外）的新增、修改、刪除都由觸發器加 1，只增不減；不屬於任何活動，每日刪除不碰它 |
+
 ### 平移紀錄
 不另建表。平移與推進、略過一樣是「Cue 操作」，寫入 ActionLog（`type` 為 `cue.advance`、`cue.skip`、`cue.shift`），`payload` 只記下每個**實際被改到**的 Cue 在操作前後的狀態（`status`、`offsetMin`、`actualStart`、`actualEnd`），不含標題等可編輯文字；平移另記總召的要求（起點、平移量、取消勾選的 Cue），供事後檢討。復原就是把這些 Cue 還原成操作前的狀態；某次平移的量等於前後 `offsetMin` 之差。理由見 `decisions.md`。
 

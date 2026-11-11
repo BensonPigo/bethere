@@ -116,43 +116,86 @@ func (s *Store) Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (
 // loadSnapshotData reads everything of the event a snapshot is built
 // from, for owner, inside the caller's read transaction.
 func loadSnapshotData(ctx context.Context, tx *sql.Tx, owner TokenOwner, e domain.Event, v int64) (SnapshotData, error) {
-	d := SnapshotData{Owner: owner, Event: e, Version: v}
-	var err error
-	if d.Cues, err = loadSnapshotCues(ctx, tx, e.ID); err != nil {
-		return SnapshotData{}, err
+	d, err := loadEventData(ctx, tx, e, v, jobsFor(owner.RoleType))
+	d.Owner = owner
+	return d, err
+}
+
+// jobs says which of the jobs' lists a snapshot holds. Guests, tasks and
+// the checklist are read only for the owner types whose snapshot can hold
+// them, to keep the poll small; the API still decides what is shown.
+type jobs struct{ tasks, guests, checklist bool }
+
+// allJobs is every list, for the snapshot cache (ADR-0041).
+var allJobs = jobs{tasks: true, guests: true, checklist: true}
+
+var (
+	taskTypes      = map[domain.RoleType]bool{domain.Master: true, domain.Runner: true, domain.Reception: true}
+	guestTypes     = map[domain.RoleType]bool{domain.Master: true, domain.Reception: true}
+	checklistTypes = map[domain.RoleType]bool{domain.Master: true, domain.Cashier: true}
+)
+
+// jobsFor is what a role type's snapshot holds; the one rule both the
+// direct read and the snapshot cache follow.
+func jobsFor(t domain.RoleType) jobs {
+	return jobs{tasks: taskTypes[t], guests: guestTypes[t], checklist: checklistTypes[t]}
+}
+
+// strip drops the lists j does not hold.
+func (j jobs) strip(d SnapshotData) SnapshotData {
+	d.Tasks, d.Guests, d.Checklist = keep(j.tasks, d.Tasks), keep(j.guests, d.Guests), keep(j.checklist, d.Checklist)
+	return d
+}
+
+func keep[T any](ok bool, v []T) []T {
+	if ok {
+		return v
 	}
-	if d.Roles, err = loadRoles(ctx, tx, e.ID); err != nil {
-		return SnapshotData{}, err
-	}
-	if d.LastOp, err = lastUndoableOp(ctx, tx, e.ID); err != nil {
-		return SnapshotData{}, err
-	}
-	if d.Shifts, err = loadShifts(ctx, tx, e.ID); err != nil {
-		return SnapshotData{}, err
-	}
-	if d.Assigns, err = loadAssigns(ctx, tx, e.ID); err != nil {
-		return SnapshotData{}, err
-	}
-	if d.Acks, err = loadAcks(ctx, tx, e.ID); err != nil {
-		return SnapshotData{}, err
-	}
-	t := owner.RoleType
-	if t == domain.Master || t == domain.Runner || t == domain.Reception {
-		if d.Tasks, err = loadTasks(ctx, tx, e.ID); err != nil {
-			return SnapshotData{}, err
-		}
-	}
-	if t == domain.Master || t == domain.Reception {
-		if d.Guests, err = loadGuests(ctx, tx, e.ID); err != nil {
-			return SnapshotData{}, err
-		}
-	}
-	if t == domain.Master || t == domain.Cashier {
-		if d.Checklist, err = loadChecklist(ctx, tx, e.ID); err != nil {
+	return nil
+}
+
+// loadEventData reads the event's data, the lists in j included, inside
+// the caller's read transaction; Owner is left for the caller.
+func loadEventData(ctx context.Context, tx *sql.Tx, e domain.Event, v int64, j jobs) (SnapshotData, error) {
+	d := SnapshotData{Event: e, Version: v}
+	for _, step := range dataSteps(ctx, tx, e.ID, &d, j) {
+		if err := step(); err != nil {
 			return SnapshotData{}, err
 		}
 	}
 	return d, nil
+}
+
+// dataSteps are the reads that fill d, in order.
+func dataSteps(ctx context.Context, tx *sql.Tx, id int64, d *SnapshotData, j jobs) []func() error {
+	return []func() error{
+		func() (err error) { d.Cues, err = loadSnapshotCues(ctx, tx, id); return },
+		func() (err error) { d.Roles, err = loadRoles(ctx, tx, id); return },
+		func() (err error) { d.LastOp, err = lastUndoableOp(ctx, tx, id); return },
+		func() (err error) { d.Shifts, err = loadShifts(ctx, tx, id); return },
+		func() (err error) { d.Assigns, err = loadAssigns(ctx, tx, id); return },
+		func() (err error) { d.Acks, err = loadAcks(ctx, tx, id); return },
+		func() (err error) {
+			d.Tasks, err = when(j.tasks, func() ([]Task, error) { return loadTasks(ctx, tx, id) })
+			return
+		},
+		func() (err error) {
+			d.Guests, err = when(j.guests, func() ([]Guest, error) { return loadGuests(ctx, tx, id) })
+			return
+		},
+		func() (err error) {
+			d.Checklist, err = when(j.checklist, func() ([]ChecklistItem, error) { return loadChecklist(ctx, tx, id) })
+			return
+		},
+	}
+}
+
+// when runs load only if ok.
+func when[T any](ok bool, load func() ([]T, error)) ([]T, error) {
+	if !ok {
+		return nil, nil
+	}
+	return load()
 }
 
 // PreviewSnapshot reads, in one read transaction, the caller's owner (the

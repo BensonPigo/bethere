@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/BensonPigo/bethere/internal/domain"
@@ -189,14 +190,9 @@ func loadEvent(ctx context.Context, q querier, id int64) (domain.Event, int64, e
 	if err != nil {
 		return e, 0, notFound(err)
 	}
-	day, err := time.Parse(dateLayout, date)
-	if err != nil {
+	if e.Date, e.Location, err = eventDay(date, tz); err != nil {
 		return e, 0, err
 	}
-	if e.Location, err = time.LoadLocation(tz); err != nil {
-		return e, 0, err
-	}
-	e.Date = domain.Date{Year: day.Year(), Month: day.Month(), Day: day.Day()}
 	e.Status = domain.EventStatus(status)
 	e.LiveStartedAt = fromNullNS(started)
 	return e, version, nil
@@ -406,6 +402,8 @@ func (s *Store) PurgeEnded(ctx context.Context, now time.Time) ([]int64, error) 
 	if err != nil {
 		return nil, err
 	}
+	// Committed: nothing read before it stays in memory (US-O-14.6).
+	s.cache.clear()
 	skipped = append(skipped, s.purgeExpired(ctx, now)...)
 	return deleted, errors.Join(skipped...)
 }
@@ -494,4 +492,31 @@ func logAction(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, typ 
 	_, err := tx.ExecContext(ctx, `INSERT INTO action_logs (event_id, at, actor, type, payload) VALUES (?, ?, ?, ?, ?)`,
 		eventID, toNS(now), actor.String(), typ, string(body))
 	return err
+}
+
+// eventDay is an event's stored date and time zone.
+func eventDay(date, tz string) (domain.Date, *time.Location, error) {
+	day, err := time.Parse(dateLayout, date)
+	if err != nil {
+		return domain.Date{}, nil, err
+	}
+	loc, err := location(tz)
+	return domain.Date{Year: day.Year(), Month: day.Month(), Day: day.Day()}, loc, err
+}
+
+// locations keeps each time zone loaded once: every poll loads its event,
+// and time.LoadLocation parses the zone again each time.
+var locations sync.Map
+
+// location is time.LoadLocation, kept per name; a failure is not kept.
+func location(name string) (*time.Location, error) {
+	if loc, ok := locations.Load(name); ok {
+		return loc.(*time.Location), nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, err
+	}
+	locations.Store(name, loc)
+	return loc, nil
 }

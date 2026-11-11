@@ -34,6 +34,9 @@ type Store interface {
 	Healthy(ctx context.Context) error
 	LookupToken(ctx context.Context, tokenHash []byte, now time.Time) (store.TokenOwner, error)
 	Snapshot(ctx context.Context, tokenHash []byte, now time.Time) (store.SnapshotData, error)
+	// PollSnapshot is Snapshot for GET /api/snapshot, with the event data
+	// taken from memory while the data generation is unchanged (ADR-0041).
+	PollSnapshot(ctx context.Context, tokenHash []byte, now time.Time) (store.SnapshotData, error)
 	Advance(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time) (int64, domain.Op, error)
 	ApplyCueOp(ctx context.Context, eventID, expectVersion int64, actor store.Actor, now time.Time,
 		build func([]domain.Cue) (domain.Op, error)) (int64, domain.Op, error)
@@ -265,22 +268,36 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_request")
 		return
 	}
-	// The lookup and the snapshot are one read (api.md section 7); the capability check
-	// needs the role type, so it follows the read and comes before
-	// anything is shaped or sent.
+	d, now, ok := a.poll(w, r, hash)
+	if !ok {
+		return
+	}
+	a.sendSnapshot(w, r, d, now)
+}
+
+// poll reads the caller's snapshot data and checks the capability; on
+// false the answer has been written. The lookup and the snapshot are one
+// read (api.md section 7); the capability check needs the role type, so
+// it follows the read and comes before anything is shaped or sent.
+func (a *API) poll(w http.ResponseWriter, r *http.Request, hash []byte) (store.SnapshotData, time.Time, bool) {
 	ctx, cancel := context.WithTimeout(r.Context(), ReadTimeout)
 	defer cancel()
 	now := a.now()
-	d, err := a.store.Snapshot(ctx, hash, now)
+	d, err := a.store.PollSnapshot(ctx, hash, now)
 	if err != nil {
 		a.lookupFailed(w, r, err)
-		return
+		return d, now, false
 	}
 	a.seen(d.Owner, now)
 	if !allowed(capReadSnapshot, d.Owner.RoleType) {
 		writeError(w, http.StatusForbidden, "forbidden")
-		return
+		return d, now, false
 	}
+	return d, now, true
+}
+
+// sendSnapshot shapes the caller's own snapshot and sends it.
+func (a *API) sendSnapshot(w http.ResponseWriter, r *http.Request, d store.SnapshotData, now time.Time) {
 	snap, err := a.buildSnapshot(d, now)
 	if err != nil {
 		a.internal(w, r, err)
@@ -291,9 +308,14 @@ func (a *API) getSnapshot(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, err)
 		return
 	}
-	// The ETag is compared only now, after the token, the capability and
-	// the caller's own snapshot: a 304 never skips a check and only ever
-	// means "the same as what you got last" (api.md 5.7, ADR-0023).
+	writeTagged(w, r, body, now)
+}
+
+// writeTagged sends body with its ETag, or 304 when the caller has it. The
+// ETag is compared only now, after the token, the capability and the
+// caller's own snapshot: a 304 never skips a check and only ever means
+// "the same as what you got last" (api.md 5.7, ADR-0023).
+func writeTagged(w http.ResponseWriter, r *http.Request, body []byte, now time.Time) {
 	serverTime := FormatTime(now)
 	tag := etag(body, serverTime)
 	w.Header().Set("ETag", tag)

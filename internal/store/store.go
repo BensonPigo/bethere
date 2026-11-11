@@ -48,10 +48,15 @@ type Store struct {
 	r *sql.DB // read-only pool
 	// membersClosed refuses every member link for this run (US-O-12.6).
 	membersClosed atomic.Bool
+	// cache is the event data polls share (ADR-0041).
+	cache snapshotCache
 }
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
+// readIdleConns is how many read connections stay open between polls.
+const readIdleConns = 8
 
 // Open opens the database at path (tech-stack.md 2.1「不自動建庫」):
 //   - without init the file must exist and carry a migrated schema; a
@@ -93,48 +98,89 @@ func open(ctx context.Context, path string, init bool, fsys fs.FS) (*Store, erro
 }
 
 func connect(ctx context.Context, abs string, init bool, fsys fs.FS) (*Store, error) {
-	version := 0
-	if !init {
-		// Look before touching: a read-only probe leaves a bad file exactly
-		// as it was, for whoever investigates the failed restore.
-		v, err := probeVersion(ctx, abs)
-		if err != nil {
-			return nil, err
-		}
-		if v == 0 {
-			return nil, ErrEmptyDatabase
-		}
-		version = v
+	version, err := startVersion(ctx, abs, init)
+	if err != nil {
+		return nil, err
 	}
+	return openStore(ctx, abs, fsys, version)
+}
 
+// openStore opens the write connection, then the read pool.
+func openStore(ctx context.Context, abs string, fsys fs.FS, version int) (*Store, error) {
+	w, err := openWriter(ctx, abs, fsys, version)
+	if err != nil {
+		return nil, err
+	}
+	r, err := openReader(ctx, abs)
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
+	return &Store{w: w, r: r}, nil
+}
+
+// startVersion is the schema version the database starts from: 0 for a
+// new one, else what the file holds, which must not be 0.
+func startVersion(ctx context.Context, abs string, init bool) (int, error) {
+	if init {
+		return 0, nil
+	}
+	// Look before touching: a read-only probe leaves a bad file exactly
+	// as it was, for whoever investigates the failed restore.
+	return nonEmpty(probeVersion(ctx, abs))
+}
+
+// nonEmpty refuses a database whose schema version is 0.
+func nonEmpty(v int, err error) (int, error) {
+	if err == nil && v == 0 {
+		return 0, ErrEmptyDatabase
+	}
+	return v, err
+}
+
+// openWriter opens the single write connection, migrates and proves the
+// database writable.
+func openWriter(ctx context.Context, abs string, fsys fs.FS, version int) (*sql.DB, error) {
 	w, err := sql.Open("sqlite", dsn(abs, "rw", "_txlock=immediate",
 		"_pragma=journal_mode(WAL)", "_pragma=secure_delete(ON)"))
 	if err != nil {
 		return nil, err
 	}
 	w.SetMaxOpenConns(1)
-	if err := migrate(ctx, w, fsys, version); err != nil {
-		w.Close()
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
-	// Prove the database is writable now rather than at the first live
-	// operation (ADR-0012: fail at startup).
-	if err := writeProbe(ctx, w); err != nil {
-		w.Close()
-		return nil, fmt.Errorf("database not writable: %w", err)
-	}
-
-	r, err := sql.Open("sqlite", dsn(abs, "rw", "_pragma=query_only(1)"))
-	if err != nil {
+	if err := prepareWriter(ctx, w, fsys, version); err != nil {
 		w.Close()
 		return nil, err
 	}
+	return w, nil
+}
+
+// prepareWriter migrates and proves the database writable now rather than
+// at the first live operation (ADR-0012: fail at startup).
+func prepareWriter(ctx context.Context, w *sql.DB, fsys fs.FS, version int) error {
+	if err := migrate(ctx, w, fsys, version); err != nil {
+		return fmt.Errorf("migrate: %w", err)
+	}
+	if err := writeProbe(ctx, w); err != nil {
+		return fmt.Errorf("database not writable: %w", err)
+	}
+	return nil
+}
+
+// openReader opens the read-only pool.
+func openReader(ctx context.Context, abs string) (*sql.DB, error) {
+	r, err := sql.Open("sqlite", dsn(abs, "rw", "_pragma=query_only(1)"))
+	if err != nil {
+		return nil, err
+	}
+	// Polls run concurrently; with database/sql's default of 2 idle
+	// connections the rest are closed after each read and opened again
+	// (US-O-13).
+	r.SetMaxIdleConns(readIdleConns)
 	if err := r.PingContext(ctx); err != nil {
-		w.Close()
 		r.Close()
 		return nil, err
 	}
-	return &Store{w: w, r: r}, nil
+	return r, nil
 }
 
 // Healthy runs one read-only query on the read pool, so the health check
