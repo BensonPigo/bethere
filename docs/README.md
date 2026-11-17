@@ -17,7 +17,7 @@
 | [design/api.md](design/api.md) | API 規格：驗證結果、端點、權限、各角色快照、錯誤對照 |
 | [design/tech-stack.md](design/tech-stack.md) | 技術選型、部署與託管、專案結構與測試、實機驗證結果 |
 | [architecture/overview.md](architecture/overview.md) | 一頁全貌：系統情境、容器、部署視圖、橫切關注 |
-| [operations/runbook.md](operations/runbook.md) | 部署與回退、當天的維運與故障重建、婚前檢查、婚後收尾 |
+| [operations/runbook.md](operations/runbook.md) | 部署與回退、當天的維運與故障重建、婚前檢查、婚後收尾、建立活動 |
 | [process/development-process.md](process/development-process.md) | 開發流程：角色、里程碑、故事做法、三個風險邊界的審查、Git 與 CI |
 | [process/e2e-test-routes.md](process/e2e-test-routes.md) | 端對端測試路線 |
 | [process/readbody-split-plan.md](process/readbody-split-plan.md) | 計畫 RB1：把 `internal/api/body.go` 的請求解析拆到 CRAP 門檻以下，行為不變 |
