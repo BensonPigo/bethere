@@ -1,8 +1,8 @@
 # BeThere
 
-**婚禮當天的即時流程表：總召按一下「延後 10 分」，每位工作人員手機上的時間跟著變。**
+**一款即時婚禮當天時程與工作人員協調工具，當計畫有變時，讓所有人保持同步。**
 
-> Real-time run sheet for the wedding day: one tap by the coordinator, and every vendor's phone shows the new time. (UI and docs are in Traditional Chinese.)
+> A live wedding day schedule and crew coordination app that keeps everyone in sync when plans change. (UI and docs are in Traditional Chinese.)
 
 ![總召主控台：左邊是時間軸，右邊是目前環節、推進與平移按鈕](docs/images/master-console.png)
 
