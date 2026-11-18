@@ -57,55 +57,20 @@ func (s *Store) InsertCue(ctx context.Context, eventID, expectVersion int64, nc 
 			return err
 		}
 		// Every id belongs to this event before anything about it is checked.
-		i := -1 // first
-		if nc.AfterCueID != 0 {
-			if i = slices.IndexFunc(cues, func(c domain.Cue) bool { return c.ID == nc.AfterCueID }); i < 0 {
-				return domain.ErrCueNotFound
-			}
+		i, err := afterIndex(cues, nc.AfterCueID)
+		if err != nil {
+			return err
 		}
 		if err := checkAssignments(ctx, tx, eventID, nc.Roles); err != nil {
 			return err
 		}
-		if i < 0 && e.Status != domain.Draft {
-			return ErrInvalidPosition
-		}
-		title, ok := domain.CleanTitle(nc.Title)
-		if !ok || !domain.ValidNote(nc.NotePublic) || nc.DurationMin < 0 || nc.DurationMin > domain.MaxDurationMin ||
-			!e.ValidCueStart(nc.Start) {
-			return ErrInvalidCue
-		}
-		afterSeq := 0
-		if i >= 0 {
-			afterSeq = cues[i].Seq
-		}
-		for _, c := range cues[i+1:] {
-			if c.Status != domain.Pending && c.Status != domain.Skipped {
-				return ErrInvalidPosition
-			}
-		}
-		// Two steps, so the UNIQUE (event_id, seq) never sees two equal
-		// seqs halfway through the update.
-		if _, err := tx.ExecContext(ctx, `UPDATE cues SET seq = -(seq + 1) WHERE event_id = ? AND seq > ?`,
-			eventID, afterSeq); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE cues SET seq = -seq WHERE event_id = ? AND seq < 0`, eventID); err != nil {
-			return err
-		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO cues (event_id, seq, title, scheduled_start, duration_min, note_public)
-			VALUES (?, ?, ?, ?, ?, ?)`, eventID, afterSeq+1, title, toNS(nc.Start), nc.DurationMin, nullNote(nc.NotePublic))
+		title, err := checkNewCue(e, cues, i, nc)
 		if err != nil {
 			return err
 		}
-		if id, err = res.LastInsertId(); err != nil {
+		var added []int64
+		if id, added, err = insertCueAfter(ctx, tx, eventID, seqAfter(cues, i), title, nc); err != nil {
 			return err
-		}
-		added := make([]int64, 0, len(nc.Roles))
-		for _, a := range nc.Roles {
-			if err := upsertCueRole(ctx, tx, id, a); err != nil {
-				return err
-			}
-			added = append(added, a.RoleID)
 		}
 		if err := logAction(ctx, tx, eventID, actor, logInsert, assignRecord{CueID: id, Added: added}, now); err != nil {
 			return err
@@ -114,6 +79,85 @@ func (s *Store) InsertCue(ctx context.Context, eventID, expectVersion int64, nc 
 		return err
 	})
 	return id, err
+}
+
+// afterIndex is the index of the cue a new one goes after, or -1 to put it
+// first.
+func afterIndex(cues []domain.Cue, afterCueID int64) (int, error) {
+	if afterCueID == 0 {
+		return -1, nil
+	}
+	if i := slices.IndexFunc(cues, func(c domain.Cue) bool { return c.ID == afterCueID }); i >= 0 {
+		return i, nil
+	}
+	return 0, domain.ErrCueNotFound
+}
+
+// seqAfter is the seq a new cue goes after: that of cues[i], or 0 first.
+func seqAfter(cues []domain.Cue, i int) int {
+	if i < 0 {
+		return 0
+	}
+	return cues[i].Seq
+}
+
+// checkNewCue checks where a new cue goes and its fields, and returns its
+// cleaned title. A cue goes first in draft only, and never before a cue
+// that has started or finished.
+func checkNewCue(e domain.Event, cues []domain.Cue, i int, nc NewCue) (string, error) {
+	if i < 0 && e.Status != domain.Draft {
+		return "", ErrInvalidPosition
+	}
+	title, ok := newCueFields(e, nc)
+	if !ok {
+		return "", ErrInvalidCue
+	}
+	for _, c := range cues[i+1:] {
+		if c.Status != domain.Pending && c.Status != domain.Skipped {
+			return "", ErrInvalidPosition
+		}
+	}
+	return title, nil
+}
+
+// newCueFields is the cleaned title, and whether every field of a new cue
+// is within its limits.
+func newCueFields(e domain.Event, nc NewCue) (string, bool) {
+	title, ok := domain.CleanTitle(nc.Title)
+	return title, ok && domain.ValidNote(nc.NotePublic) && nc.DurationMin >= 0 && nc.DurationMin <= domain.MaxDurationMin &&
+		e.ValidCueStart(nc.Start)
+}
+
+// insertCueAfter makes room after afterSeq and writes the cue with its
+// roles. The id is returned once the cue row is written, even when a role
+// fails after it.
+func insertCueAfter(ctx context.Context, tx *sql.Tx, eventID int64, afterSeq int, title string, nc NewCue) (int64, []int64, error) {
+	// Two steps, so the UNIQUE (event_id, seq) never sees two equal
+	// seqs halfway through the update.
+	if _, err := tx.ExecContext(ctx, `UPDATE cues SET seq = -(seq + 1) WHERE event_id = ? AND seq > ?`,
+		eventID, afterSeq); err != nil {
+		return 0, nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE cues SET seq = -seq WHERE event_id = ? AND seq < 0`, eventID); err != nil {
+		return 0, nil, err
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO cues (event_id, seq, title, scheduled_start, duration_min, note_public)
+		VALUES (?, ?, ?, ?, ?, ?)`, eventID, afterSeq+1, title, toNS(nc.Start), nc.DurationMin, nullNote(nc.NotePublic))
+	if err != nil {
+		return 0, nil, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return id, nil, err
+	}
+	added := make([]int64, 0, len(nc.Roles))
+	for _, a := range nc.Roles {
+		if err := upsertCueRole(ctx, tx, id, a); err != nil {
+			return id, nil, err
+		}
+		added = append(added, a.RoleID)
+	}
+	return id, added, nil
 }
 
 // SetCueRoles makes roles the complete assignment list of a pending cue
@@ -134,54 +178,79 @@ func (s *Store) SetCueRoles(ctx context.Context, eventID, expectVersion, cueID i
 		if c.Status != domain.Pending {
 			return domain.ErrNotPending
 		}
-		current := map[int64]bool{}
-		rows, err := tx.QueryContext(ctx, `SELECT role_id FROM cue_roles WHERE cue_id = ?`, cueID)
+		current, err := cueRoleIDs(ctx, tx, cueID)
 		if err != nil {
 			return err
 		}
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			current[id] = true
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
+		rec, err := replaceCueRoles(ctx, tx, cueID, roles, current)
+		if err != nil {
 			return err
 		}
-		rec := assignRecord{CueID: cueID, Added: []int64{}, Removed: []int64{}}
-		keep := map[int64]bool{}
-		for _, a := range roles {
-			keep[a.RoleID] = true
-			if !current[a.RoleID] {
-				rec.Added = append(rec.Added, a.RoleID)
-			}
-			if err := upsertCueRole(ctx, tx, cueID, a); err != nil {
-				return err
-			}
-		}
-		for id := range current {
-			if keep[id] {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, `DELETE FROM cue_roles WHERE cue_id = ? AND role_id = ?`, cueID, id); err != nil {
-				return err
-			}
-			// Its ack goes with the assignment (api.md 9.3).
-			if _, err := tx.ExecContext(ctx, `DELETE FROM cue_acks WHERE cue_id = ? AND role_id = ?`, cueID, id); err != nil {
-				return err
-			}
-			rec.Removed = append(rec.Removed, id)
-		}
-		slices.Sort(rec.Removed)
 		if err := logAction(ctx, tx, eventID, actor, logAssign, rec, now); err != nil {
 			return err
 		}
 		_, err = bumpVersion(ctx, tx, eventID)
 		return err
 	})
+}
+
+// cueRoleIDs is the set of roles a cue is assigned to.
+func cueRoleIDs(ctx context.Context, tx *sql.Tx, cueID int64) (map[int64]bool, error) {
+	current := map[int64]bool{}
+	rows, err := tx.QueryContext(ctx, `SELECT role_id FROM cue_roles WHERE cue_id = ?`, cueID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		current[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return current, nil
+}
+
+// replaceCueRoles writes roles over the current assignments of a cue and
+// records which were added and removed.
+func replaceCueRoles(ctx context.Context, tx *sql.Tx, cueID int64, roles []Assignment, current map[int64]bool) (assignRecord, error) {
+	rec := assignRecord{CueID: cueID, Added: []int64{}, Removed: []int64{}}
+	keep := map[int64]bool{}
+	for _, a := range roles {
+		keep[a.RoleID] = true
+		if !current[a.RoleID] {
+			rec.Added = append(rec.Added, a.RoleID)
+		}
+		if err := upsertCueRole(ctx, tx, cueID, a); err != nil {
+			return rec, err
+		}
+	}
+	for id := range current {
+		if keep[id] {
+			continue
+		}
+		if err := unassign(ctx, tx, cueID, id); err != nil {
+			return rec, err
+		}
+		rec.Removed = append(rec.Removed, id)
+	}
+	slices.Sort(rec.Removed)
+	return rec, nil
+}
+
+// unassign removes a role from a cue; its ack goes with the assignment
+// (api.md 9.3).
+func unassign(ctx context.Context, tx *sql.Tx, cueID, roleID int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cue_roles WHERE cue_id = ? AND role_id = ?`, cueID, roleID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM cue_acks WHERE cue_id = ? AND role_id = ?`, cueID, roleID)
+	return err
 }
 
 // EditCue changes a cue's title and public note, in any status; never its
