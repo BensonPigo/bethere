@@ -192,7 +192,7 @@ stateDiagram-v2
 
 ## 8. 已知風險
 
-見 `docs/README.md` 的風險清單（RISK-1、RISK-3、RISK-15、RISK-16）。
+見 `status.md` 的風險清單（RISK-1、RISK-3、RISK-15、RISK-16）。
 
 ## 9. 備援 Rundown
 

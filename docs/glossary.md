@@ -50,7 +50,7 @@
 | `US-<角色>-<n>.C<m>` | 故事的情境條件 | `requirements/stories.md` |
 | `NFR-<n>` | 非功能需求與品質目標 | `requirements/scope.md` 第 4 節 |
 | `ADR-<NNNN>` | 決定（唯一的決定編號） | `decisions.md` |
-| `RISK-<n>` | 風險與待驗證項目 | `docs/README.md` 狀態節 |
+| `RISK-<n>` | 風險與待驗證項目 | `status.md` |
 
 - 只有會被跨文件引用的東西才編號；其他用名稱稱呼。
 - 測試名稱帶驗收條件編號，例如 `TestUS_M_3_2_...`。
