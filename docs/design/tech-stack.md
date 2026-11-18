@@ -56,7 +56,7 @@
 | 項目 | 選擇 | 理由 |
 | --- | --- | --- |
 | 框架 | TypeScript + Preact，Vite 打包；**不使用動態 import**，輸出單一 JS bundle | API 與 React 相同、執行期約 4 KB；單一 bundle 讓新版 Service Worker 接手時，舊頁面不會載入已被清掉的分塊 |
-| 路由 | **路徑**決定入口，不用路由函式庫：`/`（依快照中角色的畫面設定顯示主控台、快速瞄畫面、免手持畫面或平安儀表板（ADR-0025））、`/print`（備援 Rundown 列印頁）、`/recover`（復原碼入口，不需 Token）、`/new`（以邀請碼建立活動，不需 Token）、`/admin`（系統後台，以管理員連結進入，ADR-0038）。Master 的主控台、Rundown 編輯器、角色與連結管理以畫面內狀態切換。頁面間跳轉一律保留 `#t=` | 網址片段被 `#t=` 佔用，只能用路徑；Go 對這五個路徑都回傳 `index.html` |
+| 路由 | **路徑**決定入口，不用路由函式庫：`/`（依快照中角色的畫面設定顯示主控台、快速瞄畫面、免手持畫面或平安儀表板（ADR-0025））、`/print`（備援 Rundown 列印頁）、`/recover`（復原碼入口，不需 Token）、`/new`（以邀請碼建立活動，不需 Token）、`/admin`（系統後台，以管理員連結進入，ADR-0038）、`/login`（婚顧公司成員登入，不需 Token；登入信的連結帶 `#t=`，ADR-0040）、`/company`（婚顧公司頁面，ADR-0039）。Master 的主控台、Rundown 編輯器、角色與連結管理以畫面內狀態切換。頁面間跳轉一律保留 `#t=` | 網址片段被 `#t=` 佔用，只能用路徑；Go 對這七個路徑都回傳 `index.html` |
 | 型別 | 手寫 `web/src/api.ts`；後端以測試比對快照 JSON 的鍵集合，防止前後端欄位漂移 | 快照僅十幾個欄位，不值得引入產生器 |
 | 離線外殼 | `vite-plugin-pwa`（Workbox `generateSW`）預先快取打包產物（含四個入口）；`/api/` 一律不攔截；`skipWaiting` + `clientsClaim`；註冊腳本以外部檔案載入（不用 inline）；不產生 manifest | 對應 `sync-and-offline.md` 第 6 節；活動前 7 天凍結部署，當天不會出現前後端版本不一致 |
 | Web App manifest | P0 不提供；依 Token 保留的實機結果（第 5 節）再決定 | 避免 `start_url` 蓋掉帶 Token 的網址 |
