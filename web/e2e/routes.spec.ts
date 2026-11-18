@@ -230,6 +230,34 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
     await second.unroute("**/api/snapshot**");
     await expect(title(second)).toHaveText(now, { timeout: PROPAGATE_MS });
   });
+
+  await test.step("提早時，已逾時的環節不移動並在預覽中標示（US-M-2.4）", async () => {
+    // A cue inserted 5 minutes in the past is the next pending one, and already overdue.
+    const [hh, mm] = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .format(new Date()).split(":").map(Number);
+    const past = Math.max(0, hh * 60 + mm - 5);
+    test.skip(hh * 60 + mm < 2, "too close to midnight for a start 5 minutes in the past");
+    const clockText = `${String(Math.floor(past / 60)).padStart(2, "0")}:${String(past % 60).padStart(2, "0")}`;
+    const current = await title(master).innerText();
+    await openCue(master, current);
+    await master.getByRole("button", { name: "在此之後新增環節" }).click();
+    const d = master.getByRole("dialog");
+    await d.getByLabel("開始時間").fill(clockText);
+    await d.getByLabel("標題").fill("遲到的環節");
+    await d.getByRole("button", { name: "新增", exact: true }).click();
+    await expect(d).toBeHidden();
+    await master.waitForTimeout(1200);
+    await master.getByRole("button", { name: "−5", exact: true }).click();
+    const panel = master.getByRole("dialog");
+    await expect(panel.locator(".shift-title")).toHaveText("從「遲到的環節」起 −5 分");
+    const held = panel.locator(".move.overdue");
+    await expect(held).toHaveCount(1);
+    await expect(held.locator(".title")).toHaveText("遲到的環節");
+    await expect(held.locator(".times")).toHaveText(`${clockText} 已逾時，不移動`);
+    await expect(held.getByRole("checkbox")).toHaveCount(0);
+    await panel.getByRole("button", { name: "取消" }).click();
+    await expect(panel).toBeHidden();
+  });
 });
 
 // ---------------------------------------------------------------- 廠商收到變更
@@ -683,6 +711,27 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await master.waitForTimeout(1200);
     await timed("編輯 → 新秘", () => expect(stylist.locator(".preday")).toContainText("新娘化妝（加長）", { timeout: PROPAGATE_MS }));
     await expect(stylist.locator(".preday-row", { hasText: "新娘化妝（加長）" }).locator(".time")).toHaveText("09:20");
+  });
+
+  await test.step("另一台總召先改了流程表，儲存被拒並載入最新內容（US-M-10.9）", async () => {
+    // No service worker on this device, so the test can cut its reads.
+    const second = await open(browser, links, "總召", { serviceWorkers: "block" });
+    await second.getByRole("button", { name: "編輯流程表" }).click();
+    await expect(editorRow(second, 1).locator("input.title")).toHaveValue("迎賓");
+    await second.route("**/api/snapshot**", (r) => r.abort());
+    const before = await editorRow(master, 1).locator("input.duration").inputValue();
+    const longer = String(Number(before) + 5);
+    await editorRow(master, 1).locator("input.duration").fill(longer);
+    await editorRow(master, 1).getByRole("button", { name: "儲存" }).click();
+    await master.waitForTimeout(1200);
+    await editorRow(second, 1).locator("input.title").fill("迎賓（第二台）");
+    await editorRow(second, 1).getByRole("button", { name: "儲存" }).click();
+    await expect(second.getByText("流程表已被更新")).toBeVisible();
+    // The latest rundown is loaded and the first device's change is kept.
+    await expect(editorRow(second, 1).locator("input.title")).toHaveValue("迎賓");
+    await expect(editorRow(second, 1).locator("input.duration")).toHaveValue(longer);
+    await second.unroute("**/api/snapshot**");
+    await expect(editorRow(master, 1).locator("input.title")).toHaveValue("迎賓");
   });
 
   await test.step("上移與刪除環節（US-M-10.3、10.4）", async () => {
