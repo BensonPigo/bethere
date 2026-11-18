@@ -44,7 +44,7 @@ func TestMigration0002KeepsEveryRowAndTheIDCounter(t *testing.T) {
 		}
 	}
 	mustExec(`INSERT INTO events (id, name, event_date, timezone, status, recovery_code_hash, created_at)
-		VALUES (1, 'e', '2027-06-06', 'Asia/Taipei', 'Draft', ?, 0)`, hash("r"))
+		VALUES (1, 'e', '2027-06-16', 'Asia/Taipei', 'Draft', ?, 0)`, hash("r"))
 	for id, typ := range map[int]string{1: "Master", 2: "Stylist", 3: "Media"} {
 		mustExec(`INSERT INTO roles (id, event_id, name, type) VALUES (?, 1, ?, ?)`, id, typ, typ)
 	}
@@ -84,7 +84,7 @@ func TestMigration0002KeepsEveryRowAndTheIDCounter(t *testing.T) {
 		t.Errorf("access_tokens after deleting role 2 = %d, want 1 (cascade)", got)
 	}
 	if _, err := s.w.ExecContext(ctx, `INSERT INTO events (name, event_date, timezone, status, recovery_code_hash, created_at, organization_id)
-		VALUES ('e2', '2027-06-07', 'Asia/Taipei', 'Draft', ?, 0, NULL)`, hash("r2")); err != nil {
+		VALUES ('e2', '2027-06-17', 'Asia/Taipei', 'Draft', ?, 0, NULL)`, hash("r2")); err != nil {
 		t.Errorf("organization_id: %v", err)
 	}
 }
@@ -106,7 +106,7 @@ func TestRebuildThatLosesRowsIsRolledBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.w.ExecContext(ctx, `INSERT INTO events (id, name, event_date, timezone, status, recovery_code_hash, created_at)
-		VALUES (1, 'e', '2027-06-06', 'Asia/Taipei', 'Draft', ?, 0)`, hash("r")); err != nil {
+		VALUES (1, 'e', '2027-06-16', 'Asia/Taipei', 'Draft', ?, 0)`, hash("r")); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

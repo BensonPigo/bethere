@@ -162,7 +162,7 @@ func TestUS_M_1_1_MasterSeesTheWholeRundownInOrder(t *testing.T) {
 		t.Errorf("titles = %v", titles)
 	}
 	c := byTitle(t, s, "一進預備")
-	if c["scheduledStart"] != "2027-06-06T03:15:00.000Z" || c["effectiveStart"] != "2027-06-06T03:25:00.000Z" ||
+	if c["scheduledStart"] != "2027-06-16T03:15:00.000Z" || c["effectiveStart"] != "2027-06-16T03:25:00.000Z" ||
 		c["isFixed"] != true || c["status"] != "Pending" || c["durationMin"] != 15.0 || c["offsetMin"] != 10.0 || c["seq"] != 3.0 {
 		t.Errorf("一進預備 = %v", c)
 	}
@@ -182,10 +182,10 @@ func TestUS_M_1_1_MasterSeesTheWholeRundownInOrder(t *testing.T) {
 		t.Errorf("cue roles = %v", roles)
 	}
 	ev := s["event"].(map[string]any)
-	if ev["name"] != "婚宴" || ev["date"] != "2027-06-06" || ev["timezone"] != "Asia/Taipei" {
+	if ev["name"] != "婚宴" || ev["date"] != "2027-06-16" || ev["timezone"] != "Asia/Taipei" {
 		t.Errorf("event = %v", ev)
 	}
-	if s["eventStatus"] != "Draft" || s["eventVersion"] != float64(e.version()) || s["serverTime"] != "2027-06-06T01:00:00.000Z" {
+	if s["eventStatus"] != "Draft" || s["eventVersion"] != float64(e.version()) || s["serverTime"] != "2027-06-16T01:00:00.000Z" {
 		t.Errorf("status %v version %v time %v", s["eventStatus"], s["eventVersion"], s["serverTime"])
 	}
 	if l := leaks(e.get(e.master).Body.String(), e.master, e.stylist, e.stylistBTok); len(l) > 0 {
@@ -205,7 +205,7 @@ func TestUS_M_1_2_ActiveCueWithStartAndLength(t *testing.T) {
 		t.Errorf("activeCueId = %v", s["activeCueId"])
 	}
 	c := byTitle(t, s, "新娘化妝")
-	if c["status"] != "InProgress" || c["actualStart"] != "2027-06-06T00:02:00.000Z" || c["actualEnd"] != nil || c["durationMin"] != 120.0 {
+	if c["status"] != "InProgress" || c["actualStart"] != "2027-06-16T00:02:00.000Z" || c["actualEnd"] != nil || c["durationMin"] != 120.0 {
 		t.Errorf("active cue = %v", c)
 	}
 }
@@ -271,10 +271,10 @@ func TestUS_M_3_2_AdvanceMovesExactlyOneCue(t *testing.T) {
 	e.setClock(at(10, 5))
 	s := e.mustWrite(pathAdvance)
 	first, second := byTitle(t, s, "新娘化妝"), byTitle(t, s, "迎賓")
-	if first["status"] != "Completed" || first["actualEnd"] != "2027-06-06T02:05:00.000Z" {
+	if first["status"] != "Completed" || first["actualEnd"] != "2027-06-16T02:05:00.000Z" {
 		t.Errorf("completed cue = %v", first)
 	}
-	if second["status"] != "InProgress" || second["actualStart"] != "2027-06-06T02:05:00.000Z" {
+	if second["status"] != "InProgress" || second["actualStart"] != "2027-06-16T02:05:00.000Z" {
 		t.Errorf("started cue = %v", second)
 	}
 	inProgress := 0
@@ -364,7 +364,7 @@ func TestUS_M_4_1_UndoRestoresStatesAndTimes(t *testing.T) {
 	e.mustWrite(pathAdvance)
 	s := e.mustWrite(pathUndo)
 	first, second := byTitle(t, s, "新娘化妝"), byTitle(t, s, "迎賓")
-	if first["status"] != "InProgress" || first["actualStart"] != "2027-06-06T00:00:00.000Z" || first["actualEnd"] != nil {
+	if first["status"] != "InProgress" || first["actualStart"] != "2027-06-16T00:00:00.000Z" || first["actualEnd"] != nil {
 		t.Errorf("completed → in progress: %v", first)
 	}
 	if second["status"] != "Pending" || second["actualStart"] != nil {
@@ -457,11 +457,11 @@ func TestUS_ST_1_1_SnapshotCarriesTheCountdownData(t *testing.T) {
 	e.exec(`UPDATE cues SET offset_min = -5 WHERE id = ?`, e.cue["一進預備"])
 	e.setClock(at(10, 0).Add(123 * time.Millisecond))
 	s := e.snap(e.stylist)
-	if s["serverTime"] != "2027-06-06T02:00:00.123Z" {
+	if s["serverTime"] != "2027-06-16T02:00:00.123Z" {
 		t.Errorf("serverTime = %v", s["serverTime"])
 	}
 	c := byTitle(t, s, "一進預備")
-	if c["effectiveStart"] != "2027-06-06T03:10:00.000Z" || c["offsetMin"] != -5.0 || c["status"] != "Pending" ||
+	if c["effectiveStart"] != "2027-06-16T03:10:00.000Z" || c["offsetMin"] != -5.0 || c["status"] != "Pending" ||
 		c["seq"] != 3.0 || c["durationMin"] != 15.0 || c["isFixed"] != true || c["roleNote"] != "側門" || c["notePublic"] != nil {
 		t.Errorf("cue = %v", c)
 	}

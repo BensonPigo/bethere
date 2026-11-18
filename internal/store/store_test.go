@@ -22,7 +22,7 @@ var taipei = func() *time.Location {
 	return loc
 }()
 
-func at(hh, mm int) time.Time { return time.Date(2027, 6, 6, hh, mm, 0, 0, taipei) }
+func at(hh, mm int) time.Time { return time.Date(2027, 6, 16, hh, mm, 0, 0, taipei) }
 
 func hash(s string) []byte { h := sha256.Sum256([]byte(s)); return h[:] }
 
@@ -56,7 +56,7 @@ func newFixture(t *testing.T) fixture {
 	f := fixture{s: s, path: path}
 	var err error
 	f.eventID, err = s.CreateEvent(ctx, NewEvent{
-		Name: "婚宴", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "婚宴", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: hash("master"), RecoveryCodeHash: hash("recovery"),
 	}, at(0, 0).AddDate(0, -1, 0))
 	if err != nil {
@@ -119,7 +119,7 @@ func TestCreateEventAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Status != domain.Draft || e.Date != (domain.Date{Year: 2027, Month: time.June, Day: 6}) || e.Location.String() != "Asia/Taipei" {
+	if e.Status != domain.Draft || e.Date != (domain.Date{Year: 2027, Month: time.June, Day: 16}) || e.Location.String() != "Asia/Taipei" {
 		t.Errorf("event = %+v", e)
 	}
 	owner, err := f.s.LookupToken(ctx, hash("master"), at(12, 0))
@@ -372,7 +372,7 @@ func TestHashesAreSHA256Sized(t *testing.T) {
 		t.Error("short token hash accepted")
 	}
 	if _, err := f.s.CreateEvent(ctx, NewEvent{
-		Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: hash("m3"), RecoveryCodeHash: []byte("short"),
 	}, at(0, 0)); err == nil {
 		t.Error("short recovery code hash accepted")
@@ -431,13 +431,13 @@ func TestCreateEventValidatesZoneAndDate(t *testing.T) {
 		}, at(0, 0))
 		return err
 	}
-	day := domain.Date{Year: 2027, Month: time.June, Day: 6}
+	day := domain.Date{Year: 2027, Month: time.June, Day: 16}
 	for _, zone := range []string{"", "asia/taipei"} {
 		if err := create(zone, day); !errors.Is(err, ErrTimeZone) {
 			t.Errorf("zone %q: err = %v, want ErrTimeZone", zone, err)
 		}
 	}
-	for _, d := range []domain.Date{{Year: 2027, Month: time.June, Day: 31}, {Year: 10000, Month: 1, Day: 1}, {Year: -1, Month: 1, Day: 1}, {}} {
+	for _, d := range []domain.Date{{Year: 2027, Month: time.June, Day: 41}, {Year: 10000, Month: 1, Day: 1}, {Year: -1, Month: 1, Day: 1}, {}} {
 		if err := create("Asia/Taipei", d); !errors.Is(err, domain.ErrInvalidDate) {
 			t.Errorf("date %v: err = %v, want ErrInvalidDate", d, err)
 		}
@@ -453,7 +453,7 @@ func TestPurgeSkipsUnreadableEvents(t *testing.T) {
 	f := newFixture(t)
 	e, _, _ := f.s.Event(ctx, f.eventID)
 	if _, err := f.s.w.Exec(`INSERT INTO events (name, event_date, timezone, status, recovery_code_hash, created_at)
-		VALUES ('bad', '2027-06-06', 'Mars/Base', 'Draft', ?, 0)`, hash("bad")); err != nil {
+		VALUES ('bad', '2027-06-16', 'Mars/Base', 'Draft', ?, 0)`, hash("bad")); err != nil {
 		t.Fatal(err)
 	}
 	ids, err := f.s.PurgeEnded(ctx, e.PurgeAt())
@@ -507,12 +507,12 @@ func TestRescheduleEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := at(0, 0).AddDate(0, 0, -7)
-	to := domain.Date{Year: 2027, Month: time.June, Day: 13}
+	to := domain.Date{Year: 2027, Month: time.June, Day: 23}
 
 	if _, err := f.s.RescheduleEvent(ctx, f.masterBy, to, now); !errors.Is(err, ErrNoActor) {
 		t.Errorf("Master link: err = %v, want ErrNoActor", err)
 	}
-	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2027, Month: time.June, Day: 31}, now); !errors.Is(err, domain.ErrInvalidDate) {
+	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2027, Month: time.June, Day: 41}, now); !errors.Is(err, domain.ErrInvalidDate) {
 		t.Errorf("invalid date: err = %v, want ErrInvalidDate", err)
 	}
 	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2027, Month: time.May, Day: 1}, now); !errors.Is(err, domain.ErrEnded) {
@@ -529,7 +529,7 @@ func TestRescheduleEvent(t *testing.T) {
 		t.Errorf("version %d→%d (stored %d), date %v", v, nv, stored, e.Date)
 	}
 	cues, _ := f.s.Cues(ctx, f.eventID)
-	if want := time.Date(2027, 6, 13, 10, 0, 0, 0, taipei); !cues[0].ScheduledStart.Equal(want) {
+	if want := time.Date(2027, 6, 23, 10, 0, 0, 0, taipei); !cues[0].ScheduledStart.Equal(want) {
 		t.Errorf("cue 1 = %v, want %v", cues[0].ScheduledStart, want)
 	}
 	var typ string
@@ -537,11 +537,11 @@ func TestRescheduleEvent(t *testing.T) {
 		t.Errorf("logged %q (%v), want reschedule", typ, err)
 	}
 
-	liveAt := time.Date(2027, 6, 13, 9, 0, 0, 0, taipei)
+	liveAt := time.Date(2027, 6, 23, 9, 0, 0, 0, taipei)
 	if _, err := f.s.StartEvent(ctx, f.eventID, f.version(t), f.masterBy, liveAt); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2027, Month: time.June, Day: 20}, liveAt); !errors.Is(err, domain.ErrNotDraft) {
+	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2027, Month: time.June, Day: 30}, liveAt); !errors.Is(err, domain.ErrNotDraft) {
 		t.Errorf("live event: err = %v, want ErrNotDraft", err)
 	}
 }
@@ -555,11 +555,11 @@ func TestRescheduleRoundTripKeepsCues(t *testing.T) {
 	}
 	now := at(0, 0).AddDate(0, 0, -7)
 	for _, y := range []int{2199, 2100, 2027} {
-		if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: y, Month: time.June, Day: 6}, now); err != nil {
+		if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: y, Month: time.June, Day: 16}, now); err != nil {
 			t.Fatalf("to %d: %v", y, err)
 		}
 	}
-	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2262, Month: time.June, Day: 6}, now); !errors.Is(err, domain.ErrInvalidDate) {
+	if _, err := f.s.RescheduleEvent(ctx, code, domain.Date{Year: 2262, Month: time.June, Day: 16}, now); !errors.Is(err, domain.ErrInvalidDate) {
 		t.Errorf("year 2262: err = %v, want ErrInvalidDate", err)
 	}
 	cues, _ := f.s.Cues(ctx, f.eventID)

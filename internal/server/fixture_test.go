@@ -33,8 +33,8 @@ var taipei = func() *time.Location {
 	return loc
 }()
 
-// at is a time on the event day, 2027-06-06, in Taipei.
-func at(hh, mm int) time.Time { return time.Date(2027, 6, 6, hh, mm, 0, 0, taipei) }
+// at is a time on the event day, 2027-06-16, in Taipei.
+func at(hh, mm int) time.Time { return time.Date(2027, 6, 16, hh, mm, 0, 0, taipei) }
 
 var bg = context.Background()
 
@@ -160,7 +160,7 @@ func (f *faultStore) UndoLastCueOp(ctx context.Context, eventID, v int64, a stor
 
 // env is one server over one database holding the M1 test event:
 //
-//	婚宴, 2027-06-06, Asia/Taipei, Draft
+//	婚宴, 2027-06-16, Asia/Taipei, Draft
 //	roles: 總召 (Master), 新秘 (Stylist), 新秘B (Stylist)
 //	cues:  1 新娘化妝 08:00 120  新秘 "新娘房", 新秘B "B專屬備註"
 //	       2 迎賓     10:30  30  (unassigned), note "賓客入場"
@@ -216,7 +216,7 @@ func newEnv(t *testing.T) *env {
 	codeHash, _ := auth.HashRecoveryCode(e.recovery)
 	created := at(0, 0).AddDate(0, -1, 0)
 	if e.eventID, err = st.CreateEvent(bg, store.NewEvent{
-		Name: "婚宴", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "婚宴", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: auth.HashToken(e.master), RecoveryCodeHash: codeHash,
 	}, created); err != nil {
 		t.Fatal(err)

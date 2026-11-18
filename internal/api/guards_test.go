@@ -128,10 +128,10 @@ func TestPreviewWhenTheEventEndsMeanwhile(t *testing.T) {
 	}
 	defer st.Close()
 	loc, _ := time.LoadLocation("Asia/Taipei")
-	start := time.Date(2027, 6, 6, 9, 0, 0, 0, loc)
+	start := time.Date(2027, 6, 16, 9, 0, 0, 0, loc)
 	master, _ := auth.NewToken()
 	if _, err := st.CreateEvent(ctx, store.NewEvent{
-		Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: auth.HashToken(master), RecoveryCodeHash: auth.HashToken("r"),
 	}, start.AddDate(0, -1, 0)); err != nil {
 		t.Fatal(err)

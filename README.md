@@ -78,7 +78,7 @@ BETHERE_INIT=1 ./build/bethere serve -db build/dev.db  # 第一次：建立新�
 
 ## 狀態
 
-婚禮當天要用的功能都已完成，正在找人實際試用。預定 2027 年 6 月第一次用在真正的婚禮上；之前會做一次完整彩排，沒通過就改用紙本加 LINE 群組。詳細的現況與風險見 [docs/status.md](docs/status.md)。
+婚禮當天要用的功能都已完成，正在找人實際試用。預定 2027 年第一次用在真正的婚禮上；之前會做一次完整彩排，沒通過就改用紙本加 LINE 群組。詳細的現況與風險見 [docs/status.md](docs/status.md)。
 
 ## 授權
 

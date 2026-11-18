@@ -32,7 +32,7 @@ func TestMalformedValuesAreRefused(t *testing.T) {
 		// timestamp: not a string, or not RFC 3339.
 		{insertFields, `{"start":5}`},
 		{insertFields, `{"start":null}`},
-		{insertFields, `{"start":"2027-06-06 10:30"}`},
+		{insertFields, `{"start":"2027-06-16 10:30"}`},
 		// roles: not an array.
 		{assignFields, `{"roles":{}}`},
 		{assignFields, `{"roles":null}`},

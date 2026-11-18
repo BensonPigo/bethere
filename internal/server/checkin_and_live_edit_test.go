@@ -80,7 +80,7 @@ func TestUS_X_5_5_CheckInDraftLiveAndEnded(t *testing.T) {
 	e.checkIn(e.stylist, true).wantResult(t, "ok") // draft
 	e.live()
 	e.checkIn(e.stylist, false).wantResult(t, "ok")
-	e.setClock(time.Date(2027, 6, 7, 4, 0, 0, 0, taipei))
+	e.setClock(time.Date(2027, 6, 17, 4, 0, 0, 0, taipei))
 	e.checkIn(e.stylist, true).wantResult(t, "ended")
 }
 
@@ -135,7 +135,7 @@ func TestUS_M_1_6_RolesCarryLastSeenAndLink(t *testing.T) {
 	e.setClock(at(9, 5))
 	s := e.snap(e.master)
 	st := e.roleItem(t, s, e.stylistRole)
-	if st["lastSeenAt"] != "2027-06-06T01:00:00.000Z" || st["hasLink"] != true {
+	if st["lastSeenAt"] != "2027-06-16T01:00:00.000Z" || st["hasLink"] != true {
 		t.Errorf("新秘 = %v, want last seen 09:00 to the minute, has a link", st)
 	}
 	if b := e.roleItem(t, s, e.stylistB); b["lastSeenAt"] != nil {
@@ -336,7 +336,7 @@ func TestUS_M_8_1_InsertCue(t *testing.T) {
 		t.Errorf("order = %v", order)
 	}
 	c := byTitle(t, s, "長輩致詞")
-	if c["seq"] != 4.0 || c["scheduledStart"] != "2027-06-06T04:00:00.000Z" || c["offsetMin"] != 0.0 ||
+	if c["seq"] != 4.0 || c["scheduledStart"] != "2027-06-16T04:00:00.000Z" || c["offsetMin"] != 0.0 ||
 		c["status"] != "Pending" || byTitle(t, s, "敬酒")["seq"] != 5.0 || e.version() != v+1 {
 		t.Errorf("inserted = %v", c)
 	}
@@ -346,7 +346,7 @@ func TestUS_M_8_1_InsertCue(t *testing.T) {
 		t.Errorf("新秘 sees %v", n)
 	}
 	n := notice(t, rs)
-	if n == nil || n["kind"] != "assign" || n["title"] != "長輩致詞" || n["effectiveStart"] != "2027-06-06T04:00:00.000Z" {
+	if n == nil || n["kind"] != "assign" || n["title"] != "長輩致詞" || n["effectiveStart"] != "2027-06-16T04:00:00.000Z" {
 		t.Fatalf("notice = %v", n)
 	}
 	wantKeys(t, "assign notice", n, "kind", "at", "cueId", "title", "effectiveStart")
@@ -386,8 +386,8 @@ func TestUS_M_8_InsertRefusals(t *testing.T) {
 	}
 	// invalid_cue, never "ended" (security review P1).
 	for name, change := range map[string]func(map[string]any){
-		"at the end":    func(b map[string]any) { b["start"] = "2027-06-06T20:00:00Z" }, // 04:00 the next day
-		"day before":    func(b map[string]any) { b["start"] = "2027-06-05T15:59:00Z" },
+		"at the end":    func(b map[string]any) { b["start"] = "2027-06-16T20:00:00Z" }, // 04:00 the next day
+		"day before":    func(b map[string]any) { b["start"] = "2027-06-15T15:59:00Z" },
 		"blank title":   func(b map[string]any) { b["title"] = "   " },
 		"long title":    func(b map[string]any) { b["title"] = strings.Repeat("字", 101) },
 		"long note":     func(b map[string]any) { b["notePublic"] = strings.Repeat("字", 501) },
@@ -522,7 +522,7 @@ func TestUS_M_8_7_EditTitleAndNote(t *testing.T) {
 	r := e.post(pathEdit, e.master, map[string]any{"version": v, "cueId": e.cue["新娘化妝"], "title": " 新娘妝髮 ", "notePublic": "改到 B 房"})
 	r.wantResult(t, "ok")
 	c := byTitle(t, r.snapshot(t), "新娘妝髮")
-	if c == nil || c["notePublic"] != "改到 B 房" || c["scheduledStart"] != "2027-06-06T00:00:00.000Z" || e.version() != v+1 {
+	if c == nil || c["notePublic"] != "改到 B 房" || c["scheduledStart"] != "2027-06-16T00:00:00.000Z" || e.version() != v+1 {
 		t.Errorf("edited = %v", c)
 	}
 	e.post(pathEdit, e.master, map[string]any{"version": e.version(), "cueId": e.cue["迎賓"], "title": "", "notePublic": nil}).
@@ -540,7 +540,7 @@ func TestUS_M_8_7_EditTitleAndNote(t *testing.T) {
 // Another event's ids, ended or not, are a 404 without a result, never a
 // type or state error and never "ended" (api.md section 3, 6).
 func TestM2bIDsOfAnotherEventAre404(t *testing.T) {
-	for _, day := range []int{7, 1} { // live later, and already ended
+	for _, day := range []int{17, 11} { // live later, and already ended
 		e := newEnv(t)
 		e.live()
 		f := e.otherEvent(day)
@@ -619,7 +619,7 @@ func TestSnapshotETagAnd304(t *testing.T) {
 	e.setClock(at(9, 0).Add(1500 * time.Millisecond))
 	nm := e.getIfNoneMatch(e.stylist, tag)
 	if nm.Code != http.StatusNotModified || nm.Body.Len() != 0 || nm.Header().Get("ETag") != tag ||
-		nm.Header().Get("X-Server-Time") != "2027-06-06T01:00:01.500Z" || nm.Header().Get("Cache-Control") != "no-store" {
+		nm.Header().Get("X-Server-Time") != "2027-06-16T01:00:01.500Z" || nm.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("got %d %q, headers %v", nm.Code, nm.Body.String(), nm.Header())
 	}
 	// Anything but one exact strong tag is a full answer.
@@ -644,6 +644,6 @@ func TestSnapshotETagAnd304(t *testing.T) {
 	e.post(pathRevoke, e.master, map[string]any{"roleId": e.stylistRole}).wantResult(t, "ok")
 	e.getIfNoneMatch(e.stylist, tag).wantResult(t, "invalid")
 	btag := e.get(e.stylistBTok).Header().Get("ETag")
-	e.setClock(time.Date(2027, 6, 7, 4, 0, 0, 0, taipei))
+	e.setClock(time.Date(2027, 6, 17, 4, 0, 0, 0, taipei))
 	e.getIfNoneMatch(e.stylistBTok, btag).wantResult(t, "ended")
 }

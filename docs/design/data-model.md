@@ -39,7 +39,7 @@ erDiagram
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
 | id | ID | |
-| name | text | 例：「2027/06/06 婚宴」 |
+| name | text | 例：「小明與小華的婚宴」 |
 | eventDate | date | 年份限 2000～2199，Cue 時間同樣限在這個範圍，確保以奈秒儲存與日期運算不會溢位 |
 | timezone | text | 預設 `Asia/Taipei`；只接受程式內的時區清單（目前只有 `Asia/Taipei`），確保在任何主機都讀得回來 |
 | status | enum | 儲存 `Draft` / `Live`（Live 後只有總召可異動）；`Ended` 不儲存，見下方衍生值 |

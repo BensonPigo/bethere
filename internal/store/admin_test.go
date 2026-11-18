@@ -53,7 +53,7 @@ func TestUS_O_10_3_AdminInvitesPerDay(t *testing.T) {
 			t.Fatalf("invite %d: %v", i, err)
 		}
 		if i == 0 { // used at once: still counted
-			if _, err := f.s.CreateEvent(ctx, NewEvent{Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 7},
+			if _, err := f.s.CreateEvent(ctx, NewEvent{Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 17},
 				TimeZone: "Asia/Taipei", MasterName: "總召", MasterTokenHash: hash("m-x"), RecoveryCodeHash: hash("r-x"),
 				InviteHash: code}, now); err != nil {
 				t.Fatalf("the admin's code does not create an event: %v", err)
@@ -129,7 +129,7 @@ func TestUS_O_9_2_AdminOverview(t *testing.T) {
 			t.Fatal(err)
 		}
 		if len(o.Events) != 1 || o.Events[0].ID != f.eventID || o.Events[0].Name != "婚宴" || o.Events[0].Status != c.want ||
-			o.Events[0].Date != (domain.Date{Year: 2027, Month: time.June, Day: 6}) {
+			o.Events[0].Date != (domain.Date{Year: 2027, Month: time.June, Day: 16}) {
 			t.Errorf("events = %+v, want %s", o.Events, c.want)
 		}
 		if c.now == now && (len(o.Invites) != 1 || o.Invites[0].ID != id || !o.Invites[0].ExpiresAt.Equal(now.Add(InviteLife))) {

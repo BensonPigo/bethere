@@ -78,7 +78,7 @@ func fieldMappingCases() map[string]struct {
 	in   string
 	want body
 } {
-	start := time.Date(2027, 6, 6, 10, 30, 0, 0, time.UTC)
+	start := time.Date(2027, 6, 16, 10, 30, 0, 0, time.UTC)
 	return map[string]struct {
 		in   string
 		want body
@@ -89,7 +89,7 @@ func fieldMappingCases() map[string]struct {
 		"linkFields":         {`{"roleId":13}`, body{roleID: 13}},
 		"skipFields":         {`{"version":11,"cueId":14}`, body{version: 11, cueID: 14}},
 		"insertFields": {
-			`{"version":11,"afterCueId":15,"start":"2027-06-06T10:30:00Z","durationMin":20,"title":"進場","notePublic":"公開","roles":[{"roleId":13,"roleNote":"備註"},{"roleId":23,"roleNote":null}]}`,
+			`{"version":11,"afterCueId":15,"start":"2027-06-16T10:30:00Z","durationMin":20,"title":"進場","notePublic":"公開","roles":[{"roleId":13,"roleNote":"備註"},{"roleId":23,"roleNote":null}]}`,
 			body{version: 11, afterCueID: 15, start: start, durationMin: 20, title: "進場", notePublic: strPtr("公開"),
 				roles: []store.Assignment{{RoleID: 13, RoleNote: strPtr("備註")}, {RoleID: 23}}},
 		},
@@ -106,7 +106,7 @@ func fieldMappingCases() map[string]struct {
 			body{roleID: 13, origin: "https://a.example", originGiven: true},
 		},
 		"updateFields": {
-			`{"version":11,"cueId":14,"start":"2027-06-06T10:30:00Z","durationMin":20,"isFixed":true,"title":"進場","notePublic":""}`,
+			`{"version":11,"cueId":14,"start":"2027-06-16T10:30:00Z","durationMin":20,"isFixed":true,"title":"進場","notePublic":""}`,
 			body{version: 11, cueID: 14, start: start, durationMin: 20, isFixed: true, title: "進場", notePublic: strPtr("")},
 		},
 		"moveFields":          {`{"version":11,"cueId":14,"afterCueId":15}`, body{version: 11, cueID: 14, afterCueID: 15}},
@@ -139,8 +139,8 @@ func fieldMappingCases() map[string]struct {
 			body{fromCueID: 12, deltaMin: -19, excluded: []int64{21, 22}},
 		},
 		"createEventFields": {
-			`{"inviteCode":"abc-123","name":"小明與小華","date":"2027-06-06"}`,
-			body{text: "abc-123", name: "小明與小華", date: "2027-06-06"},
+			`{"inviteCode":"abc-123","name":"小明與小華","date":"2027-06-16"}`,
+			body{text: "abc-123", name: "小明與小華", date: "2027-06-16"},
 		},
 		"recoverFields": {`{"recoveryCode":"r-456"}`, body{text: "r-456"}},
 		"fieldSet{}":    {`{}`, body{}},
@@ -148,7 +148,7 @@ func fieldMappingCases() map[string]struct {
 		"emailFields":        {`{"email":"a@x.tw"}`, body{email: "a@x.tw"}},
 		"logoutFields":       {`{}`, body{}},
 		"removeMemberFields": {`{"memberId":19}`, body{memberID: 19}},
-		"companyEventFields": {`{"name":"小明與小華","date":"2027-06-07"}`, body{name: "小明與小華", date: "2027-06-07"}},
+		"companyEventFields": {`{"name":"小明與小華","date":"2027-06-17"}`, body{name: "小明與小華", date: "2027-06-17"}},
 		"openConsoleFields":  {`{"eventId":24}`, body{eventID: 24}},
 		"organizationFields": {`{"name":"甲婚顧","email":"b@x.tw"}`, body{name: "甲婚顧", email: "b@x.tw"}},
 	}

@@ -15,7 +15,7 @@
 | 快取 | 所有 `/api/` 回應（含錯誤）一律 `Cache-Control: no-store`，由中介層統一設定 |
 | 本文 | 上限 16 KB（`/api/rundown/import` 與 `import/preview` 上限 256 KB，只有這兩個端點；其中 `text` 的 100 KB 以解碼後的 UTF-8 位元組計算，JSON 跳脫後仍在 256 KB 內）；只接受單一 JSON 物件；**未知欄位一律拒絕**（400）；`version` 缺少、為 `null`、不是整數或小於 1 都回 400 |
 | 活動與角色 | Token 驗證的請求**不帶** `eventId` 或自己的 `roleId`；活動與角色一律取自 Token（杜絕跨活動與冒用他人角色） |
-| 時間 | 一律 UTC，RFC 3339（含小數秒），例如 `2027-06-06T03:15:00.123Z` |
+| 時間 | 一律 UTC，RFC 3339（含小數秒），例如 `2027-06-16T03:15:00.123Z` |
 | 跨來源 | 不回任何 `Access-Control-*` 標頭、不使用 Cookie；Token 只在標頭，所以 CSRF 不適用 |
 | 頻率限制 | 不對 Token 限頻（`access-control.md` 3.3） |
 | 日誌 | 不記錄請求標頭、本文、Token、Token 雜湊；錯誤回應只回固定的錯誤代碼，不回內部錯誤訊息（`tech-stack.md` 2.1「日誌」） |

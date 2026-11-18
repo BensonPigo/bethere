@@ -62,7 +62,7 @@ export function noticedCues(n: Notice | null): Set<string> {
 // A shift earlier is shown in a different colour and arrow (US-ST-2.5).
 export const isEarlier = (n: Notice) => n.kind === "shift" && n.deltaMin < 0;
 
-// "6/6" from "2027-06-06".
+// "6/16" from "2027-06-16".
 export function monthDay(date: string): string {
   const [, m, d] = date.split("-").map(Number);
   return m && d ? `${m}/${d}` : date;

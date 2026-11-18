@@ -111,7 +111,7 @@ func TestUS_O_11_5_OrganizationsPerDay(t *testing.T) {
 // names its company (US-O-11.3).
 func TestUS_O_11_3_OverviewListsCompanies(t *testing.T) {
 	c := newCompany(t)
-	c.event(t, "sa", "甲婚宴", 7)
+	c.event(t, "sa", "甲婚宴", 17)
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestUS_CO_2_5_MembersPerOrganization(t *testing.T) {
 // Removing a member ends their login and console links (US-CO-2.3, 2.4).
 func TestUS_CO_2_4_RemoveMemberEndsTheirLinks(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestUS_CO_2_3_ConcurrentMutualRemovalKeepsOne(t *testing.T) {
 // (US-CO-2.4).
 func TestUS_CO_2_4_RemovalRacingAConsoleLeavesNoLink(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
@@ -367,10 +367,10 @@ func TestUS_CO_2_4_RemovalRacingAConsoleLeavesNoLink(t *testing.T) {
 // nearest, then the ended ones from the latest (US-CO-3.1).
 func TestUS_CO_3_1_CompanyEventsInOrder(t *testing.T) {
 	c := newCompany(t)
-	c.event(t, "sa", "七日", 7)
-	c.event(t, "sa", "三日", 3)
-	c.event(t, "sa", "九日", 9)
-	c.event(t, "sa", "一日", 1)
+	c.event(t, "sa", "七日", 17)
+	c.event(t, "sa", "三日", 13)
+	c.event(t, "sa", "九日", 19)
+	c.event(t, "sa", "一日", 11)
 	june5 := at(10, 0).AddDate(0, 0, -1) // the 1st and 3rd ended
 	if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("june5"), june5); err != nil {
 		t.Fatal(err)
@@ -393,7 +393,7 @@ func TestUS_CO_3_1_CompanyEventsInOrder(t *testing.T) {
 // (US-CO-3.2, 3.5); the fixture's own event belongs to none.
 func TestUS_CO_3_5_EventsBelongToTheirCompany(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if _, err := c.f.s.CreateOrganization(ctx, hash("admin"), "乙", "z@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +423,7 @@ func TestUS_CO_3_4_EventsPerOrganizationDay(t *testing.T) {
 	c := newCompany(t)
 	mk := func(i int, now time.Time) error {
 		_, err := c.f.s.CreateCompanyEvent(ctx, hash("sa"), NewEvent{
-			Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 7}, TimeZone: "Asia/Taipei", MasterName: "總召",
+			Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 17}, TimeZone: "Asia/Taipei", MasterName: "總召",
 			MasterTokenHash: hash(fmt.Sprintf("m%d", i)), RecoveryCodeHash: hash(fmt.Sprintf("r%d", i)),
 		}, now)
 		return err
@@ -448,7 +448,7 @@ func TestUS_CO_3_4_EventsPerOrganizationDay(t *testing.T) {
 // 4.3): not a role's link, so no lastSeenAt key and no byTokenId.
 func TestUS_CO_4_1_ConsoleLinkActsAsTheMaster(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("ca"), before); err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestUS_CO_4_1_ConsoleLinkActsAsTheMaster(t *testing.T) {
 	if err := c.f.s.ResetRecoveryCode(ctx, o.Actor, hash("r-new"), before); !errors.Is(err, ErrNoActor) {
 		t.Errorf("reset the code with a console link: err = %v, want ErrNoActor", err)
 	}
-	if _, err := c.f.s.RescheduleEvent(ctx, o.Actor, domain.Date{Year: 2027, Month: time.June, Day: 8}, before); !errors.Is(err, ErrNoActor) {
+	if _, err := c.f.s.RescheduleEvent(ctx, o.Actor, domain.Date{Year: 2027, Month: time.June, Day: 18}, before); !errors.Is(err, ErrNoActor) {
 		t.Errorf("reschedule with a console link: err = %v, want ErrNoActor", err)
 	}
 	var actor string
@@ -507,7 +507,7 @@ func TestUS_CO_4_1_ConsoleLinkActsAsTheMaster(t *testing.T) {
 // cannot write (access-control.md section 5, rule 6).
 func TestUS_CO_2_4_StaleConsoleActorCannotWrite(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}
@@ -536,8 +536,8 @@ func TestUS_CO_2_4_StaleConsoleActorCannotWrite(t *testing.T) {
 // goes (US-CO-4.3).
 func TestUS_CO_4_3_ConsolesPerMemberEvent(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
-	other := c.event(t, "sa", "甲二", 8)
+	ev := c.event(t, "sa", "甲婚宴", 17)
+	other := c.event(t, "sa", "甲二", 18)
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), other, hash("other"), before); err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +559,7 @@ func TestUS_CO_4_3_ConsolesPerMemberEvent(t *testing.T) {
 // An ended event's console link answers ended (api.md 10.2).
 func TestUS_CO_4_4_EndedEventsConsoleIsEnded(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	late := at(9, 0).AddDate(0, 0, 3)
 	if err := c.f.s.IssueLoginLink(ctx, "a@x.tw", hash("late"), late); err != nil {
 		t.Fatal(err)
@@ -576,8 +576,8 @@ func TestUS_CO_4_4_EndedEventsConsoleIsEnded(t *testing.T) {
 // console links (US-CO-4.5).
 func TestUS_CO_4_5_RecoveryEndsConsoleLinks(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
-	other := c.event(t, "sa", "甲二", 8)
+	ev := c.event(t, "sa", "甲婚宴", 17)
+	other := c.event(t, "sa", "甲二", 18)
 	for h, id := range map[string]int64{"ca": ev, "co": other} {
 		if err := c.f.s.OpenConsole(ctx, hash("sa"), id, hash(h), before); err != nil {
 			t.Fatal(err)
@@ -598,7 +598,7 @@ func TestUS_CO_4_5_RecoveryEndsConsoleLinks(t *testing.T) {
 // ErrInvalidToken; role links work as ever (US-O-12.6).
 func TestUS_O_12_6_ClosedMemberAccess(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("ca"), before); err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func TestUS_O_12_6_ClosedMemberAccess(t *testing.T) {
 		"company": func() error { _, err := c.f.s.Company(ctx, hash("sa"), before); return err }(),
 		"create": func() error {
 			_, err := c.f.s.CreateCompanyEvent(ctx, hash("sa"), NewEvent{Name: "x",
-				Date: domain.Date{Year: 2027, Month: time.June, Day: 7}, TimeZone: "Asia/Taipei", MasterName: "總召",
+				Date: domain.Date{Year: 2027, Month: time.June, Day: 17}, TimeZone: "Asia/Taipei", MasterName: "總召",
 				MasterTokenHash: hash("mx"), RecoveryCodeHash: hash("rx")}, before)
 			return err
 		}(),
@@ -636,7 +636,7 @@ func TestUS_O_12_6_ClosedMemberAccess(t *testing.T) {
 // (US-O-12.5).
 func TestUS_O_12_5_ResetMemberAccess(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("ca"), before); err != nil {
 		t.Fatal(err)
 	}
@@ -689,7 +689,7 @@ func TestUS_O_12_MemberCommands(t *testing.T) {
 // company or another company is no link (US-CO-3.5).
 func TestUS_CO_3_5_PlantedConsoleLinkOfAnotherCompanyIsInvalid(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	a := c.member(t, "a@x.tw")
 	if _, err := c.f.s.w.Exec(`INSERT INTO console_tokens (member_id, event_id, token_hash, created_at) VALUES (?, ?, ?, 0)`,
 		a, c.f.eventID, hash("planted")); err != nil {
@@ -753,7 +753,7 @@ func TestUS_O_11_3_OverviewNeedsTheAdminLink(t *testing.T) {
 // (access-control.md 3.3).
 func TestUS_CO_4_1_ConsoleLookupFailuresAreNotInvalid(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("ca"), before); err != nil {
 		t.Fatal(err)
 	}

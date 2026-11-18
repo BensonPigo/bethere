@@ -54,7 +54,7 @@ func TestUS_M_17_5_InviteCreatesAWorkingEvent(t *testing.T) {
 	e := newEnv(t)
 	code := e.invite()
 	typed := " " + strings.ToLower(strings.ReplaceAll(code, "-", "")) + " "
-	r := e.createEvent("", eventFields(typed, "  小明與小華的婚禮 ", "2027-06-06"))
+	r := e.createEvent("", eventFields(typed, "  小明與小華的婚禮 ", "2027-06-16"))
 	r.wantResult(t, "ok")
 	wantKeys(t, "create", r.body, "result", "token", "recoveryCode")
 	tok, _ := r.body["token"].(string)
@@ -64,7 +64,7 @@ func TestUS_M_17_5_InviteCreatesAWorkingEvent(t *testing.T) {
 	}
 	snap := e.snap(tok)
 	ev, _ := snap["event"].(map[string]any)
-	if ev["name"] != "小明與小華的婚禮" || ev["date"] != "2027-06-06" || ev["timezone"] != "Asia/Taipei" || snap["eventStatus"] != "Draft" {
+	if ev["name"] != "小明與小華的婚禮" || ev["date"] != "2027-06-16" || ev["timezone"] != "Asia/Taipei" || snap["eventStatus"] != "Draft" {
 		t.Errorf("event = %v, status %v", ev, snap["eventStatus"])
 	}
 	roles, _ := snap["roles"].([]any)
@@ -75,7 +75,7 @@ func TestUS_M_17_5_InviteCreatesAWorkingEvent(t *testing.T) {
 	rec.wantResult(t, "ok")
 	e.get(newTok).wantResult(t, "ok")
 
-	e.createEvent("", eventFields(code, "再一場", "2027-06-06")).wantError(t, http.StatusUnprocessableEntity, "wrong_invite_code")
+	e.createEvent("", eventFields(code, "再一場", "2027-06-16")).wantError(t, http.StatusUnprocessableEntity, "wrong_invite_code")
 	for _, secret := range []string{code, tok, rc, newTok} {
 		if strings.Contains(e.logs.String(), secret) {
 			t.Errorf("log holds a secret: %s", e.logs.String())
@@ -89,7 +89,7 @@ func TestUS_M_17_6_BadCodesAnswerAlike(t *testing.T) {
 	code := e.invite()
 	other, _ := auth.NewRecoveryCode()
 	for _, c := range []string{other, "", "x", code + "0"} {
-		e.createEvent("", eventFields(c, "婚禮", "2027-06-06")).wantError(t, http.StatusUnprocessableEntity, "wrong_invite_code")
+		e.createEvent("", eventFields(c, "婚禮", "2027-06-16")).wantError(t, http.StatusUnprocessableEntity, "wrong_invite_code")
 	}
 	e.setClock(e.clock().Add(store.InviteLife))
 	e.createEvent("", eventFields(code, "婚禮", "2027-08-01")).wantError(t, http.StatusUnprocessableEntity, "wrong_invite_code")
@@ -100,19 +100,19 @@ func TestUS_M_17_6_BadCodesAnswerAlike(t *testing.T) {
 func TestUS_M_17_7_BadNameOrDateKeepsTheCode(t *testing.T) {
 	e := newEnv(t)
 	code := e.invite()
-	// The clock is 2027-06-06 09:00 in Taipei.
+	// The clock is 2027-06-16 09:00 in Taipei.
 	for _, f := range [][2]string{
-		{"", "2027-06-06"}, {"   ", "2027-06-06"}, {strings.Repeat("婚", 51), "2027-06-06"},
-		{"婚‮禮", "2027-06-06"}, {"婚\n禮", "2027-06-06"},
-		{"婚禮", "2027-06-05"}, {"婚禮", "2029-06-07"}, {"婚禮", "2027-02-30"},
-		{"婚禮", "2027-6-6"}, {"婚禮", ""}, {"婚禮", "2027-06-06T00:00:00Z"},
+		{"", "2027-06-16"}, {"   ", "2027-06-16"}, {strings.Repeat("婚", 51), "2027-06-16"},
+		{"婚‮禮", "2027-06-16"}, {"婚\n禮", "2027-06-16"},
+		{"婚禮", "2027-06-15"}, {"婚禮", "2029-06-17"}, {"婚禮", "2027-02-30"},
+		{"婚禮", "2027-6-16"}, {"婚禮", ""}, {"婚禮", "2027-06-16T00:00:00Z"},
 	} {
 		r := e.createEvent("", eventFields(code, f[0], f[1]))
 		if r.Code != http.StatusUnprocessableEntity || r.body["error"] != "invalid_event" {
 			t.Errorf("%q %q: %d %s", f[0], f[1], r.Code, r.Body.String())
 		}
 	}
-	e.createEvent("", eventFields(code, strings.Repeat("婚", 50), "2029-06-06")).wantResult(t, "ok")
+	e.createEvent("", eventFields(code, strings.Repeat("婚", 50), "2029-06-16")).wantResult(t, "ok")
 }
 
 // US-M-17.7: "today" is Taipei's: at 00:30 there, yesterday is refused
@@ -121,8 +121,8 @@ func TestUS_M_17_7_TodayIsTaipeis(t *testing.T) {
 	e := newEnv(t)
 	e.setClock(at(0, 30))
 	code := e.invite()
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-05")).wantError(t, http.StatusUnprocessableEntity, "invalid_event")
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-06")).wantResult(t, "ok")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-15")).wantError(t, http.StatusUnprocessableEntity, "invalid_event")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-16")).wantResult(t, "ok")
 }
 
 // The body takes exactly the three fields (api.md section 1).
@@ -131,13 +131,13 @@ func TestUS_M_17_4_BodyIsExact(t *testing.T) {
 	code := e.invite()
 	for _, b := range []string{
 		`{"inviteCode":"` + code + `","name":"婚禮"}`,
-		`{"inviteCode":"` + code + `","name":"婚禮","date":"2027-06-06","masterName":"我"}`,
-		`{"recoveryCode":"` + code + `","name":"婚禮","date":"2027-06-06"}`,
-		`{"inviteCode":1,"name":"婚禮","date":"2027-06-06"}`,
+		`{"inviteCode":"` + code + `","name":"婚禮","date":"2027-06-16","masterName":"我"}`,
+		`{"recoveryCode":"` + code + `","name":"婚禮","date":"2027-06-16"}`,
+		`{"inviteCode":1,"name":"婚禮","date":"2027-06-16"}`,
 	} {
 		e.do(http.MethodPost, pathEvents, "", b).wantError(t, http.StatusBadRequest, "bad_request")
 	}
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-06")).wantResult(t, "ok")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-16")).wantResult(t, "ok")
 }
 
 // US-M-17.10: in maintenance even a Master's link cannot create an event.
@@ -146,11 +146,11 @@ func TestUS_M_17_10_MaintenanceRefusesEvenTheMaster(t *testing.T) {
 	code := e.invite()
 	open := e.h
 	e.maintenance()
-	e.createEvent(e.master, eventFields(code, "婚禮", "2027-06-06")).wantMaintenance(t, "Master creating an event")
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-06")).wantMaintenance(t, "creating an event")
+	e.createEvent(e.master, eventFields(code, "婚禮", "2027-06-16")).wantMaintenance(t, "Master creating an event")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-16")).wantMaintenance(t, "creating an event")
 	// The code was not used.
 	e.h = open
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-06")).wantResult(t, "ok")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-16")).wantResult(t, "ok")
 }
 
 // US-M-17.6: a database failure is a server error, never "wrong code".
@@ -158,17 +158,17 @@ func TestUS_M_17_6_StoreErrorIsNotWrongCode(t *testing.T) {
 	e := newEnv(t)
 	code := e.invite()
 	e.fs.writeErr = errors.New("disk I/O error")
-	r := e.createEvent("", eventFields(code, "婚禮", "2027-06-06"))
+	r := e.createEvent("", eventFields(code, "婚禮", "2027-06-16"))
 	r.wantError(t, http.StatusInternalServerError, "internal")
 	e.fs.writeErr = nil
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-06")).wantResult(t, "ok")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-16")).wantResult(t, "ok")
 }
 
 // US-M-17.9: the creation ends well before the page gives up at 20 s.
 func TestUS_M_17_9_CreationIsBounded(t *testing.T) {
 	e := newEnv(t)
 	code := e.invite()
-	e.createEvent("", eventFields(code, "婚禮", "2027-06-06")).wantResult(t, "ok")
+	e.createEvent("", eventFields(code, "婚禮", "2027-06-16")).wantResult(t, "ok")
 	if len(e.fs.deadlines) != 1 || e.fs.deadlines[0] <= 0 || e.fs.deadlines[0] > 10*time.Second {
 		t.Errorf("deadlines = %v, want one of at most 10 s", e.fs.deadlines)
 	}

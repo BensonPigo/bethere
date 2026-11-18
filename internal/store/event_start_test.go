@@ -90,7 +90,7 @@ func TestUS_M_3_7_AdvanceBeforeTheEventDayIsRefused(t *testing.T) {
 func TestUS_M_3_6_StartRollsBackWhenNothingCanAdvance(t *testing.T) {
 	s, _ := newStore(t)
 	id, err := s.CreateEvent(ctx, NewEvent{
-		Name: "空", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "空", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: hash("m"), RecoveryCodeHash: hash("r"),
 	}, at(0, 0))
 	if err != nil {

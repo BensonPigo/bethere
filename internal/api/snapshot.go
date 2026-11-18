@@ -210,7 +210,7 @@ var (
 )
 
 // FormatTime is the one time format of the API: UTC, RFC 3339 with
-// milliseconds, e.g. 2027-06-06T03:15:00.123Z (api.md section 1).
+// milliseconds, e.g. 2027-06-16T03:15:00.123Z (api.md section 1).
 func FormatTime(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05.000Z07:00")
 }
