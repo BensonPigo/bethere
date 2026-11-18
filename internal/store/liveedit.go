@@ -108,7 +108,7 @@ func checkNewCue(e domain.Event, cues []domain.Cue, i int, nc NewCue) (string, e
 	if i < 0 && e.Status != domain.Draft {
 		return "", ErrInvalidPosition
 	}
-	title, ok := newCueFields(e, nc)
+	title, ok := validCueFields(e, nc.Title, nc.NotePublic, nc.DurationMin, nc.Start)
 	if !ok {
 		return "", ErrInvalidCue
 	}
@@ -120,12 +120,12 @@ func checkNewCue(e domain.Event, cues []domain.Cue, i int, nc NewCue) (string, e
 	return title, nil
 }
 
-// newCueFields is the cleaned title, and whether every field of a new cue
-// is within its limits.
-func newCueFields(e domain.Event, nc NewCue) (string, bool) {
-	title, ok := domain.CleanTitle(nc.Title)
-	return title, ok && domain.ValidNote(nc.NotePublic) && nc.DurationMin >= 0 && nc.DurationMin <= domain.MaxDurationMin &&
-		e.ValidCueStart(nc.Start)
+// validCueFields is the cleaned title, and whether every field of a cue
+// the Master writes is within its limits.
+func validCueFields(e domain.Event, title string, note *string, durationMin int, start time.Time) (string, bool) {
+	clean, ok := domain.CleanTitle(title)
+	return clean, ok && domain.ValidNote(note) && durationMin >= 0 && durationMin <= domain.MaxDurationMin &&
+		e.ValidCueStart(start)
 }
 
 // insertCueAfter makes room after afterSeq and writes the cue with its

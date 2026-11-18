@@ -194,3 +194,21 @@ func TestUS_M_0_2a_ImportOnlyIntoADraftWithoutCues(t *testing.T) {
 		t.Errorf("second import: err = %v, want ErrRundownExists", err)
 	}
 }
+
+// US-M-12.2: a pasted rundown with any bad row, or one that would create
+// more roles than allowed, cannot be confirmed.
+func TestUS_M_12_2_ImportCheckOK(t *testing.T) {
+	for name, tc := range map[string]struct {
+		check ImportCheck
+		want  bool
+	}{
+		"every row fine":         {ImportCheck{Problems: [][]string{nil, {}}}, true},
+		"no rows":                {ImportCheck{}, true},
+		"one bad row":            {ImportCheck{Problems: [][]string{nil, {"seq 必須是正整數"}}}, false},
+		"too many roles to make": {ImportCheck{Problems: [][]string{nil}, TooManyRoles: true}, false},
+	} {
+		if got := tc.check.OK(); got != tc.want {
+			t.Errorf("%s: OK() = %v, want %v", name, got, tc.want)
+		}
+	}
+}

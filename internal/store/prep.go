@@ -241,9 +241,8 @@ func (s *Store) UpdateCue(ctx context.Context, eventID, expectVersion int64, u C
 		if e.Status != domain.Draft {
 			return domain.ErrNotDraft
 		}
-		title, ok := domain.CleanTitle(u.Title)
-		if !ok || !domain.ValidNote(u.NotePublic) || u.DurationMin < 0 || u.DurationMin > domain.MaxDurationMin ||
-			!e.ValidCueStart(u.Start) {
+		title, ok := validCueFields(e, u.Title, u.NotePublic, u.DurationMin, u.Start)
+		if !ok {
 			return ErrInvalidCue
 		}
 		if c.OffsetMin != 0 {
@@ -283,29 +282,10 @@ func (s *Store) MoveCue(ctx context.Context, eventID, expectVersion, cueID, afte
 		if err != nil {
 			return err
 		}
-		has := func(id int64) bool { return slices.ContainsFunc(cues, func(c domain.Cue) bool { return c.ID == id }) }
-		if !has(cueID) || (afterCueID != 0 && !has(afterCueID)) {
-			return domain.ErrCueNotFound
+		if err := checkMove(e, cues, cueID, afterCueID); err != nil {
+			return err
 		}
-		if e.Status != domain.Draft {
-			return domain.ErrNotDraft
-		}
-		if afterCueID == cueID {
-			return ErrInvalidPosition
-		}
-		order := make([]int64, 0, len(cues))
-		if afterCueID == 0 {
-			order = append(order, cueID)
-		}
-		for _, c := range cues {
-			if c.ID == cueID {
-				continue
-			}
-			order = append(order, c.ID)
-			if c.ID == afterCueID {
-				order = append(order, cueID)
-			}
-		}
+		order := movedOrder(cues, cueID, afterCueID)
 		if err := renumber(ctx, tx, eventID, order); err != nil {
 			return err
 		}
@@ -316,6 +296,41 @@ func (s *Store) MoveCue(ctx context.Context, eventID, expectVersion, cueID, afte
 		_, err = bumpVersion(ctx, tx, eventID)
 		return err
 	})
+}
+
+// checkMove refuses ids of another event first, then a live event, then a
+// cue moved after itself.
+func checkMove(e domain.Event, cues []domain.Cue, cueID, afterCueID int64) error {
+	has := func(id int64) bool { return slices.ContainsFunc(cues, func(c domain.Cue) bool { return c.ID == id }) }
+	if !has(cueID) || (afterCueID != 0 && !has(afterCueID)) {
+		return domain.ErrCueNotFound
+	}
+	if e.Status != domain.Draft {
+		return domain.ErrNotDraft
+	}
+	if afterCueID == cueID {
+		return ErrInvalidPosition
+	}
+	return nil
+}
+
+// movedOrder is the cue ids in their new order: cueID right after
+// afterCueID, or first when it is 0.
+func movedOrder(cues []domain.Cue, cueID, afterCueID int64) []int64 {
+	order := make([]int64, 0, len(cues))
+	if afterCueID == 0 {
+		order = append(order, cueID)
+	}
+	for _, c := range cues {
+		if c.ID == cueID {
+			continue
+		}
+		order = append(order, c.ID)
+		if c.ID == afterCueID {
+			order = append(order, cueID)
+		}
+	}
+	return order
 }
 
 // loggedCue is everything a deleted or replaced cue had (ADR-0032).
