@@ -8,19 +8,36 @@
 ## 1. 部署與回退
 
 - 專案：`ops/gcp/` 的每支腳本都要先設定 `PROJECT`（正式專案的 ID 只存在本機的 `ops/gcp/prod-project`，不進版本控制，所以是 `export PROJECT=$(cat ops/gcp/prod-project)`），沒設就拒絕執行，開始時印出操作的專案；演練一律用暫存專案的 ID。可用區不必指定，腳本跟著 VM 實際所在的可用區。
-- 部署：`ops/gcp/release.sh` 上傳發行版 → `ops/gcp/deploy.sh <版本>` 先確認發行版、Caddy 與 Litestream 都在 bucket 裡，把被換下的版本記為「上一版」（metadata `bethere-previous-version`），改 metadata、依本機的 `ops/gcp/vm-startup.sh` 重新佈置啟動腳本與服務設定，再重啟服務；最後在 VM 上確認版本，並從外部確認網站處於服務啟動時的模式（開放或維護）。`ops/gcp/deploy.sh` 不帶版本時只列出目前版本、上一版與最近上傳的版本；回退是 `ops/gcp/deploy.sh <上一版>`。上傳過的版本不一定部署過，回退一律照「上一版」，不照上傳順序。
+- 部署：`ops/gcp/release.sh` 上傳發行版 →
+  - `ops/gcp/deploy.sh <版本>` 先確認發行版、Caddy 與 Litestream 都在 bucket 裡，把被換下的版本記為「上一版」（metadata `bethere-previous-version`），改 metadata、依本機的 `ops/gcp/vm-startup.sh` 重新佈置啟動腳本與服務設定，再重啟服務；
+  - 最後在 VM 上確認版本，並從外部確認網站處於服務啟動時的模式（開放或維護）。`ops/gcp/deploy.sh` 不帶版本時只列出目前版本、上一版與最近上傳的版本；
+  - 回退是 `ops/gcp/deploy.sh <上一版>`。上傳過的版本不一定部署過，回退一律照「上一版」，不照上傳順序。
 - 維護模式（規則見 `requirements/stories.md` US-O-2）：`ops/gcp/maintenance.sh on|off|status`。`on` 開啟並重啟；`off` 解除、刪除還原標記並重啟；`status` 顯示 metadata、還原標記與服務實際的模式。三者最後都從外部確認：維護中 `/api/ping` 回 503 `maintenance`，開放時回 200。從備份還原的資料庫會一直維持維護模式，直到 `off`。維護中只能部署支援維護模式的版本，要回退到更舊的版本先 `off`。
 - 重建：`ops/gcp/rebuild.sh`（第 2 節程序 2）刪掉舊 VM 後呼叫 `ops/gcp/create-vm.sh`；`create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台，每次都建一顆名稱不重複的新開機磁碟；新 VM 一律帶 `bethere-maintenance=1`。重建後測試服務的網域不會沿用，要再執行一次 `ops/gcp/e2e-setup.sh`。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原，並以維護模式啟動。第一次部署時以 `ops/gcp/init-db.sh` 建立空資料庫後，執行 `ops/gcp/maintenance.sh off`。
 - 邀請碼（ADR-0036）：`ops/gcp/invite.sh` 在正式資料庫產生一組邀請碼，印出編號與邀請碼各一次，交給受邀的人在 `/new` 建立活動（不支援的舊版會回 `unknown command`）。記下編號給了誰：建立活動的操作紀錄只記編號。
 - 系統後台（ADR-0038）：`ops/gcp/admin-link.sh` 在正式資料庫產生管理員連結，印出一次，舊的立即失效；存在自己的密碼管理工具，打開就能發邀請碼、看所有活動。懷疑外流、從備份還原後都再執行一次。
 - 客服信箱（US-O-8、ADR-0037）：`ops/gcp/support-email.sh <信箱>` 設定、`ops/gcp/support-email.sh none` 清除。信箱放在專案層級的 metadata，重建 VM 也沿用。腳本不重啟服務，新的信箱從服務下次啟動起顯示：主機開著時以 `ops/gcp/deploy.sh <目前版本>` 重新部署同一版（「上一版」不變），關著時就是下次 `power.sh on`；之後開 `https://<網域>/support.json` 確認。凍結期不換信箱。由開發者（專案擁有者）執行，備援操作者沒有寫 metadata 的權限。
-- 寄登入信（ADR-0040）：開一個專用的 Gmail，開啟兩步驟驗證，在 Google 帳戶的「應用程式密碼」產生一組；執行 `ops/gcp/mail.sh <Gmail 地址>`，照提示貼上應用程式密碼（不會顯示）。腳本只設定、不重啟服務，同客服信箱以 `ops/gcp/deploy.sh <目前版本>` 重新部署同一版後生效；之後在 `/login` 寄一封給自己確認。`ops/gcp/mail.sh none` 停止寄信。懷疑密碼外流、懷疑主機被入侵，以及婚後收回備援操作者權限時，都在 Google 帳戶撤銷那組應用程式密碼，再產生一組重設（能登入主機的人讀得到它，`design/access-control.md` 第 1 節）；重設後重新部署、寄一封給自己確認，沒收到時看 `mail` 彙總行是「失敗」、「上限」還是「佇列已滿」（壞掉期間可能已用掉額度）；沒有任何 `mail` 行表示信已交給 Gmail，或那個 email 不是成員，先查垃圾信件匣。成員說收不到登入信時，先看服務日誌（`journalctl -u bethere`）以 `mail` 開頭的紀錄：寄信失敗、因上限或排隊已滿而不寄的彙總件數與最後一次錯誤的狀態碼；日誌不記是哪位成員，所以分不出某個人是哪一種。寄信失敗的也算進上限，所以寄信帳號修好後，那段期間用掉的額度要 24 小時內才會恢復；在那之前的救援用 `bethere issue-login-link`。寄信壞掉時，成員的救援見 `requirements/stories.md` US-O-12.8：經 IAP 登入主機執行 `bethere issue-login-link`，把印出的連結交給他。
+- 寄登入信（ADR-0040）：開一個專用的 Gmail，開啟兩步驟驗證，在 Google 帳戶的「應用程式密碼」產生一組；執行 `ops/gcp/mail.sh <Gmail 地址>`，照提示貼上應用程式密碼（不會顯示）。
+  - 腳本只設定、不重啟服務，同客服信箱以 `ops/gcp/deploy.sh <目前版本>` 重新部署同一版後生效；之後在 `/login` 寄一封給自己確認。
+  - `ops/gcp/mail.sh none` 停止寄信。
+  - 懷疑密碼外流、懷疑主機被入侵，以及婚後收回備援操作者權限時，都在 Google 帳戶撤銷那組應用程式密碼，再產生一組重設（能登入主機的人讀得到它，`design/access-control.md` 第 1 節）；重設後重新部署、寄一封給自己確認，沒收到時看 `mail` 彙總行是「失敗」、「上限」還是「佇列已滿」（壞掉期間可能已用掉額度）；沒有任何 `mail` 行表示信已交給 Gmail，或那個 email 不是成員，先查垃圾信件匣。
+  - 成員說收不到登入信時，先看服務日誌（`journalctl -u bethere`）以 `mail` 開頭的紀錄：寄信失敗、因上限或排隊已滿而不寄的彙總件數與最後一次錯誤的狀態碼；日誌不記是哪位成員，所以分不出某個人是哪一種。
+  - 寄信失敗的也算進上限，所以寄信帳號修好後，那段期間用掉的額度要 24 小時內才會恢復；在那之前的救援用 `bethere issue-login-link`。
+  - 寄信壞掉時，成員的救援見 `requirements/stories.md` US-O-12.8：經 IAP 登入主機執行 `bethere issue-login-link`，把印出的連結交給他。
 - 換上寄信登入的版本時（US-CO-1.13）：第一次部署之後，立即再發行並部署一個新版本（同一份程式重新建置即可），讓「上一版」也支援寄信登入；之後每個上一版都支援。所有成員要收信重新登入、重開主控台。只要 email 就能登入的期間任何人都可能進過公司，所以：
   - 開發者事先通知各公司，請每家公司核對成員清單與活動清單，多出來的成員自己移除、不認得的活動告知開發者。
   - 開發者在主機上查操作紀錄中 actor 以 `member:` 開頭的角色新增與重發，列給那場活動的公司，請他們在主控台撤銷或重發不認得的角色連結。
-- 監控（US-O-7）：`ALERT_EMAIL=<信箱> ops/gcp/monitoring.sh` 建立外部探測與告警，網站打不開時約 3～5 分鐘後寄信，恢復時再寄一封。開發期主機平時關機，一律以 `ops/gcp/power.sh on|off` 開關，告警跟著開關；在 Cloud 網頁主控台直接關機，告警會一直寄信。`ops/gcp/power.sh status` 顯示主機與告警的狀態；重建或主機狀態不明時先看它，告警沒開就執行 `ops/gcp/power.sh on`（主機已開也可以，只會打開告警）。凍結期起主機一直開著，**不要**執行 `power.sh off`：它會連告警一起關掉。
+- 監控（US-O-7）：`ALERT_EMAIL=<信箱> ops/gcp/monitoring.sh` 建立外部探測與告警，網站打不開時約 3～5 分鐘後寄信，恢復時再寄一封。開發期主機平時關機，一律以 `ops/gcp/power.sh on|off` 開關，告警跟著開關；
+  - 在 Cloud 網頁主控台直接關機，告警會一直寄信。`ops/gcp/power.sh status` 顯示主機與告警的狀態；
+  - 重建或主機狀態不明時先看它，告警沒開就執行 `ops/gcp/power.sh on`（主機已開也可以，只會打開告警）。凍結期起主機一直開著，**不要**執行 `power.sh off`：它會連告警一起關掉。
 - 開啟備份：`ops/gcp/setup.sh` 建立備份 bucket → `ops/gcp/release.sh` 上傳 Litestream → 備份之前建立的 VM 執行一次 `ops/gcp/backup-setup.sh`；之後建立的 VM 由 `create-vm.sh` 帶好設定。
-- 負載測試（US-O-13）：只在暫存專案。`ops/gcp/setup.sh` → `ops/gcp/release.sh` → `ops/gcp/create-vm.sh <版本>` → `ops/gcp/init-db.sh` → `ops/gcp/maintenance.sh off` → `ops/gcp/loadtest-setup.sh > links.txt`（3 場活動的 150 條連結，正式專案拒絕執行）→ 在東京另開一台發起測試的主機（`asia-northeast1`，不掛服務帳號，只開 IAP 的 ssh），把 `GOOS=linux go build ./cmd/loadtest` 的執行檔與連結檔複製過去，以 `systemd-run` 執行 `loadtest -links links.txt -out result.json`（預設 60 分鐘，沒通過時結束碼為 1）。測完 `gcloud projects delete <暫存專案>`，連結檔一併刪除。
+- 負載測試（US-O-13）：只在暫存專案。`ops/gcp/setup.sh` →
+  - `ops/gcp/release.sh` →
+  - `ops/gcp/create-vm.sh <版本>` →
+  - `ops/gcp/init-db.sh` →
+  - `ops/gcp/maintenance.sh off` →
+  - `ops/gcp/loadtest-setup.sh > links.txt`（3 場活動的 150 條連結，正式專案拒絕執行）→
+  - 在東京另開一台發起測試的主機（`asia-northeast1`，不掛服務帳號，只開 IAP 的 ssh），把 `GOOS=linux go build ./cmd/loadtest` 的執行檔與連結檔複製過去，以 `systemd-run` 執行 `loadtest -links links.txt -out result.json`（預設 60 分鐘，沒通過時結束碼為 1）。測完 `gcloud projects delete <暫存專案>`，連結檔一併刪除。
 - 資料庫結構只由遷移改變：不要在主機上以 `sqlite3` 等工具建立、刪除或重建表與觸發器，也不要改 `data_generation`，否則輪詢可能一直拿到舊資料（ADR-0041），重啟也不會恢復，要由開發者處理。改資料列不必重啟（觸發器照樣記下）。從備份還原一律在服務啟動之前。
 - 活動前 7 天起凍結部署。
 
@@ -53,7 +70,9 @@ sequenceDiagram
     Note over Dev,VM: 回退 = 以上一版的版本號再跑一次 deploy.sh
 ```
 
-- 不退回到寄信登入之前的版本：那些版本（包括 M4 以前的所有版本）只要 email 就能登入或沒有成員登入（RISK-20）。`deploy.sh`、`rebuild.sh`、`create-vm.sh` 在動手之前就拒絕它們，主機啟動時也會再拒絕一次（`design/tech-stack.md`「寄信」）；一律用最新的 main 執行腳本。凍結前確認上一版也支援（第 3 節），當天照手冊退版就不會碰到。真的只剩那之前的版本能用時，由開發者在本機暫時拿掉兩道檢查再部署；換回時以原本的腳本部署，退回期間產生的登入連結與主控台連結自動失效（US-CO-1.13），其餘照上一項核對，並發行一個新版本讓「上一版」重新支援。
+- 不退回到寄信登入之前的版本：那些版本（包括 M4 以前的所有版本）只要 email 就能登入或沒有成員登入（RISK-20）。`deploy.sh`、`rebuild.sh`、`create-vm.sh` 在動手之前就拒絕它們，主機啟動時也會再拒絕一次（`design/tech-stack.md`「寄信」）；
+  - 一律用最新的 main 執行腳本。凍結前確認上一版也支援（第 3 節），當天照手冊退版就不會碰到。真的只剩那之前的版本能用時，由開發者在本機暫時拿掉兩道檢查再部署；
+  - 換回時以原本的腳本部署，退回期間產生的登入連結與主控台連結自動失效（US-CO-1.13），其餘照上一項核對，並發行一個新版本讓「上一版」重新支援。
 
 ## 2. 當天的維運
 
@@ -73,19 +92,29 @@ sequenceDiagram
   1. **退回上一個發行版**：`ops/gcp/deploy.sh` 看「previous」那一行，再 `ops/gcp/deploy.sh <上一版>`。退版之後「previous」變成剛退掉的那版，不要再照它退一次。
   2. **VM 或磁碟故障**（啟動門檻：服務中斷超過約 10 分鐘仍未自行恢復；放棄條件：開始後超過 30 分鐘、`rebuild.sh` 同一步失敗兩次、舊 VM 刪不掉（靜態 IP 仍被佔用）或在兩個可用區都建不出新的 e2-micro，就停止並改靠離線快取與紙本）：
      1. 執行 `PROJECT=$(cat ops/gcp/prod-project) ops/gcp/rebuild.sh <紙本上記錄的目前版本號> [可用區]`。版本號必須支援維護模式，否則還原後服務不會啟動。可用區省略時沿用舊 VM 的（沒有舊 VM 時是 `asia-east1-b`）；舊 VM 所在的可用區故障時，改指定 `asia-east1` 的另一個（例如 `asia-east1-c`）。腳本依序：
-        - **先檢查、不刪任何東西**：版本號格式；發行版、Caddy 與 Litestream 都在 bucket 裡；靜態 IP 存在；可用區在 `asia-east1`、確實存在且有 e2-micro；備份 bucket 裡有備份。殼層裡殘留的 `ZONE` 不算數，只有指令的第二個參數能換可用區。從舊 VM 讀出網域與上一版；舊 VM 已經不在時，照紙本另外設定 `DOMAIN` 與 `PREVIOUS_VERSION`（例如 `DOMAIN=203-0-113-10.sslip.io PREVIOUS_VERSION=c406027-20261027032903`；沒有上一版時寫 `PREVIOUS_VERSION=none`），網域只寫主機名稱，不加 `https://` 或斜線。殼層裡殘留的 `DOMAIN` 或 `PREVIOUS_VERSION` 與舊 VM 的不同時，腳本拒絕執行；照紙本給的上一版必須在發行版 bucket 裡；舊 VM 記錄的上一版若已從 bucket 刪掉，腳本提出警告，重建後不記上一版。
+        - **先檢查、不刪任何東西**：版本號格式；發行版、Caddy 與 Litestream 都在 bucket 裡；靜態 IP 存在；可用區在 `asia-east1`、確實存在且有 e2-micro；備份 bucket 裡有備份。
+          - 殼層裡殘留的 `ZONE` 不算數，只有指令的第二個參數能換可用區。
+          - 從舊 VM 讀出網域與上一版；舊 VM 已經不在時，照紙本另外設定 `DOMAIN` 與 `PREVIOUS_VERSION`（例如 `DOMAIN=203-0-113-10.sslip.io PREVIOUS_VERSION=c406027-20261027032903`；沒有上一版時寫 `PREVIOUS_VERSION=none`），網域只寫主機名稱，不加 `https://` 或斜線。
+          - 殼層裡殘留的 `DOMAIN` 或 `PREVIOUS_VERSION` 與舊 VM 的不同時，腳本拒絕執行；照紙本給的上一版必須在發行版 bucket 裡；舊 VM 記錄的上一版若已從 bucket 刪掉，腳本提出警告，重建後不記上一版。
         - 列出要刪除的 VM（名稱、可用區、狀態、建立時間）與要用的網域、上一版，要你打出專案 ID 才繼續。看到的 VM 若是剛恢復正常、已經解除維護的那台，不要確認；沒有舊 VM 時，核對畫面上的網域與上一版和紙本相同。
         - 刪除所有 VM（保留磁碟，之後不再掛載）→ 建立恰好一台新 VM：新的、名稱不重複的空開機磁碟，沿用靜態 IP、網域與上一版，`bethere-maintenance=1`；啟動腳本自動從 GCS 還原。
         - 從外部等 `https://<網域>/api/ping` 回 503 `maintenance`，最多 10 分鐘：回得到就表示開機、還原、憑證與服務都好了，且停在維護模式。這不保證資料是最新的，資料由步驟 5 的總召核對。
         - 再等到 ssh 連得上新 VM，最多 2 分鐘（網站回應後，IAP 可能還要約一分鐘才連得到），因為步驟 6 的解除維護要用 ssh。
         - 印出花了幾分鐘、接下來的步驟，以及沒有掛在任何 VM 上的磁碟（婚後依第 4 節刪除）。
-     2. 任何一步失敗，腳本停下並印出「STOPPED at: 哪一步、已經幾分鐘」與該怎麼做：檢查失敗時這次執行什麼都沒刪，修正後重跑；刪除或建立 VM 失敗時，照它印出的「Run it again:」整行指令重跑，裡面已帶好專案、網域、上一版、版本號與可用區（建立失敗時可把最後的可用區換成另一個；換版本號重跑會把沒起來的那版記成上一版）；等候逾時時，新 VM 可能只是還沒好，先等幾分鐘，照它印出的 `curl` 指令從外部看（不經 ssh；`maintenance.sh status` 會先用 ssh，新 VM 剛起來時可能連不上，不能當作起不來的證據），回 `maintenance` 就是好了，確定起不來才重跑（重跑會刪掉這台、再申請一次憑證）；只停在等 ssh 時網站已經好了，不要重跑：照樣做步驟 5，幾分鐘後再做步驟 6；仍然連不上時，看它印出的錯誤，檢查 IAP 權限與防火牆。自己記下失敗次數：同一步失敗第二次，或從開始已超過 30 分鐘，就放棄。
+     2. 任何一步失敗，腳本停下並印出「STOPPED at: 哪一步、已經幾分鐘」與該怎麼做：檢查失敗時這次執行什麼都沒刪，修正後重跑；
+        - 刪除或建立 VM 失敗時，照它印出的「Run it again:」整行指令重跑，裡面已帶好專案、網域、上一版、版本號與可用區（建立失敗時可把最後的可用區換成另一個；換版本號重跑會把沒起來的那版記成上一版）；
+        - 等候逾時時，新 VM 可能只是還沒好，先等幾分鐘，照它印出的 `curl` 指令從外部看（不經 ssh；`maintenance.sh status` 會先用 ssh，新 VM 剛起來時可能連不上，不能當作起不來的證據），回 `maintenance` 就是好了，確定起不來才重跑（重跑會刪掉這台、再申請一次憑證）；
+        - 只停在等 ssh 時網站已經好了，不要重跑：照樣做步驟 5，幾分鐘後再做步驟 6；
+        - 仍然連不上時，看它印出的錯誤，檢查 IAP 權限與防火牆。
+        - 自己記下失敗次數：同一步失敗第二次，或從開始已超過 30 分鐘，就放棄。
      3. 只能有一位操作者執行：兩個人同時重跑，會互相刪掉對方剛建好的 VM。
      4. 每次重建都會向 Let's Encrypt 申請一次憑證，同一個網域一週最多 5 次；演練不要對同一個網域連續重建。
      5. 請總召用 Master 連結確認 Rundown 與 Cue 狀態是最新的，並在角色與連結管理畫面確認各角色的連結狀態（未發／有效／已撤銷）。此時其他角色仍被擋、`lastSeenAt` 已歸零，「最近有人在用」必定是空的，不必核對。
         - 資料略舊：總召在維護模式下直接補登（Master 可寫入）。
         - 備份時間點之後若曾以 `reset-recovery-code` 重設復原碼，還原後外流的舊碼又會有效，備援操作者手上的新碼反而無效：先由開發者再重設一次，憑證用總召手上的 Master 連結（還原後仍有效時），否則用重設前的舊紙本碼；新碼交給備援操作者，再做下一步。兩者都不能用時同 RISK-19（`status.md`）。
-        - 婚顧公司：服務啟動時已刪除所有成員的登入連結、登入信連結與主控台連結（`requirements/stories.md` US-O-12.5），成員要重新登入、重開主控台，開著的主控台會收到「連結已失效」。`maintenance.sh status` 提示「成員連結尚未清除」時（服務日誌有 `member-reset` 開頭的錯誤，或安裝的版本不支援），公司端點不開放，婚禮照常；之後以支援的版本重新啟動服務即可，不必擋著解除維護。開發者通知所有公司：備份時間點之後移除的成員又回到公司，請核對，由開發者以 `bethere remove-member` 再移除；備份時間點之後曾以復原碼換發總召連結的，請在 `/recover` 再換發一次；備份時間點之後在公司頁面建立的活動不見了，要重建。
+        - 婚顧公司：服務啟動時已刪除所有成員的登入連結、登入信連結與主控台連結（`requirements/stories.md` US-O-12.5），成員要重新登入、重開主控台，開著的主控台會收到「連結已失效」。
+          - `maintenance.sh status` 提示「成員連結尚未清除」時（服務日誌有 `member-reset` 開頭的錯誤，或安裝的版本不支援），公司端點不開放，婚禮照常；之後以支援的版本重新啟動服務即可，不必擋著解除維護。
+          - 開發者通知所有公司：備份時間點之後移除的成員又回到公司，請核對，由開發者以 `bethere remove-member` 再移除；備份時間點之後曾以復原碼換發總召連結的，請在 `/recover` 再換發一次；備份時間點之後在公司頁面建立的活動不見了，要重建。
         - 開發者以 `ops/gcp/admin-link.sh` 重新產生一次管理員連結：備份時間點之後若曾因外流重新產生，還原後被取代的舊連結又會有效。
         - 一律由備援操作者以復原碼在 `/recover` **再換發一次** Master 連結，傳給總召：備份時間點之後若曾換發，還原後舊的 Master 連結又會有效。
         - 以邀請碼建立的活動沒有備援操作者：開發者通知那些建立者，若備份時間點之後曾以復原碼換發總召連結，請自己在 `/recover` 再換發一次。
@@ -164,7 +193,9 @@ sequenceDiagram
 - 婚後數天內：把告警改回只通知開發者；確認備援操作者的 IAM 權限已到期失效；以例行的還原流程**重建一次 VM**（權限期間若被留下 ssh 金鑰、cron 等後門，不會隨權限到期而消失）；刪除**所有**不再使用的磁碟，以及演練用的暫存專案。
 - 事後紀錄匯出在 `endsAt` 後 80 天內完成。
 - VM 常駐到每日排程完成刪除（`endsAt` 後第 81 天）。若要提早停機省錢，改為在停機前手動刪除 VM、所有磁碟與備份 bucket。
-- 每日刪除在服務啟動時執行一次，之後每 24 小時一次；每次在服務日誌（`journalctl -u bethere`）留下以 `purge` 開頭的紀錄：成功時記錄當時的時鐘、刪除的活動 id 與筆數，失敗時記錄錯誤。主機時鐘落在 2000～2199 年以外時不刪並記錄錯誤。刪錯時只能在 72 小時內以 Litestream 還原到刪除前的時間點（尚未演練），還原前先建立 `/var/lib/bethere/maintenance.forced` 與 `/var/lib/bethere/member-reset.pending`（之後照第 2 節程序 2 的步驟 5、6 解除維護；成員的連結在服務啟動時刪除，`design/api.md` 10.2）；而且要先修正原因（例如主機時鐘），否則服務一啟動又會刪掉；照規則到期的活動還原回來也會再被刪，要留下只能改程式。
+- 每日刪除在服務啟動時執行一次，之後每 24 小時一次；每次在服務日誌（`journalctl -u bethere`）留下以 `purge` 開頭的紀錄：成功時記錄當時的時鐘、刪除的活動 id 與筆數，失敗時記錄錯誤。
+  - 主機時鐘落在 2000～2199 年以外時不刪並記錄錯誤。
+  - 刪錯時只能在 72 小時內以 Litestream 還原到刪除前的時間點（尚未演練），還原前先建立 `/var/lib/bethere/maintenance.forced` 與 `/var/lib/bethere/member-reset.pending`（之後照第 2 節程序 2 的步驟 5、6 解除維護；成員的連結在服務啟動時刪除，`design/api.md` 10.2）；而且要先修正原因（例如主機時鐘），否則服務一啟動又會刪掉；照規則到期的活動還原回來也會再被刪，要留下只能改程式。
 - 第 85 天驗收：確認活動已從資料庫刪除、備份 bucket 上只剩刪除後產生的快照；未達成就手動刪除 VM、磁碟與 bucket。
 
 ## 5. 建立一場活動
