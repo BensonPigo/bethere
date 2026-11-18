@@ -1,5 +1,5 @@
 // Pure decisions the screens make, kept apart so vitest can test them.
-import type { MasterCue, Notice, RoleCue, RoleSnapshot, WriteRequest } from "./api";
+import type { EventStatus, MasterCue, Notice, RoleCue, RoleSnapshot, WriteRequest } from "./api";
 import { OVERRUN_PROMPT_MIN } from "./notice";
 import { inProgressCue } from "./roleView";
 
@@ -26,11 +26,14 @@ export function overdueHeld(
 
 // The rundown editor's writes (US-M-10.9); every other write is the day's console.
 const EDITOR_PATHS: WriteRequest["path"][] = ["/api/cues/update", "/api/cues/move", "/api/cues/delete", "/api/rundown/import"];
+// Writes the editor shares with the console: before the event they edit the rundown.
+const SHARED_PATHS: WriteRequest["path"][] = ["/api/cues/insert", "/api/cues/roles"];
 
 // What a 409 says: the editor's writes (US-M-10.9) name the rundown; the
 // console's (US-M-2.7, US-M-3.4) ask to look again.
-export function conflictNotice(path: WriteRequest["path"]): string {
-  return EDITOR_PATHS.includes(path) ? "流程表已被更新，已載入最新內容" : "畫面已更新，請重新確認";
+export function conflictNotice(path: WriteRequest["path"], status: EventStatus): string {
+  const editing = EDITOR_PATHS.includes(path) || (status === "Draft" && SHARED_PATHS.includes(path));
+  return editing ? "流程表已被更新" : "畫面已更新，請重新確認";
 }
 
 // US-M-5.2: the overrun to offer, 0 when nothing is shown.

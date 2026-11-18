@@ -175,7 +175,7 @@ export function useSession(token: string | null) {
         if (o.kind === "ok") done = apply(o, startedAt) ? o : null;
         else if (o.kind === "conflict") {
           apply(o, startedAt);
-          flash(conflictNotice(w.path));
+          flash(conflictNotice(w.path, snap.eventStatus));
         } else if (o.kind === "rejected") flash(REJECTED[o.error] ?? "操作失敗，請稍後再試");
         else if (o.kind === "failure" || o.kind === "preview" || o.kind === "notModified") flash("操作失敗，請稍後再試");
         else apply(o, startedAt);

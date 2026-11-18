@@ -59,13 +59,21 @@ describe("US-M-2.4 negative shift: cues already overdue are listed and marked", 
 describe("US-M-10.9 / US-M-2.7 / US-M-3.4 version conflict text", () => {
   it("rundown editor writes say the rundown was updated", () => {
     for (const path of ["/api/cues/update", "/api/cues/move", "/api/cues/delete", "/api/rundown/import"] as const) {
-      expect(conflictNotice(path)).toBe("流程表已被更新，已載入最新內容");
+      expect(conflictNotice(path, "Draft")).toBe("流程表已被更新");
+    }
+  });
+  it("adding or assigning a cue before the event is editing the rundown", () => {
+    for (const path of ["/api/cues/insert", "/api/cues/roles"] as const) {
+      expect(conflictNotice(path, "Draft")).toBe("流程表已被更新");
     }
   });
   it("console writes on the day keep the generic text", () => {
     for (const path of ["/api/cues/advance", "/api/cues/shift", "/api/cues/skip", "/api/cues/undo", "/api/cues/insert", "/api/cues/edit", "/api/cues/roles"] as const) {
-      expect(conflictNotice(path)).toBe("畫面已更新，請重新確認");
+      expect(conflictNotice(path, "Live")).toBe("畫面已更新，請重新確認");
     }
+  });
+  it("the first advance of a draft event is the console, not the editor", () => {
+    expect(conflictNotice("/api/cues/advance", "Draft")).toBe("畫面已更新，請重新確認");
   });
 });
 
