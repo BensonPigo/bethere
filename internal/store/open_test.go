@@ -67,7 +67,7 @@ func TestMigrationsAndPragmas(t *testing.T) {
 		}
 	}
 	if _, err := s.r.Exec(`INSERT INTO events (name, event_date, timezone, status, recovery_code_hash, created_at)
-		VALUES ('x', '2027-06-06', 'UTC', 'Draft', x'00', 0)`); err == nil {
+		VALUES ('x', '2027-06-16', 'UTC', 'Draft', x'00', 0)`); err == nil {
 		t.Error("read-only pool accepted a write")
 	}
 
@@ -182,7 +182,7 @@ func TestOpenUsesTheExactPath(t *testing.T) {
 				t.Fatalf("init: %v", err)
 			}
 			if _, err := s.CreateEvent(ctx, NewEvent{
-				Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+				Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 				MasterName: "總召", MasterTokenHash: hash("tok"), RecoveryCodeHash: hash("rec"),
 			}, at(0, 0)); err != nil {
 				t.Fatal(err)

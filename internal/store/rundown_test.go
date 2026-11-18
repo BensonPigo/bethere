@@ -194,3 +194,47 @@ func TestUS_M_0_2a_ImportOnlyIntoADraftWithoutCues(t *testing.T) {
 		t.Errorf("second import: err = %v, want ErrRundownExists", err)
 	}
 }
+
+// US-M-12.2: a pasted rundown with any bad row, or one that would create
+// more roles than allowed, cannot be confirmed.
+func TestUS_M_12_2_ImportCheckOK(t *testing.T) {
+	for name, tc := range map[string]struct {
+		check ImportCheck
+		want  bool
+	}{
+		"every row fine":         {ImportCheck{Problems: [][]string{nil, {}}}, true},
+		"no rows":                {ImportCheck{}, true},
+		"one bad row":            {ImportCheck{Problems: [][]string{nil, {"seq 必須是正整數"}}}, false},
+		"too many roles to make": {ImportCheck{Problems: [][]string{nil}, TooManyRoles: true}, false},
+	} {
+		if got := tc.check.OK(); got != tc.want {
+			t.Errorf("%s: OK() = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+// US-M-0.2 limits are inclusive: 00:00, 23:59 and the longest cue are
+// accepted; one past each is a bad row.
+func TestUS_M_0_2_RowLimitsAreInclusive(t *testing.T) {
+	e := domain.Event{Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, Location: taipei}
+	good := []ImportRow{
+		{Line: 2, Seq: 1, Title: "午夜", StartHour: 0, StartMinute: 0, DurationMin: MaxCueDurationMin},
+		{Line: 3, Seq: 2, Title: "最後一分", StartHour: 23, StartMinute: 59, DurationMin: 0},
+	}
+	for i, ps := range validateRows(e, good, nil, false).problems {
+		if len(ps) > 0 {
+			t.Errorf("row %d: %v, want no problem", good[i].Line, ps)
+		}
+	}
+	bad := []ImportRow{
+		{Line: 2, Seq: 1, Title: "a", StartHour: 24, StartMinute: 0},
+		{Line: 3, Seq: 2, Title: "b", StartHour: 10, StartMinute: 60},
+		{Line: 4, Seq: 3, Title: "c", StartHour: -1, StartMinute: 0},
+		{Line: 5, Seq: 4, Title: "d", StartHour: 10, StartMinute: 0, DurationMin: MaxCueDurationMin + 1},
+	}
+	for i, ps := range validateRows(e, bad, nil, false).problems {
+		if len(ps) != 1 {
+			t.Errorf("row %d: %v, want exactly one problem", bad[i].Line, ps)
+		}
+	}
+}

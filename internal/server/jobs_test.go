@@ -319,7 +319,7 @@ func TestJobEndpointPermissions(t *testing.T) {
 // Another event's task, guest and item ids are a 404 before any rule
 // (api.md 9.8), whether that event is later or has ended.
 func TestJobIDsOfAnotherEventAre404(t *testing.T) {
-	for _, day := range []int{7, 1} {
+	for _, day := range []int{17, 11} {
 		e := newEnv(t)
 		f := e.otherEvent(day)
 		var other int64

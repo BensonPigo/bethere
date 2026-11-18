@@ -256,7 +256,7 @@ func TestUS_CO_1_11_PrepareFailures(t *testing.T) {
 // links, as the purge deletes them.
 func TestUS_CO_1_13_UnverifiedLinksAreRefused(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	a := c.member(t, "a@x.tw")
 	// The INSERTs of the email-only release (M4).
 	if _, err := c.f.s.w.Exec(`INSERT INTO member_sessions (member_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?)`,
@@ -303,7 +303,7 @@ func TestUS_CO_1_13_UnverifiedLinksAreRefused(t *testing.T) {
 // is closed too, never "invalid".
 func TestUS_O_12_6_ClosedUnverifiedConsoleIsClosed(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if _, err := c.f.s.w.Exec(`INSERT INTO console_tokens (member_id, event_id, token_hash, created_at) VALUES (?, ?, ?, ?)`,
 		c.member(t, "a@x.tw"), ev, hash("old console"), toNS(before)); err != nil {
 		t.Fatal(err)

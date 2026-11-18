@@ -404,7 +404,7 @@ func TestEverySubcommandRequiresDB(t *testing.T) {
 	for _, args := range [][]string{
 		{"serve"},
 		{"serve", "-addr", "127.0.0.1:0"},
-		{"create-event", "-name", "x", "-date", "2027-06-06", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
+		{"create-event", "-name", "x", "-date", "2027-06-16", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
 		{"add-role", "-name", "x", "-type", "Stylist", "-base-url", base},
 		{"import-rundown", "-file", "x.csv"},
 		{"create-invite"},
@@ -424,7 +424,7 @@ func TestCommandsNeverCreateADatabase(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "none.db")
 	for _, args := range [][]string{
 		{"serve", "-db", missing, "-addr", "127.0.0.1:0"},
-		{"create-event", "-db", missing, "-name", "x", "-date", "2027-06-06", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
+		{"create-event", "-db", missing, "-name", "x", "-date", "2027-06-16", "-tz", "Asia/Taipei", "-master-name", "m", "-base-url", base},
 		{"add-role", "-db", missing, "-name", "x", "-type", "Stylist", "-base-url", base},
 		{"create-invite", "-db", missing},
 		{"reset-recovery-code", "-db", missing},

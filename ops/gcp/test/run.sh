@@ -390,10 +390,12 @@ check "setup run again: no bucket is made again, the backup bucket's settings ar
   'rc_is 0 && ! called "buckets create" && grep -q "buckets update $BK .*--clear-soft-delete.*--no-versioning.*--clear-lifecycle" "$FAKE/calls"'
 
 # US-O-13.1: the load test's data never goes on the real project.
-fresh; runrc env PROJECT=bethere-prod-0606 "$OPS/loadtest-setup.sh"
+fresh; runrc env PROJECT=real-proj PROD_PROJECT=real-proj "$OPS/loadtest-setup.sh"
 check "loadtest-setup on the real project: refused before anything runs on a VM" 'rc_is 2 && said "refusing: the load test never runs on the real project" && ! called "compute ssh"'
-fresh; runrc env PROJECT=drill-proj "$OPS/loadtest-setup.sh"
+fresh; runrc env PROJECT=drill-proj PROD_PROJECT=real-proj "$OPS/loadtest-setup.sh"
 check "loadtest-setup on another project: goes on to the VM" 'rc_is 0 && ! said "refusing" && called "compute ssh"'
+fresh; runrc env PROJECT=drill-proj PROD_PROJECT= "$OPS/loadtest-setup.sh"
+check "loadtest-setup with the real project unknown: refused before anything runs on a VM" 'rc_is 2 && said "refusing: the real project is unknown" && ! called "compute ssh"'
 
 # US-O-7.1: the uptime check and the alert's settings.
 policy_has() { policy | grep -qF -- "$1"; }

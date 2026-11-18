@@ -1,8 +1,7 @@
 package server
 
-// Coverage of the preparation before the event (US-M-10 to US-M-13), added
-// from the test audit: version conflicts of every editing endpoint, the
-// inclusive limits, role names and the size limits of the import.
+// The edges of the preparation before the event (US-M-10 to US-M-13):
+// version conflicts of every editing endpoint, the inclusive limits, role names and the size limits of the import.
 
 import (
 	"net/http"
@@ -61,7 +60,7 @@ func TestUS_M_10_9_StaleVersionIsRefusedByEveryEditingEndpoint(t *testing.T) {
 func TestUS_M_10_2_UpdateBoundariesAreAccepted(t *testing.T) {
 	e := newEnv(t)
 	e.dayBefore()
-	nextDay := func(h, m int) time.Time { return time.Date(2027, 6, 7, h, m, 0, 0, taipei) }
+	nextDay := func(h, m int) time.Time { return time.Date(2027, 6, 17, h, m, 0, 0, taipei) }
 	cue := e.cue["迎賓"]
 	update := func(change func(map[string]any)) resp {
 		b := updateBody(e.version(), cue, at(10, 30), "迎賓")

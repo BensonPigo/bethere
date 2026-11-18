@@ -98,6 +98,16 @@ func parse(data []byte, comma rune) ([]store.ImportRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	col, err := headerColumns(header)
+	if err != nil {
+		return nil, err
+	}
+	return readRows(cr, col, len(header))
+}
+
+// headerColumns maps each column name of the header to its index: every
+// name known, none twice, and every required one present.
+func headerColumns(header []string) (map[string]int, error) {
 	col := map[string]int{}
 	for i, name := range header {
 		name = strings.TrimSpace(name)
@@ -117,20 +127,23 @@ func parse(data []byte, comma rune) ([]store.ImportRow, error) {
 			return nil, fmt.Errorf("標題列：缺少必要欄位 %q", name)
 		}
 	}
+	return col, nil
+}
 
+// readRows reads every row after the header.
+func readRows(cr *csv.Reader, col map[string]int, width int) ([]store.ImportRow, error) {
 	var rows []store.ImportRow
 	for {
 		rec, err := cr.Read()
 		if errors.Is(err, io.EOF) {
-			break
+			return rows, nil
 		}
 		if err != nil {
 			return nil, err
 		}
 		line, _ := cr.FieldPos(0)
-		rows = append(rows, parseRow(line, rec, col, len(header)))
+		rows = append(rows, parseRow(line, rec, col, width))
 	}
-	return rows, nil
 }
 
 func known(name string) bool {

@@ -227,8 +227,8 @@ func TestUS_M_4_8_UndoOfAShiftIsRefusedWhenACueMovedOn(t *testing.T) {
 // US-M-8.1 / US-M-10.6: a cue may start from 00:00 of the event day up to,
 // not including, 04:00 the next day.
 func TestUS_M_8_1_ValidCueStartBoundaries(t *testing.T) {
-	e := Event{Date: Date{2027, time.June, 6}, Location: taipei}
-	next := func(h, m int) time.Time { return time.Date(2027, 6, 7, h, m, 0, 0, taipei) }
+	e := Event{Date: Date{2027, time.June, 16}, Location: taipei}
+	next := func(h, m int) time.Time { return time.Date(2027, 6, 17, h, m, 0, 0, taipei) }
 	for _, c := range []struct {
 		name string
 		t    time.Time

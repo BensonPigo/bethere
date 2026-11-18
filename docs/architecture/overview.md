@@ -1,6 +1,6 @@
 # 架構總覽 (Architecture Overview)
 
-> 一頁看全貌：系統邊界、容器、部署與橫切關注。規則以 `design/` 為準，理由見 `decisions.md`，品質目標見 `requirements/scope.md` 的 NFR，風險見 `docs/README.md` 的 RISK。
+> 一頁看全貌：系統邊界、容器、部署與橫切關注。規則以 `design/` 為準，理由見 `decisions.md`，品質目標見 `requirements/scope.md` 的 NFR，風險見 `status.md` 的 RISK。
 > 流程圖與狀態圖放在它們說明的設計文件裡（ADR-0017）。
 
 ---
@@ -19,8 +19,8 @@
 
 | 限制 | 內容 | 影響的決定 |
 | --- | --- | --- |
-| 期限 | 第一場使用 2027/06/06，一人開發 | 架構越少零件越好（ADR-0008、ADR-0009） |
-| 當天無人維運 | 開發者本人就是新人 | 失效安全（ADR-0012）、備援操作者（ADR-0013） |
+| 期限 | 第一場的日期已定、不能延後，一人開發 | 架構越少零件越好（ADR-0008、ADR-0009） |
+| 當天無人維運 | 開發者當天無法操作 | 失效安全（ADR-0012）、備援操作者（ADR-0013） |
 | 自費 | 越省越好 | 單一 e2-micro，每月約 US$11～12（ADR-0009） |
 | 使用者 | 10～30 人、當天才第一次用，多從 LINE 點連結 | 免註冊連結（ADR-0002）、LINE 受限環境（ADR-0010） |
 | 現場網路 | 地下室、會場 Wi-Fi、iOS 背景暫停 | 輪詢（ADR-0004）、離線快取（ADR-0010） |
@@ -103,7 +103,7 @@ flowchart TB
     internet(("網際網路"))
     iap["IAP<br/>35.235.240.0/20"]
 
-    subgraph project["GCP 專案 bethere-prod-0606"]
+    subgraph project["正式 GCP 專案"]
         ip["區域性靜態 IP<br/>bethere-ip"]
         subgraph vpc["自訂 VPC bethere-vpc／子網路 bethere-asia-east1"]
             fw["防火牆<br/>80、443 對外；22 只給 IAP"]
@@ -119,8 +119,8 @@ flowchart TB
             end
         end
         sa["服務帳號 bethere-vm"]
-        rel[("bethere-prod-0606-releases<br/>bethere/版本/、caddy/版本/")]
-        bak[("bethere-prod-0606-backups<br/>soft delete 關閉")]
+        rel[("專案 ID-releases<br/>bethere/版本/、caddy/版本/")]
+        bak[("專案 ID-backups<br/>soft delete 關閉")]
     end
 
     internet --> ip --> fw --> caddyU --> betU

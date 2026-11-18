@@ -76,7 +76,7 @@ func (r resp) loginToken(t *testing.T) string {
 // Master token.
 func (e *env) companyEvent(session, name string) (int64, string) {
 	e.t.Helper()
-	r := e.post(pathCompanyEvents, session, map[string]any{"name": name, "date": "2027-06-20"})
+	r := e.post(pathCompanyEvents, session, map[string]any{"name": name, "date": "2027-06-30"})
 	r.wantResult(e.t, "ok")
 	wantKeys(e.t, "new event", r.body, "result", "eventId", "masterToken", "recoveryCode")
 	id, _ := r.body["eventId"].(float64)
@@ -284,8 +284,8 @@ func TestUS_CO_3_CompanyEvents(t *testing.T) {
 	e := newEnv(t)
 	admin, session := e.company()
 	for _, c := range []map[string]any{
-		{"name": "", "date": "2027-06-20"},
-		{"name": "甲", "date": "2027-06-05"}, // before today
+		{"name": "", "date": "2027-06-30"},
+		{"name": "甲", "date": "2027-06-15"}, // before today
 		{"name": "甲", "date": "2027/06/20"},
 	} {
 		e.post(pathCompanyEvents, session, c).wantError(t, http.StatusUnprocessableEntity, "invalid_event")
@@ -302,7 +302,7 @@ func TestUS_CO_3_CompanyEvents(t *testing.T) {
 	}
 	got := evs[0].(map[string]any)
 	wantKeys(t, "event", got, "id", "name", "date", "status")
-	if got["id"] != float64(ev) || got["name"] != "甲婚宴" || got["date"] != "2027-06-20" || got["status"] != "Draft" {
+	if got["id"] != float64(ev) || got["name"] != "甲婚宴" || got["date"] != "2027-06-30" || got["status"] != "Draft" {
 		t.Errorf("event = %v", got)
 	}
 	e.post(pathAdminOrgs, admin, map[string]any{"name": "乙", "email": "z@x.tw"}).wantResult(t, "ok")
@@ -313,7 +313,7 @@ func TestUS_CO_3_CompanyEvents(t *testing.T) {
 	for range 19 {
 		e.companyEvent(session, "甲")
 	}
-	e.post(pathCompanyEvents, session, map[string]any{"name": "甲", "date": "2027-06-20"}).
+	e.post(pathCompanyEvents, session, map[string]any{"name": "甲", "date": "2027-06-30"}).
 		wantError(t, http.StatusUnprocessableEntity, "too_many_events")
 }
 
@@ -352,7 +352,7 @@ func TestUS_CO_4_8_ConsoleLinkIsTheMaster(t *testing.T) {
 func TestUS_CO_4_5_RecoveryEndsConsoles(t *testing.T) {
 	e := newEnv(t)
 	_, session := e.company()
-	r := e.post(pathCompanyEvents, session, map[string]any{"name": "甲婚宴", "date": "2027-06-20"})
+	r := e.post(pathCompanyEvents, session, map[string]any{"name": "甲婚宴", "date": "2027-06-30"})
 	r.wantResult(t, "ok")
 	console := e.console(session, int64(r.body["eventId"].(float64)))
 	e.post("/api/recover/master", "", map[string]any{"recoveryCode": r.body["recoveryCode"]}).wantResult(t, "ok")

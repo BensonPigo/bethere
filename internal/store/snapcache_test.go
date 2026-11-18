@@ -132,7 +132,7 @@ func TestUS_O_14_2_PollsUseTheCacheWhileNothingChanges(t *testing.T) {
 	f := newFixture(t)
 	ids := []int64{f.eventID}
 	for _, name := range []string{"二", "三"} {
-		id, err := f.s.CreateEvent(ctx, NewEvent{Name: name, Date: domain.Date{Year: 2027, Month: time.June, Day: 6},
+		id, err := f.s.CreateEvent(ctx, NewEvent{Name: name, Date: domain.Date{Year: 2027, Month: time.June, Day: 16},
 			TimeZone: "Asia/Taipei", MasterName: "總召", MasterTokenHash: hash("m" + name), RecoveryCodeHash: hash("r" + name)}, before)
 		if err != nil {
 			t.Fatal(err)
@@ -240,7 +240,7 @@ func TestUS_O_14_3_PollAnswersLikeSnapshot(t *testing.T) {
 // links on the next poll.
 func TestUS_O_14_3_ConsoleLinksOnTheNextPoll(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if _, _, err := c.f.s.AddMember(ctx, hash("sa"), "b@x.tw", before); err != nil {
 		t.Fatal(err)
 	}

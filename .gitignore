@@ -6,3 +6,4 @@
 .claude/worktrees/
 /web/e2e-report/
 /web/e2e-results/
+/ops/gcp/prod-project

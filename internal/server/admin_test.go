@@ -59,7 +59,7 @@ func TestUS_O_9_2_Overview(t *testing.T) {
 	wantKeys(t, "invite", invites[0].(map[string]any), "id", "expiresAt")
 	ev := events[0].(map[string]any)
 	wantKeys(t, "event", ev, "id", "name", "date", "status", "createdAt", "organization")
-	if ev["name"] != "婚宴" || ev["date"] != "2027-06-06" || ev["status"] != "Draft" {
+	if ev["name"] != "婚宴" || ev["date"] != "2027-06-16" || ev["status"] != "Draft" {
 		t.Errorf("event = %v", ev)
 	}
 }
@@ -74,7 +74,7 @@ func TestUS_O_10_2_AdminCodeCreatesAnEvent(t *testing.T) {
 	wantKeys(t, "invite", r.body, "result", "id", "code", "expiresAt")
 	code, _ := r.body["code"].(string)
 	e.do(http.MethodPost, pathAdminInvites, admin, `{"x":1}`).wantError(t, http.StatusBadRequest, "bad_request")
-	c := e.createEvent("", eventFields(code, "小明的婚禮", "2027-06-06"))
+	c := e.createEvent("", eventFields(code, "小明的婚禮", "2027-06-16"))
 	c.wantResult(t, "ok")
 	for _, secret := range []string{admin, code} {
 		if strings.Contains(e.logs.String(), secret) {

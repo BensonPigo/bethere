@@ -26,11 +26,11 @@ func TestLastSeenOnlyAfterSuccessfulAuthentication(t *testing.T) {
 	}
 	defer st.Close()
 	loc, _ := time.LoadLocation("Asia/Taipei")
-	now := time.Date(2027, 6, 6, 9, 0, 0, 0, loc)
+	now := time.Date(2027, 6, 16, 9, 0, 0, 0, loc)
 	master, _ := auth.NewToken()
 	stylist, _ := auth.NewToken()
 	if _, err := st.CreateEvent(ctx, store.NewEvent{
-		Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "x", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: auth.HashToken(master), RecoveryCodeHash: auth.HashToken("r"),
 	}, now.AddDate(0, -1, 0)); err != nil {
 		t.Fatal(err)
@@ -101,8 +101,8 @@ func TestLastSeenOnlyAfterSuccessfulAuthentication(t *testing.T) {
 func TestFormatTimeIsUTCWithMilliseconds(t *testing.T) {
 	loc, _ := time.LoadLocation("Asia/Taipei")
 	for in, want := range map[time.Time]string{
-		time.Date(2027, 6, 6, 11, 15, 0, 0, loc):             "2027-06-06T03:15:00.000Z",
-		time.Date(2027, 6, 6, 3, 15, 0, 123456789, time.UTC): "2027-06-06T03:15:00.123Z",
+		time.Date(2027, 6, 16, 11, 15, 0, 0, loc):             "2027-06-16T03:15:00.000Z",
+		time.Date(2027, 6, 16, 3, 15, 0, 123456789, time.UTC): "2027-06-16T03:15:00.123Z",
 	} {
 		if got := FormatTime(in); got != want {
 			t.Errorf("FormatTime(%v) = %s, want %s", in, got, want)

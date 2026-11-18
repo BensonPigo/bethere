@@ -1,7 +1,6 @@
 package server
 
-// Coverage of the Master's operations on the day (US-M-2 to US-M-9), added
-// from the test audit: the edges the first tests left out.
+// The edges of the Master's operations on the day (US-M-2 to US-M-9).
 
 import (
 	"encoding/base64"
@@ -122,7 +121,7 @@ func TestUS_M_3_LiveAdvanceAfterMidnightStillWorks(t *testing.T) {
 	e := newEnv(t)
 	e.setClock(at(23, 59))
 	e.mustWrite(pathAdvance) // started on the event day
-	next := func(h, m int) time.Time { return time.Date(2027, 6, 7, h, m, 0, 0, taipei) }
+	next := func(h, m int) time.Time { return time.Date(2027, 6, 17, h, m, 0, 0, taipei) }
 	e.setClock(next(0, 1))
 	s := e.mustWrite(pathAdvance)
 	if byTitle(t, s, "新娘化妝")["status"] != "Completed" || byTitle(t, s, "迎賓")["status"] != "InProgress" {
@@ -263,7 +262,7 @@ func TestUS_M_8_1_InsertBoundariesAreAccepted(t *testing.T) {
 	e := newEnv(t)
 	e.live()
 	last := e.cue["敬酒"]
-	nextDay := func(h, m int) time.Time { return time.Date(2027, 6, 7, h, m, 0, 0, taipei) }
+	nextDay := func(h, m int) time.Time { return time.Date(2027, 6, 17, h, m, 0, 0, taipei) }
 	body := func(change func(map[string]any)) map[string]any {
 		b := insertBody(e.version(), last, at(12, 0))
 		change(b)

@@ -17,8 +17,8 @@ func mustLoad(name string) *time.Location {
 	return loc
 }
 
-// at returns 2027-06-06 hh:mm in Taipei, the first event day.
-func at(hh, mm int) time.Time { return time.Date(2027, 6, 6, hh, mm, 0, 0, taipei) }
+// at returns 2027-06-16 hh:mm in Taipei, the first event day.
+func at(hh, mm int) time.Time { return time.Date(2027, 6, 16, hh, mm, 0, 0, taipei) }
 
 func cue(id int64, hh, mm, dur int, status Status) Cue {
 	return Cue{ID: id, Seq: int(id), ScheduledStart: at(hh, mm), DurationMin: dur, Status: status}
@@ -494,13 +494,13 @@ func TestUndoRejectsStaleOperation(t *testing.T) {
 }
 
 func TestEventEndsAt(t *testing.T) {
-	e := Event{Date: Date{2027, time.June, 6}, Location: taipei}
-	want := time.Date(2027, 6, 7, 4, 0, 0, 0, taipei)
+	e := Event{Date: Date{2027, time.June, 16}, Location: taipei}
+	want := time.Date(2027, 6, 17, 4, 0, 0, 0, taipei)
 	if got := e.EndsAt(); !got.Equal(want) {
 		t.Errorf("EndsAt = %v, want %v", got, want)
 	}
-	if got := e.EndsAt().UTC(); got != time.Date(2027, 6, 6, 20, 0, 0, 0, time.UTC) {
-		t.Errorf("EndsAt in UTC = %v, want 2027-06-06T20:00Z", got)
+	if got := e.EndsAt().UTC(); got != time.Date(2027, 6, 16, 20, 0, 0, 0, time.UTC) {
+		t.Errorf("EndsAt in UTC = %v, want 2027-06-16T20:00Z", got)
 	}
 	if e.Ended(want.Add(-time.Second)) {
 		t.Error("Ended one second before endsAt")
@@ -508,13 +508,13 @@ func TestEventEndsAt(t *testing.T) {
 	if !e.Ended(want) {
 		t.Error("not Ended exactly at endsAt")
 	}
-	if got, want := e.PurgeAt(), time.Date(2027, 8, 26, 4, 0, 0, 0, taipei); !got.Equal(want) {
+	if got, want := e.PurgeAt(), time.Date(2027, 9, 5, 4, 0, 0, 0, taipei); !got.Equal(want) {
 		t.Errorf("PurgeAt = %v, want %v (endsAt + 80 days)", got, want)
 	}
 }
 
 func TestEventStart(t *testing.T) {
-	draft := Event{Date: Date{2027, time.June, 6}, Location: taipei, Status: Draft}
+	draft := Event{Date: Date{2027, time.June, 16}, Location: taipei, Status: Draft}
 	tests := []struct {
 		name    string
 		event   Event
@@ -524,14 +524,14 @@ func TestEventStart(t *testing.T) {
 		{name: "on the event day", event: draft, now: at(8, 0)},
 		{name: "just after local midnight", event: draft, now: at(0, 0)},
 		{name: "the day before", event: draft, now: at(0, 0).Add(-time.Second), wantErr: ErrNotEventDay},
-		{name: "after midnight but before endsAt", event: draft, now: time.Date(2027, 6, 7, 1, 0, 0, 0, taipei), wantErr: ErrNotEventDay},
-		{name: "after the event ended", event: draft, now: time.Date(2027, 6, 7, 4, 0, 0, 0, taipei), wantErr: ErrEnded},
+		{name: "after midnight but before endsAt", event: draft, now: time.Date(2027, 6, 17, 1, 0, 0, 0, taipei), wantErr: ErrNotEventDay},
+		{name: "after the event ended", event: draft, now: time.Date(2027, 6, 17, 4, 0, 0, 0, taipei), wantErr: ErrEnded},
 		{name: "already live", event: Event{Date: draft.Date, Location: taipei, Status: Live}, now: at(9, 0), wantErr: ErrNotDraft},
 		{
-			// 2027-06-05 23:00 UTC is already 06-06 07:00 in Taipei.
+			// 2027-06-15 23:00 UTC is already 06-16 07:00 in Taipei.
 			name:  "event day is judged in the event's time zone",
 			event: draft,
-			now:   time.Date(2027, 6, 5, 23, 0, 0, 0, time.UTC),
+			now:   time.Date(2027, 6, 15, 23, 0, 0, 0, time.UTC),
 		},
 	}
 	for _, tt := range tests {
@@ -554,43 +554,43 @@ func TestEventStart(t *testing.T) {
 }
 
 func TestEventRequireLive(t *testing.T) {
-	date := Date{2027, time.June, 6}
+	date := Date{2027, time.June, 16}
 	if err := (Event{Date: date, Location: taipei, Status: Live}).RequireLive(at(12, 0)); err != nil {
 		t.Errorf("live event: %v", err)
 	}
 	if err := (Event{Date: date, Location: taipei, Status: Draft}).RequireLive(at(12, 0)); !errors.Is(err, ErrNotLive) {
 		t.Errorf("draft event: err = %v, want ErrNotLive", err)
 	}
-	ended := time.Date(2027, 6, 7, 4, 0, 0, 0, taipei)
+	ended := time.Date(2027, 6, 17, 4, 0, 0, 0, taipei)
 	if err := (Event{Date: date, Location: taipei, Status: Live}).RequireLive(ended); !errors.Is(err, ErrEnded) {
 		t.Errorf("ended event: err = %v, want ErrEnded", err)
 	}
 }
 
 func TestEventReschedule(t *testing.T) {
-	e := Event{Date: Date{2027, time.June, 6}, Location: taipei, Status: Draft}
+	e := Event{Date: Date{2027, time.June, 16}, Location: taipei, Status: Draft}
 	cues := []Cue{cue(1, 9, 30, 30, Pending), offset(cue(2, 23, 30, 30, Pending), 5)}
 	now := time.Date(2027, 5, 1, 12, 0, 0, 0, taipei)
 
-	got, moved, err := e.Reschedule(Date{2027, time.June, 13}, cues, now)
+	got, moved, err := e.Reschedule(Date{2027, time.June, 23}, cues, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Date != (Date{2027, time.June, 13}) {
-		t.Errorf("Date = %v, want 2027-06-13", got.Date)
+	if got.Date != (Date{2027, time.June, 23}) {
+		t.Errorf("Date = %v, want 2027-06-23", got.Date)
 	}
 	m := byID(moved)
-	if !m[1].ScheduledStart.Equal(time.Date(2027, 6, 13, 9, 30, 0, 0, taipei)) {
+	if !m[1].ScheduledStart.Equal(time.Date(2027, 6, 23, 9, 30, 0, 0, taipei)) {
 		t.Errorf("cue 1 = %v, want 06-13 09:30", m[1].ScheduledStart)
 	}
-	if !m[2].ScheduledStart.Equal(time.Date(2027, 6, 13, 23, 30, 0, 0, taipei)) || m[2].OffsetMin != 5 {
+	if !m[2].ScheduledStart.Equal(time.Date(2027, 6, 23, 23, 30, 0, 0, taipei)) || m[2].OffsetMin != 5 {
 		t.Errorf("cue 2 = %v %+d, want 06-13 23:30 +5", m[2].ScheduledStart, m[2].OffsetMin)
 	}
 	if !cues[0].ScheduledStart.Equal(at(9, 30)) {
 		t.Error("Reschedule mutated its input")
 	}
 
-	if _, _, err := (Event{Date: e.Date, Location: taipei, Status: Live}).Reschedule(Date{2027, time.June, 13}, cues, now); !errors.Is(err, ErrNotDraft) {
+	if _, _, err := (Event{Date: e.Date, Location: taipei, Status: Live}).Reschedule(Date{2027, time.June, 23}, cues, now); !errors.Is(err, ErrNotDraft) {
 		t.Errorf("live event: err = %v, want ErrNotDraft", err)
 	}
 	// The new end must still be in the future.
@@ -598,8 +598,8 @@ func TestEventReschedule(t *testing.T) {
 		t.Errorf("past date: err = %v, want ErrEnded", err)
 	}
 	// An event that already ended cannot be revived.
-	after := time.Date(2027, 6, 7, 4, 0, 0, 0, taipei)
-	if _, _, err := e.Reschedule(Date{2027, time.June, 20}, cues, after); !errors.Is(err, ErrEnded) {
+	after := time.Date(2027, 6, 17, 4, 0, 0, 0, taipei)
+	if _, _, err := e.Reschedule(Date{2027, time.June, 30}, cues, after); !errors.Is(err, ErrEnded) {
 		t.Errorf("ended event: err = %v, want ErrEnded", err)
 	}
 }
@@ -656,9 +656,9 @@ func TestPlanShiftBoundsTheRequest(t *testing.T) {
 }
 
 func TestRescheduleRejectsInvalidDates(t *testing.T) {
-	e := Event{Date: Date{2027, time.June, 6}, Location: taipei, Status: Draft}
+	e := Event{Date: Date{2027, time.June, 16}, Location: taipei, Status: Draft}
 	now := time.Date(2027, 5, 1, 12, 0, 0, 0, taipei)
-	for _, d := range []Date{{2027, time.June, 31}, {10000, 1, 1}, {}} {
+	for _, d := range []Date{{2027, time.June, 41}, {10000, 1, 1}, {}} {
 		if _, _, err := e.Reschedule(d, nil, now); !errors.Is(err, ErrInvalidDate) {
 			t.Errorf("Reschedule(%v): err = %v, want ErrInvalidDate", d, err)
 		}
@@ -689,17 +689,17 @@ func TestDateRangeAndDayCount(t *testing.T) {
 			t.Errorf("%v rejected", d)
 		}
 	}
-	if got := (Date{2027, time.June, 6}).String(); got != "2027-06-06" {
+	if got := (Date{2027, time.June, 16}).String(); got != "2027-06-16" {
 		t.Errorf("String = %q", got)
 	}
-	e := Event{Date: Date{2027, time.June, 6}, Location: taipei, Status: Draft}
+	e := Event{Date: Date{2027, time.June, 16}, Location: taipei, Status: Draft}
 	cues := []Cue{cue(1, 10, 0, 30, Pending)}
 	now := time.Date(2027, 5, 1, 12, 0, 0, 0, taipei)
-	_, moved, err := e.Reschedule(Date{2199, time.June, 6}, cues, now)
+	_, moved, err := e.Reschedule(Date{2199, time.June, 16}, cues, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := time.Date(2199, 6, 6, 10, 0, 0, 0, taipei); !moved[0].ScheduledStart.Equal(want) {
+	if want := time.Date(2199, 6, 16, 10, 0, 0, 0, taipei); !moved[0].ScheduledStart.Equal(want) {
 		t.Errorf("cue moved to %v, want %v", moved[0].ScheduledStart, want)
 	}
 }

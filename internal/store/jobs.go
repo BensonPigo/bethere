@@ -148,28 +148,11 @@ func (s *Store) SetTaskState(ctx context.Context, eventID, taskID int64, state s
 		if err != nil {
 			return err
 		}
-		claimer := t.claimedBy
-		switch {
-		case state != TaskOpen && state != TaskClaimed && state != TaskDone:
-			return ErrInvalidTaskState
-		case asMaster && state == TaskClaimed:
-			return ErrInvalidTaskState
-		case asMaster && state == TaskOpen:
-			claimer = sql.NullInt64{}
-		case asMaster:
-		case t.state == TaskOpen && state == TaskClaimed:
-			claimer = sql.NullInt64{Int64: actor.roleID, Valid: true}
-		case t.state == TaskClaimed && t.claimedBy.Int64 != actor.roleID:
-			return ErrTaskTaken
-		case t.state == TaskClaimed && state == TaskOpen:
-			claimer = sql.NullInt64{}
-		case t.state == TaskClaimed && state == TaskDone:
-		case t.state == state:
-			return nil
-		default:
-			return ErrInvalidTaskState
+		claimer, same, err := taskMove(t, state, asMaster, actor.roleID)
+		if err != nil {
+			return err
 		}
-		if t.state == state && claimer == t.claimedBy {
+		if same || (t.state == state && claimer == t.claimedBy) {
 			return nil
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE tasks SET state = ?, claimed_by_role_id = ?, updated_at = ? WHERE id = ?`,
@@ -178,6 +161,60 @@ func (s *Store) SetTaskState(ctx context.Context, eventID, taskID int64, state s
 		}
 		return logAction(ctx, tx, eventID, actor, "task.set", map[string]any{"taskId": taskID, "state": state}, now)
 	})
+}
+
+// taskMove is who holds a task after the move, or that the move changes
+// nothing, or why it is refused.
+func taskMove(t taskRow, state string, asMaster bool, roleID int64) (sql.NullInt64, bool, error) {
+	if state != TaskOpen && state != TaskClaimed && state != TaskDone {
+		return sql.NullInt64{}, false, ErrInvalidTaskState
+	}
+	if asMaster {
+		return masterTaskMove(t, state)
+	}
+	return runnerTaskMove(t, state, roleID)
+}
+
+// masterTaskMove: the Master may set any state but claimed; opening a task
+// releases it.
+func masterTaskMove(t taskRow, state string) (sql.NullInt64, bool, error) {
+	switch state {
+	case TaskClaimed:
+		return sql.NullInt64{}, false, ErrInvalidTaskState
+	case TaskOpen:
+		return sql.NullInt64{}, false, nil
+	}
+	return t.claimedBy, false, nil
+}
+
+// runnerTaskMove: a runner may claim an open task, and release or finish
+// its own; asking for the state the task is in changes nothing.
+func runnerTaskMove(t taskRow, state string, roleID int64) (sql.NullInt64, bool, error) {
+	if t.state == TaskOpen && state == TaskClaimed {
+		return sql.NullInt64{Int64: roleID, Valid: true}, false, nil
+	}
+	if t.state == TaskClaimed {
+		return claimedTaskMove(t, state, roleID)
+	}
+	if t.state == state {
+		return sql.NullInt64{}, true, nil
+	}
+	return sql.NullInt64{}, false, ErrInvalidTaskState
+}
+
+// claimedTaskMove: only the runner who holds a claimed task may release or
+// finish it. state is open, claimed or done (taskMove checked it).
+func claimedTaskMove(t taskRow, state string, roleID int64) (sql.NullInt64, bool, error) {
+	if t.claimedBy.Int64 != roleID {
+		return sql.NullInt64{}, false, ErrTaskTaken
+	}
+	if state == TaskOpen {
+		return sql.NullInt64{}, false, nil
+	}
+	if state == TaskDone {
+		return t.claimedBy, false, nil
+	}
+	return sql.NullInt64{}, true, nil
 }
 
 // DeleteTask removes a task, logging it in full (ADR-0032).
@@ -231,37 +268,54 @@ func (s *Store) ReplaceGuests(ctx context.Context, eventID int64, rows []GuestRo
 		if err != nil {
 			return err
 		}
-		if e.DayStarted(now) {
-			return ErrLockedOnEventDay
-		}
-		var arrived bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM guests WHERE event_id = ? AND arrived_at IS NOT NULL)`,
-			eventID).Scan(&arrived); err != nil {
+		if err := checkGuestImport(ctx, tx, e, eventID, rows, now); err != nil {
 			return err
-		}
-		if arrived {
-			return ErrGuestsArrived
-		}
-		// No rows at all, a header only included, never empties the list.
-		if len(rows) == 0 || len(rows) > MaxGuests {
-			return ErrInvalidImport
 		}
 		old, err := loadGuests(ctx, tx, eventID)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM guests WHERE event_id = ?`, eventID); err != nil {
+		if err := writeGuests(ctx, tx, eventID, rows); err != nil {
 			return err
-		}
-		for i, g := range rows {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO guests (event_id, seq, name, table_label, note) VALUES (?, ?, ?, ?, ?)`,
-				eventID, i+1, g.Name, g.Table, nullNote(g.Note)); err != nil {
-				return err
-			}
 		}
 		return logAction(ctx, tx, eventID, actor, "guests.import",
 			map[string]any{"count": len(rows), "replaced": old, "byTokenId": actor.tokenID}, now)
 	})
+}
+
+// checkGuestImport refuses a list on the event day or once a guest has
+// arrived, then a list that is empty or too long.
+func checkGuestImport(ctx context.Context, tx *sql.Tx, e domain.Event, eventID int64, rows []GuestRow, now time.Time) error {
+	if e.DayStarted(now) {
+		return ErrLockedOnEventDay
+	}
+	var arrived bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM guests WHERE event_id = ? AND arrived_at IS NOT NULL)`,
+		eventID).Scan(&arrived); err != nil {
+		return err
+	}
+	if arrived {
+		return ErrGuestsArrived
+	}
+	// No rows at all, a header only included, never empties the list.
+	if len(rows) == 0 || len(rows) > MaxGuests {
+		return ErrInvalidImport
+	}
+	return nil
+}
+
+// writeGuests replaces the event's guests with rows, in order.
+func writeGuests(ctx context.Context, tx *sql.Tx, eventID int64, rows []GuestRow) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM guests WHERE event_id = ?`, eventID); err != nil {
+		return err
+	}
+	for i, g := range rows {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO guests (event_id, seq, name, table_label, note) VALUES (?, ?, ?, ?, ?)`,
+			eventID, i+1, g.Name, g.Table, nullNote(g.Note)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetArrived sets whether a guest has arrived; the same state writes nothing.

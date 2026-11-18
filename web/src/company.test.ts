@@ -25,7 +25,7 @@ const page = {
   organization: { name: "甲" },
   me: 1,
   members: [{ id: 1, email: "a@x.tw" }],
-  events: [{ id: 7, name: "甲婚宴", date: "2027-06-20", status: "Draft" }],
+  events: [{ id: 7, name: "甲婚宴", date: "2027-06-30", status: "Draft" }],
 };
 
 describe("US-CO-1.2, 1.3, 1.12 login answers", () => {
@@ -66,7 +66,7 @@ describe("US-CO-1.5 the company page's answers", () => {
       { ...page, me: "1" },
       { ...page, members: [{ id: "1", email: "a@x.tw" }] },
       { ...page, members: null },
-      { ...page, events: [{ id: 7, name: "x", date: "2027-06-20" }] },
+      { ...page, events: [{ id: 7, name: "x", date: "2027-06-30" }] },
       { ...page, events: {} },
       { ...page, result: "invalid" },
     ]) {
@@ -149,7 +149,7 @@ describe("US-CO-4.7 console snapshots on a shared device", () => {
 });
 
 describe("US-O-11 the admin page's companies", () => {
-  const ev = { id: 1, name: "婚宴", date: "2027-06-06", status: "Draft", createdAt: "2027-05-01T00:00:00Z" };
+  const ev = { id: 1, name: "婚宴", date: "2027-06-16", status: "Draft", createdAt: "2027-05-01T00:00:00Z" };
   const org = { id: 2, name: "甲", members: 3, events: 4, createdAt: "2027-05-01T00:00:00Z" };
   it("reads companies and each event's company", () => {
     const body = { result: "ok", invites: [], events: [{ ...ev, organization: "甲" }, { ...ev, organization: null }], organizations: [org] };

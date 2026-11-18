@@ -16,7 +16,7 @@ var inviteNow = at(9, 0).AddDate(0, -1, 0)
 
 func invitedEvent(code, token string) NewEvent {
 	return NewEvent{
-		Name: "受邀活動", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "受邀活動", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: hash(token), RecoveryCodeHash: hash("rc-" + token), InviteHash: hash(code),
 	}
 }

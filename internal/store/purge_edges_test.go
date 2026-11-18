@@ -182,7 +182,7 @@ func TestUS_O_5_C1_PurgedStringsAreGoneFromTheFiles(t *testing.T) {
 func TestUS_O_5_1_FailedPurgeLeavesNothingHalfDeleted(t *testing.T) {
 	f := newFixture(t)
 	fillEverything(t, f, "甲")
-	second, err := f.s.CreateEvent(ctx, NewEvent{Name: "乙", Date: domain.Date{Year: 2027, Month: time.June, Day: 6},
+	second, err := f.s.CreateEvent(ctx, NewEvent{Name: "乙", Date: domain.Date{Year: 2027, Month: time.June, Day: 16},
 		TimeZone: "Asia/Taipei", MasterName: "總召", MasterTokenHash: hash("m2"), RecoveryCodeHash: hash("r2")}, at(0, 0).AddDate(0, -1, 0))
 	if err != nil {
 		t.Fatal(err)

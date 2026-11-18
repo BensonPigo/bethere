@@ -5,7 +5,12 @@
 # "<event> <master|role> <link>" per line. Never on the real project.
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
-if [ "$PROJECT" = "bethere-prod-0606" ]; then
+# Unknown real project: refuse, as it might be this one.
+if [ -z "$PROD_PROJECT" ]; then
+  echo "refusing: the real project is unknown (ops/gcp/prod-project is missing)" >&2
+  exit 2
+fi
+if [ "$PROJECT" = "$PROD_PROJECT" ]; then
   echo "refusing: the load test never runs on the real project" >&2
   exit 2
 fi

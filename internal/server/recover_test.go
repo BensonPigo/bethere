@@ -163,7 +163,7 @@ func TestUS_O_3_3_OnlyTheCodesOwnEvent(t *testing.T) {
 	otherCode := newCode(t)
 	h, _ := auth.HashRecoveryCode(otherCode)
 	if _, err := e.st.CreateEvent(bg, store.NewEvent{
-		Name: "另一場", Date: domain.Date{Year: 2027, Month: time.June, Day: 6}, TimeZone: "Asia/Taipei",
+		Name: "另一場", Date: domain.Date{Year: 2027, Month: time.June, Day: 16}, TimeZone: "Asia/Taipei",
 		MasterName: "總召", MasterTokenHash: auth.HashToken(otherMaster), RecoveryCodeHash: h,
 	}, e.clock()); err != nil {
 		t.Fatal(err)

@@ -2,9 +2,12 @@
 # The project is never assumed: a drill that forgot to name its own would
 # act on the real one (RISK-4).
 if [ -z "${PROJECT:-}" ]; then
-  echo "set PROJECT first: export PROJECT=bethere-prod-0606 (the real one) or the drill project" >&2
+  echo "set PROJECT first: export PROJECT=\$(cat ops/gcp/prod-project) (the real one) or the drill project" >&2
   exit 2
 fi
+# PROD_PROJECT is the real project's ID, kept out of the repository in
+# ops/gcp/prod-project unless PROD_PROJECT is set; empty when neither is.
+PROD_PROJECT="${PROD_PROJECT-$(cat "$(dirname "${BASH_SOURCE[0]}")/prod-project" 2>/dev/null || true)}"
 echo "project: $PROJECT" >&2
 REGION="asia-east1"
 NETWORK="bethere-vpc"
@@ -29,7 +32,7 @@ if [ -z "${ZONE:-}" ]; then
 fi
 
 version_ok() { [[ "$1" =~ ^[0-9a-f]+-[0-9]{14}$ ]]; }
-# domain_ok: a host name people open, without scheme or slash, e.g. 34-80-7-111.sslip.io.
+# domain_ok: a host name people open, without scheme or slash, e.g. 203-0-113-10.sslip.io.
 domain_ok() { [[ "$1" =~ ^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$ ]]; }
 
 # check_release refuses a version that is malformed or not in the release

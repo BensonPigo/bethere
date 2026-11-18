@@ -47,7 +47,7 @@ func TestUS_CO_1_13_UpgradeKeepsOldLinksRefused(t *testing.T) {
 	mustExec(`INSERT INTO organizations (id, name, created_at) VALUES (1, '甲', ?)`, toNS(before))
 	mustExec(`INSERT INTO members (id, organization_id, email, created_at) VALUES (1, 1, 'a@x.tw', ?)`, toNS(before))
 	mustExec(`INSERT INTO events (id, name, event_date, timezone, status, recovery_code_hash, created_at, organization_id)
-		VALUES (1, '甲婚宴', '2027-06-20', 'Asia/Taipei', 'Draft', ?, ?, 1)`, hash("r"), toNS(before))
+		VALUES (1, '甲婚宴', '2027-06-30', 'Asia/Taipei', 'Draft', ?, ?, 1)`, hash("r"), toNS(before))
 	mustExec(`INSERT INTO roles (id, event_id, name, type) VALUES (1, 1, '總召', 'Master')`)
 	// The INSERTs of the email-only release: no verified.
 	mustExec(`INSERT INTO member_sessions (member_id, token_hash, created_at, expires_at) VALUES (1, ?, ?, ?)`,

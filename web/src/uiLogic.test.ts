@@ -9,23 +9,23 @@ import { deleteSnapshot, isStaleLive } from "./storage";
 import { changeArrow, conflictNotice, currentLine, elapsedText, laterCues, offlineText, overdueHeld, overrunShown } from "./uiLogic";
 
 const MIN = 60000;
-const NOW = Date.parse("2027-06-06T03:00:00Z");
+const NOW = Date.parse("2027-06-16T03:00:00Z");
 
 function mc(over: Partial<MasterCue>): MasterCue {
   return {
-    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-06T03:00:00Z", effectiveStart: "2027-06-06T03:00:00Z",
+    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-16T03:00:00Z", effectiveStart: "2027-06-16T03:00:00Z",
     durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", actualStart: null, actualEnd: null,
     notePublic: null, roles: [], ...over,
   };
 }
 function rc(over: Partial<RoleCue>): RoleCue {
-  return { id: 1, seq: 1, title: "T", effectiveStart: "2027-06-06T03:00:00Z", durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", notePublic: null, roleNote: null, ...over };
+  return { id: 1, seq: 1, title: "T", effectiveStart: "2027-06-16T03:00:00Z", durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", notePublic: null, roleNote: null, ...over };
 }
 function rs(over: Partial<RoleSnapshot>): RoleSnapshot {
   return {
-    eventVersion: 1, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+    eventVersion: 1, serverTime: "2027-06-16T02:00:00Z", eventStatus: "Live",
     role: { type: "Stylist", name: "新秘", view: "HandsFree" },
-    eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, cues: [], notice: null, ...over,
+    eventDay: { date: "2027-06-16", timezone: "Asia/Taipei" }, cues: [], notice: null, ...over,
   };
 }
 
@@ -99,7 +99,7 @@ describe("US-M-1.4 polling", () => {
 
 describe("US-M-1.2 elapsed and planned minutes", () => {
   it("reads 已進行 N 分 / 預計 M 分", () => {
-    const active = mc({ status: "InProgress", actualStart: "2027-06-06T02:50:00Z", durationMin: 15 });
+    const active = mc({ status: "InProgress", actualStart: "2027-06-16T02:50:00Z", durationMin: 15 });
     expect(elapsedText(active, NOW)).toBe("已進行 10 分 / 預計 15 分");
     expect(elapsedText(active, NOW + 59 * 1000)).toBe("已進行 10 分 / 預計 15 分");
     expect(elapsedText(active, NOW - 20 * MIN)).toBe("已進行 0 分 / 預計 15 分");
@@ -164,7 +164,7 @@ describe("US-X-8.2 offline for more than 5 minutes", () => {
 });
 
 describe("US-X-8.6 local snapshot kept for 2 days", () => {
-  const server = "2027-06-06T00:00:00Z";
+  const server = "2027-06-16T00:00:00Z";
   const DAY = 24 * 60 * MIN;
   it("exactly 2 days is kept, one millisecond more is dropped", () => {
     const t = Date.parse(server);
@@ -175,7 +175,7 @@ describe("US-X-8.6 local snapshot kept for 2 days", () => {
 
 describe("US-ST-2.5 / US-ST-2.6 schedule change direction and original time", () => {
   const shift = (deltaMin: number): Notice => ({ kind: "shift", at: "x", deltaMin, changes: [] });
-  const assign: Notice = { kind: "assign", at: "x", cueId: 1, title: "A", effectiveStart: "2027-06-06T03:00:00Z" };
+  const assign: Notice = { kind: "assign", at: "x", cueId: 1, title: "A", effectiveStart: "2027-06-16T03:00:00Z" };
   it("earlier and later differ in arrow and class", () => {
     expect(changeArrow(shift(-5))).toBe("▲ ");
     expect(changeArrow(shift(5))).toBe("▼ ");
@@ -184,9 +184,9 @@ describe("US-ST-2.5 / US-ST-2.6 schedule change direction and original time", ()
     expect(isEarlier(shift(5))).toBe(false);
   });
   it("the original time is the rundown time, absent when never shifted", () => {
-    expect(originalTime("2027-06-06T03:25:00Z", 10, "Asia/Taipei")).toBe("原 11:15");
-    expect(originalTime("2027-06-06T03:10:00Z", -5, "Asia/Taipei")).toBe("原 11:15");
-    expect(originalTime("2027-06-06T03:25:00Z", 0, "Asia/Taipei")).toBeNull();
+    expect(originalTime("2027-06-16T03:25:00Z", 10, "Asia/Taipei")).toBe("原 11:15");
+    expect(originalTime("2027-06-16T03:10:00Z", -5, "Asia/Taipei")).toBe("原 11:15");
+    expect(originalTime("2027-06-16T03:25:00Z", 0, "Asia/Taipei")).toBeNull();
   });
 });
 

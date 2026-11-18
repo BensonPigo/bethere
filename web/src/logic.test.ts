@@ -23,15 +23,15 @@ const JSON_CT = "application/json; charset=utf-8";
 
 function cue(over: Partial<RoleCue>): RoleCue {
   return {
-    id: 1, seq: 1, title: "T", effectiveStart: "2027-06-06T03:00:00Z", durationMin: 10,
+    id: 1, seq: 1, title: "T", effectiveStart: "2027-06-16T03:00:00Z", durationMin: 10,
     isFixed: false, offsetMin: 0, status: "Pending", notePublic: null, roleNote: null, ...over,
   };
 }
 function snap(over: Partial<RoleSnapshot>): RoleSnapshot {
   return {
-    eventVersion: 1, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+    eventVersion: 1, serverTime: "2027-06-16T02:00:00Z", eventStatus: "Live",
     role: { type: "Stylist", name: "新秘", view: "HandsFree" },
-    eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, cues: [], notice: null, ...over,
+    eventDay: { date: "2027-06-16", timezone: "Asia/Taipei" }, cues: [], notice: null, ...over,
   };
 }
 const okBody = { result: "ok", snapshot: snap({}) };
@@ -90,21 +90,21 @@ describe("US-ST-1.1 next assigned pending cue", () => {
 });
 
 describe("stylist view", () => {
-  const start = Date.parse("2027-06-06T03:00:00Z");
+  const start = Date.parse("2027-06-16T03:00:00Z");
   const now = start - 10 * MIN;
   it("US-ST-1.8 a draft counts down on the event day", () => {
     expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), now, 0).kind).toBe("countdown");
   });
   it("US-ST-1.9 the event day is judged with the corrected clock in the event zone", () => {
-    // 2027-06-05 23:30 Taipei on a device whose clock is 1 h slow: already the 6th.
-    const lateOn5th = Date.parse("2027-06-05T15:30:00Z");
+    // 2027-06-15 23:30 Taipei on a device whose clock is 1 h slow: already the 6th.
+    const lateOn5th = Date.parse("2027-06-15T15:30:00Z");
     expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), lateOn5th, 0).kind).toBe("preDay");
     expect(stylistView(snap({ eventStatus: "Draft", cues: [cue({})] }), lateOn5th, 60 * MIN).kind).toBe("countdown");
   });
   it("US-X-2.1 before the event day: the list, ordered by seq", () => {
     const v = stylistView(
       snap({ eventStatus: "Draft", cues: [cue({ id: 2, seq: 2, title: "B" }), cue({ id: 1, seq: 1, title: "A" })] }),
-      Date.parse("2027-06-01T02:00:00Z"), 0);
+      Date.parse("2027-06-11T02:00:00Z"), 0);
     expect(v.kind).toBe("preDay");
     expect(v.kind === "preDay" && v.cues.map((c) => c.title)).toEqual(["A", "B"]);
   });
@@ -199,16 +199,16 @@ describe("local snapshot key", () => {
 });
 
 describe("stale local snapshots", () => {
-  const now = Date.parse("2027-06-10T00:00:00Z");
+  const now = Date.parse("2027-06-20T00:00:00Z");
   it("Live older than 2 days is stale; Draft and recent Live are kept", () => {
-    expect(isStaleLive({ eventStatus: "Live", serverTime: "2027-06-07T00:00:00Z" }, now)).toBe(true);
-    expect(isStaleLive({ eventStatus: "Live", serverTime: "2027-06-08T12:00:00Z" }, now)).toBe(false);
+    expect(isStaleLive({ eventStatus: "Live", serverTime: "2027-06-17T00:00:00Z" }, now)).toBe(true);
+    expect(isStaleLive({ eventStatus: "Live", serverTime: "2027-06-18T12:00:00Z" }, now)).toBe(false);
     expect(isStaleLive({ eventStatus: "Draft", serverTime: "2027-01-01T00:00:00Z" }, now)).toBe(false);
   });
   it("pruneStale removes only stale snap: entries", () => {
     const m = new Map<string, string>([
-      ["snap:a", JSON.stringify({ eventStatus: "Live", serverTime: "2027-06-01T00:00:00Z" })],
-      ["snap:b", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-01T00:00:00Z" })],
+      ["snap:a", JSON.stringify({ eventStatus: "Live", serverTime: "2027-06-11T00:00:00Z" })],
+      ["snap:b", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-11T00:00:00Z" })],
       ["other", "x"],
     ]);
     const store = {
@@ -224,11 +224,11 @@ describe("stale local snapshots", () => {
 
 describe("misc helpers", () => {
   it("formats 24-hour HH:MM in Asia/Taipei", () => {
-    expect(formatHM("2027-06-06T03:15:00.123Z")).toBe("11:15");
-    expect(formatHM("2027-06-05T16:05:00Z")).toBe("00:05");
+    expect(formatHM("2027-06-16T03:15:00.123Z")).toBe("11:15");
+    expect(formatHM("2027-06-15T16:05:00Z")).toBe("00:05");
   });
   it("date in zone", () => {
-    expect(dateInZone(Date.parse("2027-06-05T16:30:00Z"), "Asia/Taipei")).toBe("2027-06-06");
+    expect(dateInZone(Date.parse("2027-06-15T16:30:00Z"), "Asia/Taipei")).toBe("2027-06-16");
   });
   it("token from fragment, LINE detection", () => {
     expect(tokenFromHash("#t=abc")).toBe("abc");
@@ -249,13 +249,13 @@ describe("M2a helpers", () => {
   });
   it("signs and dates", () => {
     expect([10, -5, 0].map(signed)).toEqual(["+10", "−5", "0"]);
-    expect(monthDay("2027-06-06")).toBe("6/6");
+    expect(monthDay("2027-06-16")).toBe("6/16");
   });
   const n: ShiftNotice = {
-    kind: "shift", at: "2027-06-06T02:00:00.000Z", deltaMin: 10,
+    kind: "shift", at: "2027-06-16T02:00:00.000Z", deltaMin: 10,
     changes: [
-      { cueId: 2, fromStart: "2027-06-06T05:00:00.000Z", toStart: "2027-06-06T05:10:00.000Z" },
-      { cueId: 1, fromStart: "2027-06-06T03:15:00.000Z", toStart: "2027-06-06T03:25:00.000Z" },
+      { cueId: 2, fromStart: "2027-06-16T05:00:00.000Z", toStart: "2027-06-16T05:10:00.000Z" },
+      { cueId: 1, fromStart: "2027-06-16T03:15:00.000Z", toStart: "2027-06-16T03:25:00.000Z" },
     ],
   };
   it("US-ST-2.2 notice text names the earliest moved cue", () => {
@@ -270,12 +270,12 @@ describe("M2a helpers", () => {
     } as unknown as Storage;
     expect(freshNotice(n, store, "snap:x")).toBe(n);
     expect(freshNotice(n, store, "snap:x")).toBeNull();
-    expect(freshNotice({ ...n, at: "2027-06-06T02:05:00.000Z" }, store, "snap:x")).not.toBeNull();
+    expect(freshNotice({ ...n, at: "2027-06-16T02:05:00.000Z" }, store, "snap:x")).not.toBeNull();
     expect(freshNotice(null, store, "snap:x")).toBeNull();
   });
   it("host snapshots have no cues and are still accepted", () => {
     const host = { eventVersion: 1, serverTime: "x", eventStatus: "Live", role: { type: "Host", name: "新人", view: "Dashboard" },
-      eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null };
+      eventDay: { date: "2027-06-16", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null };
     expect(classifyResponse(200, JSON_CT, { result: "ok", snapshot: host }).kind).toBe("ok");
     expect(classifyResponse(200, JSON_CT, { result: "ok", snapshot: { ...host, role: { type: "Stylist", name: "x" } } }).kind)
       .toBe("failure");
@@ -284,9 +284,9 @@ describe("M2a helpers", () => {
 
 describe("ADR-0028 original time beside a shifted cue", () => {
   it("shows the rundown time, not the offset", () => {
-    expect(originalTime("2027-06-06T08:28:00.000Z", 10, "Asia/Taipei")).toBe("原 16:18");
-    expect(originalTime("2027-06-06T08:18:00.000Z", -5, "Asia/Taipei")).toBe("原 16:23");
-    expect(originalTime("2027-06-06T08:28:00.000Z", 0, "Asia/Taipei")).toBeNull();
+    expect(originalTime("2027-06-16T08:28:00.000Z", 10, "Asia/Taipei")).toBe("原 16:18");
+    expect(originalTime("2027-06-16T08:18:00.000Z", -5, "Asia/Taipei")).toBe("原 16:23");
+    expect(originalTime("2027-06-16T08:28:00.000Z", 0, "Asia/Taipei")).toBeNull();
   });
 });
 
@@ -304,8 +304,8 @@ function memoryStorage(): Storage {
 
 describe("M2b: conditional requests (api.md 5.7)", () => {
   it("a 304 keeps the snapshot, never wipes, and needs the server time", () => {
-    const o = classifyNotModified("2027-06-06T02:00:01.500Z");
-    expect(o).toEqual({ kind: "notModified", serverTime: "2027-06-06T02:00:01.500Z" });
+    const o = classifyNotModified("2027-06-16T02:00:01.500Z");
+    expect(o).toEqual({ kind: "notModified", serverTime: "2027-06-16T02:00:01.500Z" });
     expect(shouldWipeLocalData(o)).toBe(false);
     expect(classifyNotModified(null).kind).toBe("failure");
     expect(classifyNotModified("x").kind).toBe("failure");
@@ -336,7 +336,7 @@ describe("M2b: write bodies (api.md section 3)", () => {
 });
 
 describe("M2b: notices and helpers", () => {
-  const assign: AssignNotice = { kind: "assign", at: "2027-06-06T00:00:00Z", cueId: 9, title: "長輩致詞", effectiveStart: "2027-06-06T04:00:00Z" };
+  const assign: AssignNotice = { kind: "assign", at: "2027-06-16T00:00:00Z", cueId: 9, title: "長輩致詞", effectiveStart: "2027-06-16T04:00:00Z" };
   it("an assignment reads 新增環節 with its time (US-X-7.1)", () => {
     expect(noticeText(assign, "Asia/Taipei")).toBe("新增環節：長輩致詞（12:00）");
     expect([...noticedCues(assign)]).toEqual(["9"]);
@@ -349,17 +349,17 @@ describe("M2b: notices and helpers", () => {
     expect(freshNotice(assign, store, "snap:x")).toBeNull();
   });
   it("turns HH:MM on the event day into UTC", () => {
-    expect(zonedToISO("2027-06-06", "12:00", "Asia/Taipei")).toBe("2027-06-06T04:00:00.000Z");
-    expect(zonedToISO("2027-06-06", "00:30", "Asia/Taipei")).toBe("2027-06-05T16:30:00.000Z");
-    expect(zonedToISO("2027-06-06", "24:00", "Asia/Taipei")).toBeNull();
-    expect(zonedToISO("2027-06-06", "", "Asia/Taipei")).toBeNull();
+    expect(zonedToISO("2027-06-16", "12:00", "Asia/Taipei")).toBe("2027-06-16T04:00:00.000Z");
+    expect(zonedToISO("2027-06-16", "00:30", "Asia/Taipei")).toBe("2027-06-15T16:30:00.000Z");
+    expect(zonedToISO("2027-06-16", "24:00", "Asia/Taipei")).toBeNull();
+    expect(zonedToISO("2027-06-16", "", "Asia/Taipei")).toBeNull();
   });
   it("says how long ago a link was used (US-M-1.6)", () => {
-    const now = Date.parse("2027-06-06T01:05:00Z");
+    const now = Date.parse("2027-06-16T01:05:00Z");
     expect(agoText(null, now)).toBe("沒有使用紀錄");
-    expect(agoText("2027-06-06T01:05:00Z", now)).toBe("剛剛");
-    expect(agoText("2027-06-06T01:00:00Z", now)).toBe("5 分鐘前");
-    expect(agoText("2027-06-05T23:00:00Z", now)).toBe("2 小時前");
+    expect(agoText("2027-06-16T01:05:00Z", now)).toBe("剛剛");
+    expect(agoText("2027-06-16T01:00:00Z", now)).toBe("5 分鐘前");
+    expect(agoText("2027-06-15T23:00:00Z", now)).toBe("2 小時前");
   });
 });
 
@@ -380,7 +380,7 @@ describe("M2c: preparation (api.md section 3)", () => {
     expect(plain.kind === "ok" && plain.qr).toBeFalsy();
   });
   it("writes the M2c bodies", () => {
-    const cue = { cueId: 3, start: "2027-06-06T02:00:00Z", durationMin: 10, isFixed: true, title: "a", notePublic: null };
+    const cue = { cueId: 3, start: "2027-06-16T02:00:00Z", durationMin: 10, isFixed: true, title: "a", notePublic: null };
     expect(writeBody({ path: "/api/cues/update", cue }, 4)).toEqual({ version: 4, ...cue });
     expect(writeBody({ path: "/api/cues/move", cueId: 3, afterCueId: null }, 4)).toEqual({ version: 4, cueId: 3, afterCueId: null });
     expect(writeBody({ path: "/api/cues/delete", cueId: 3 }, 4)).toEqual({ version: 4, cueId: 3 });
@@ -400,28 +400,28 @@ describe("M2c: preparation (api.md section 3)", () => {
     for (const typed of ["", "9", "24:00", "09:60", "9:2", "下午 9:20", "09:20:00", "12345"]) expect(parseClock(typed)).toBeNull();
   });
   it("locks the destructive edits from the event day on (ADR-0032)", () => {
-    expect(dayStarted("2027-06-06", "2027-06-05")).toBe(false);
-    expect(dayStarted("2027-06-06", "2027-06-06")).toBe(true);
-    expect(dayStarted("2027-06-06", "2027-06-07")).toBe(true);
+    expect(dayStarted("2027-06-16", "2027-06-15")).toBe(false);
+    expect(dayStarted("2027-06-16", "2027-06-16")).toBe(true);
+    expect(dayStarted("2027-06-16", "2027-06-17")).toBe(true);
   });
 });
 
 describe("backup rundown rows (sync-and-offline 9)", () => {
   const mcue = (over: Partial<MasterCue>): MasterCue => ({
-    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-06T03:00:00Z", effectiveStart: "2027-06-06T03:00:00Z",
+    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-16T03:00:00Z", effectiveStart: "2027-06-16T03:00:00Z",
     durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", actualStart: null, actualEnd: null,
     notePublic: null, roles: [], ...over,
   });
   const master = (cues: MasterCue[]): MasterSnapshot => ({
-    eventVersion: 3, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+    eventVersion: 3, serverTime: "2027-06-16T02:00:00Z", eventStatus: "Live",
     role: { type: "Master", name: "總召", view: "Console" },
-    eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" },
-    event: { name: "婚禮", date: "2027-06-06", timezone: "Asia/Taipei" },
+    eventDay: { date: "2027-06-16", timezone: "Asia/Taipei" },
+    event: { name: "婚禮", date: "2027-06-16", timezone: "Asia/Taipei" },
     cues, activeCueId: null, undo: { available: false, description: null }, roles: [],
     conflicts: [], overrunMin: 0, outOfOrder: [],
   });
   const cues = [
-    mcue({ id: 2, seq: 2, title: "開席", isFixed: true, effectiveStart: "2027-06-06T04:10:00Z", offsetMin: 10,
+    mcue({ id: 2, seq: 2, title: "開席", isFixed: true, effectiveStart: "2027-06-16T04:10:00Z", offsetMin: 10,
       roles: [{ roleId: 7, name: "攝影", roleNote: "大門" }] }),
     mcue({ id: 1, seq: 1, title: "一進", status: "Completed", notePublic: "全體",
       roles: [{ roleId: 5, name: "新秘", roleNote: "白紗" }, { roleId: 7, name: "攝影", roleNote: null }] }),
@@ -431,7 +431,7 @@ describe("backup rundown rows (sync-and-offline 9)", () => {
     const rows = printRows(master(cues));
     expect(rows.map((r) => r.title)).toEqual(["一進", "開席"]);
     expect(rows[0]).toMatchObject({ done: true, notePublic: "全體", roles: [{ name: "新秘", note: "白紗" }, { name: "攝影", note: null }] });
-    expect(rows[1]).toMatchObject({ start: "2027-06-06T04:10:00Z", isFixed: true, durationMin: 10 });
+    expect(rows[1]).toMatchObject({ start: "2027-06-16T04:10:00Z", isFixed: true, durationMin: 10 });
   });
   it("US-X-9.2: the Master can print one role's copy: its cues and only its notes", () => {
     const rows = printRows(master(cues), 5);
@@ -446,9 +446,9 @@ describe("backup rundown rows (sync-and-offline 9)", () => {
   });
   it("US-X-9.4: the hosts' link has nothing to print", () => {
     const host: HostSnapshot = {
-      eventVersion: 1, serverTime: "2027-06-06T02:00:00Z", eventStatus: "Live",
+      eventVersion: 1, serverTime: "2027-06-16T02:00:00Z", eventStatus: "Live",
       role: { type: "Host", name: "新人", view: "Dashboard" },
-      eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null,
+      eventDay: { date: "2027-06-16", timezone: "Asia/Taipei" }, delayMin: 0, currentTitle: null,
     };
     expect(printRows(host)).toEqual([]);
   });
@@ -477,16 +477,16 @@ describe("the four jobs (api.md section 9)", () => {
     expect(callRunnerTitle("名".repeat(120)).length).toBe(100);
   });
   it("api.md 9.5: a saved guest list goes 2 days after the event day, draft or live", () => {
-    // Taipei: the day starts 2027-06-05T16:00Z and ends 24 hours later.
-    const day = Date.parse("2027-06-05T16:00:00Z");
-    const s = { guests: [guests[0]], eventDay: { date: "2027-06-06", timezone: "Asia/Taipei" } };
+    // Taipei: the day starts 2027-06-15T16:00Z and ends 24 hours later.
+    const day = Date.parse("2027-06-15T16:00:00Z");
+    const s = { guests: [guests[0]], eventDay: { date: "2027-06-16", timezone: "Asia/Taipei" } };
     expect(holdsStaleGuests(s, day + 3 * 24 * 3600 * 1000)).toBe(false);
     expect(holdsStaleGuests(s, day + 3 * 24 * 3600 * 1000 + 1)).toBe(true);
     expect(holdsStaleGuests({ ...s, guests: [] }, day + 9e9)).toBe(false);
     expect(holdsStaleGuests({ eventDay: s.eventDay }, day + 9e9)).toBe(false);
     const m = new Map<string, string>([
-      ["snap:a", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-05T00:00:00Z", ...s })],
-      ["snap:b", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-05T00:00:00Z", eventDay: s.eventDay })],
+      ["snap:a", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-15T00:00:00Z", ...s })],
+      ["snap:b", JSON.stringify({ eventStatus: "Draft", serverTime: "2027-06-15T00:00:00Z", eventDay: s.eventDay })],
     ]);
     const store = {
       get length() { return m.size; },
@@ -524,7 +524,7 @@ describe("the colour theme (screen-design.md section 2)", () => {
 
 describe("the shift preview's fixed cues (US-M-2.1; data-model.md 4.2)", () => {
   const c = (over: Partial<MasterCue>): MasterCue => ({
-    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-06T03:00:00Z", effectiveStart: "2027-06-06T03:00:00Z",
+    id: 1, seq: 1, title: "T", scheduledStart: "2027-06-16T03:00:00Z", effectiveStart: "2027-06-16T03:00:00Z",
     durationMin: 10, isFixed: false, offsetMin: 0, status: "Pending", actualStart: null, actualEnd: null,
     notePublic: null, roles: [], ...over,
   });
@@ -578,8 +578,8 @@ describe("create an event with an invite (US-M-17)", () => {
     expect(createOutcome(502, undefined).kind).toBe("failure");
   });
   it("dates run from today in Taipei to two years ahead (US-M-17.7)", () => {
-    // 2027-06-05 16:30 UTC is 2027-06-06 00:30 in Taipei.
-    expect(dateRange(new Date(Date.UTC(2027, 5, 5, 16, 30)))).toEqual({ min: "2027-06-06", max: "2029-06-06" });
+    // 2027-06-15 16:30 UTC is 2027-06-16 00:30 in Taipei.
+    expect(dateRange(new Date(Date.UTC(2027, 5, 15, 16, 30)))).toEqual({ min: "2027-06-16", max: "2029-06-16" });
     expect(dateRange(new Date(Date.UTC(2028, 1, 29, 4)))).toEqual({ min: "2028-02-29", max: "2030-03-01" });
   });
 });
@@ -623,8 +623,8 @@ describe("supportEmail", () => {
 // The admin page's answers (US-O-9, US-O-10): anything not understood is a
 // failure, and every refusal of the link is the same "denied".
 describe("admin page", () => {
-  const ev = { id: 1, name: "婚宴", date: "2027-06-06", status: "Draft", createdAt: "2027-05-01T00:00:00Z" };
-  const inv = { id: 3, expiresAt: "2027-06-01T00:00:00Z" };
+  const ev = { id: 1, name: "婚宴", date: "2027-06-16", status: "Draft", createdAt: "2027-05-01T00:00:00Z" };
+  const inv = { id: 3, expiresAt: "2027-06-11T00:00:00Z" };
   it("reads the overview", () => {
     expect(overviewOutcome(200, { result: "ok", invites: [inv], events: [ev] })).toEqual({ kind: "ok", invites: [inv], events: [ev] });
     expect(overviewOutcome(200, { result: "ok", invites: [inv] }).kind).toBe("failure");
@@ -634,8 +634,8 @@ describe("admin page", () => {
     expect(overviewOutcome(500, { error: "internal" }).kind).toBe("failure");
   });
   it("reads a new code", () => {
-    expect(inviteOutcome(200, { result: "ok", id: 4, code: "ABCD-EFGH", expiresAt: "2027-06-01T00:00:00Z" })).toEqual({
-      kind: "ok", id: 4, code: "ABCD-EFGH", expiresAt: "2027-06-01T00:00:00Z",
+    expect(inviteOutcome(200, { result: "ok", id: 4, code: "ABCD-EFGH", expiresAt: "2027-06-11T00:00:00Z" })).toEqual({
+      kind: "ok", id: 4, code: "ABCD-EFGH", expiresAt: "2027-06-11T00:00:00Z",
     });
     expect(inviteOutcome(200, { result: "ok", id: 4 }).kind).toBe("failure");
     expect(inviteOutcome(422, { error: "too_many_invites" }).kind).toBe("tooMany");

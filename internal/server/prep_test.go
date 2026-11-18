@@ -24,7 +24,7 @@ func TestUS_M_10_2_UpdateCue(t *testing.T) {
 	r := e.post(pathUpdate, e.master, updateBody(v, e.cue["迎賓"], at(10, 40), "  賓客入場  "))
 	r.wantResult(t, "ok")
 	c := byTitle(t, r.snapshot(t), "賓客入場")
-	if c["scheduledStart"] != "2027-06-06T02:40:00.000Z" || c["durationMin"] != 25.0 || c["isFixed"] != true ||
+	if c["scheduledStart"] != "2027-06-16T02:40:00.000Z" || c["durationMin"] != 25.0 || c["isFixed"] != true ||
 		c["notePublic"] != "新備註" || c["offsetMin"] != 0.0 {
 		t.Errorf("cue = %v", c)
 	}
@@ -243,7 +243,7 @@ func TestUS_M_13_OriginMustBeThisSite(t *testing.T) {
 		t.Errorf("%d roles created with a bad origin", n)
 	}
 	e.get(e.stylist).wantResult(t, "ok") // never reissued
-	for _, good := range []string{"http://localhost:5173", "http://127.0.0.1:18090", "https://e2e.34-80-7-111.sslip.io"} {
+	for _, good := range []string{"http://localhost:5173", "http://127.0.0.1:18090", "https://e2e.bethere.example.com"} {
 		r := e.post(pathReissue, e.master, map[string]any{"roleId": e.stylistB, "origin": good})
 		r.wantResult(t, "ok")
 		wantKeys(t, "reissue with origin", r.body, "result", "snapshot", "token", "qr")
@@ -518,7 +518,7 @@ func TestUS_M_14_PreviewIsTheRolesOwnSnapshot(t *testing.T) {
 // ---------------------------------------------------------------- ownership, capabilities
 
 func TestM2cIDsOfAnotherEventAre404(t *testing.T) {
-	for _, day := range []int{7, 1} { // later, and already ended
+	for _, day := range []int{17, 11} { // later, and already ended
 		e := newEnv(t)
 		f := e.otherEvent(day)
 		e.dayBefore()

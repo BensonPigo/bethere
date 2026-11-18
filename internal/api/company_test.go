@@ -31,7 +31,7 @@ func companyMux(t *testing.T) (send func(method, path, token, body string) (int,
 		t.Fatal(err)
 	}
 	loc, _ := time.LoadLocation("Asia/Taipei")
-	now := time.Date(2027, 6, 6, 9, 0, 0, 0, loc)
+	now := time.Date(2027, 6, 16, 9, 0, 0, 0, loc)
 	a := New(Config{Store: st, Now: func() time.Time { return now }, Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))})
 	mux := http.NewServeMux()
 	a.Register(mux)
@@ -82,7 +82,7 @@ func TestUS_CO_3_2_CompanyEventAnswers(t *testing.T) {
 	}
 	session, _ := auth.NewToken()
 	loc, _ := time.LoadLocation("Asia/Taipei")
-	if err := st.IssueLoginLink(context.Background(), "a@x.tw", auth.HashToken(session), time.Date(2027, 6, 6, 9, 0, 0, 0, loc)); err != nil {
+	if err := st.IssueLoginLink(context.Background(), "a@x.tw", auth.HashToken(session), time.Date(2027, 6, 16, 9, 0, 0, 0, loc)); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -93,9 +93,9 @@ func TestUS_CO_3_2_CompanyEventAnswers(t *testing.T) {
 		{"", `{}`, 404, "not_found"},
 		{admin, `{}`, 404, "not_found"},
 		{session, `{"name":"甲"}`, 400, "bad_request"},
-		{session, `{"name":"","date":"2027-06-20"}`, 422, "invalid_event"},
-		{session, `{"name":"甲","date":"2027-06-05"}`, 422, "invalid_event"},
-		{session, `{"name":"甲","date":"2027-06-20"}`, 200, ""},
+		{session, `{"name":"","date":"2027-06-30"}`, 422, "invalid_event"},
+		{session, `{"name":"甲","date":"2027-06-15"}`, 422, "invalid_event"},
+		{session, `{"name":"甲","date":"2027-06-30"}`, 200, ""},
 	} {
 		status, body := send(http.MethodPost, "/api/company/events", c.token, c.body)
 		if status != c.status || c.code != "" && body["error"] != c.code || c.code == "" && body["result"] != "ok" {

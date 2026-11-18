@@ -16,7 +16,7 @@ import (
 	"github.com/BensonPigo/bethere/internal/api"
 )
 
-var fixedNow = time.Date(2027, 6, 6, 2, 30, 0, 0, time.UTC)
+var fixedNow = time.Date(2027, 6, 16, 2, 30, 0, 0, time.UTC)
 
 func newTestServer(t *testing.T) (http.Handler, *bytes.Buffer) {
 	t.Helper()
@@ -100,7 +100,7 @@ func TestPingReturnsServerTimeAndNoStore(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.ServerTime != "2027-06-06T02:30:00.000Z" || body.Version != "test-1" {
+	if body.ServerTime != "2027-06-16T02:30:00.000Z" || body.Version != "test-1" {
 		t.Errorf("body = %+v", body)
 	}
 }

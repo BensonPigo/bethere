@@ -238,7 +238,7 @@ func TestUS_ST_2_NoticeOnlyForTheCallersOwnCues(t *testing.T) {
 		t.Fatalf("changes = %v", changes)
 	}
 	c := changes[0].(map[string]any)
-	if c["cueId"] != float64(e.cue["敬酒"]) || c["fromStart"] != "2027-06-06T05:10:00.000Z" || c["toStart"] != "2027-06-06T05:00:00.000Z" {
+	if c["cueId"] != float64(e.cue["敬酒"]) || c["fromStart"] != "2027-06-16T05:10:00.000Z" || c["toStart"] != "2027-06-16T05:00:00.000Z" {
 		t.Errorf("change = %v", c)
 	}
 }
@@ -284,7 +284,7 @@ func TestUS_X_2_DraftSnapshotCarriesTheEventDayAndOwnCues(t *testing.T) {
 	e := newEnv(t)
 	e.setClock(at(0, 0).AddDate(0, 0, -3).Add(9 * time.Hour))
 	s := e.snap(e.stylist)
-	if d := s["eventDay"].(map[string]any); d["date"] != "2027-06-06" || d["timezone"] != "Asia/Taipei" {
+	if d := s["eventDay"].(map[string]any); d["date"] != "2027-06-16" || d["timezone"] != "Asia/Taipei" {
 		t.Errorf("eventDay = %v", d)
 	}
 	if s["eventStatus"] != "Draft" || len(cues(t, s)) != 2 {

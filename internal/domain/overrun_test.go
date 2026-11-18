@@ -95,7 +95,7 @@ func TestViewDefaultsAndCompatibility(t *testing.T) {
 // NFR-7: for random rundowns and any accepted shift, applying the shift
 // and then its undo gives back exactly the cues before the shift.
 func TestUS_M_4_7_ShiftThenUndoRestoresEverything(t *testing.T) {
-	rng := rand.New(rand.NewSource(20270606))
+	rng := rand.New(rand.NewSource(20270616))
 	statuses := []Status{Pending, Pending, Pending, InProgress, Completed, Skipped}
 	accepted := 0
 	for i := 0; i < 5000; i++ {

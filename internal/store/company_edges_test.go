@@ -29,7 +29,7 @@ func (c company) addB(t *testing.T) int64 {
 // member logs in only with new ones.
 func TestUS_CO_2_4_ReAddedMemberHoldsNoOldLink(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	b := c.addB(t)
 	if err := c.f.s.OpenConsole(ctx, hash("sb"), ev, hash("cb"), before); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestUS_CO_2_4_ReAddedMemberHoldsNoOldLink(t *testing.T) {
 // opened console link working.
 func TestUS_CO_1_4_LogoutAndExpiryLeaveConsolesOpen(t *testing.T) {
 	c := newCompany(t)
-	ev := c.event(t, "sa", "甲婚宴", 7)
+	ev := c.event(t, "sa", "甲婚宴", 17)
 	if err := c.f.s.OpenConsole(ctx, hash("sa"), ev, hash("c1"), before); err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestUS_CO_2_4_RemovalRacingCreateEvent(t *testing.T) {
 	b := c.addB(t)
 	ok := removalRace(t, c, b, func(i int) error {
 		_, err := c.f.s.CreateCompanyEvent(ctx, hash("sb"), NewEvent{
-			Name: "競態", Date: domain.Date{Year: 2027, Month: time.June, Day: 20}, TimeZone: "Asia/Taipei",
+			Name: "競態", Date: domain.Date{Year: 2027, Month: time.June, Day: 30}, TimeZone: "Asia/Taipei",
 			MasterName: "總召", MasterTokenHash: hash(fmt.Sprintf("rm%d", i)), RecoveryCodeHash: hash(fmt.Sprintf("rr%d", i)),
 		}, before)
 		return err
@@ -255,7 +255,7 @@ func TestUS_CO_3_4_ConcurrentCreateOfTheLastEvent(t *testing.T) {
 	}
 	errs := onlyOne(6, func(i int) error {
 		_, err := c.f.s.CreateCompanyEvent(ctx, hash("sa"), NewEvent{
-			Name: "最後", Date: domain.Date{Year: 2027, Month: time.June, Day: 20}, TimeZone: "Asia/Taipei",
+			Name: "最後", Date: domain.Date{Year: 2027, Month: time.June, Day: 30}, TimeZone: "Asia/Taipei",
 			MasterName: "總召", MasterTokenHash: hash(fmt.Sprintf("lm%d", i)), RecoveryCodeHash: hash(fmt.Sprintf("lr%d", i)),
 		}, before)
 		return err

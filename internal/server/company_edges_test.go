@@ -16,7 +16,7 @@ import (
 // it stays open while a login link runs out.
 func (e *env) farEvent(session, name string) (int64, string) {
 	e.t.Helper()
-	r := e.post(pathCompanyEvents, session, map[string]any{"name": name, "date": "2029-06-06"})
+	r := e.post(pathCompanyEvents, session, map[string]any{"name": name, "date": "2029-06-16"})
 	r.wantResult(e.t, "ok")
 	id, _ := r.body["eventId"].(float64)
 	tok, _ := r.body["masterToken"].(string)
@@ -110,7 +110,7 @@ func TestUS_CO_1_7_MaintenanceClosesEveryCompanyWrite(t *testing.T) {
 		pathCompanyLogout: {},
 		pathMemberAdd:     {"email": "c@x.tw"},
 		pathMemberRemove:  {"memberId": bID},
-		pathCompanyEvents: {"name": "甲婚宴", "date": "2027-06-20"},
+		pathCompanyEvents: {"name": "甲婚宴", "date": "2027-06-30"},
 	} {
 		e.post(path, session, body).wantError(t, http.StatusServiceUnavailable, "maintenance")
 	}
@@ -203,7 +203,7 @@ func TestUS_CO_2_4_RemovalRacingAddAndNewEvent(t *testing.T) {
 			defer wg.Done()
 			<-start
 			after := removed.Load()
-			rec := e.do(http.MethodPost, pathCompanyEvents, b, jsonBody(map[string]any{"name": "競態", "date": "2027-06-20"}))
+			rec := e.do(http.MethodPost, pathCompanyEvents, b, jsonBody(map[string]any{"name": "競態", "date": "2027-06-30"}))
 			switch {
 			case rec.Code == http.StatusOK && after:
 				t.Errorf("a new event after the removal succeeded")
@@ -295,7 +295,7 @@ func TestUS_CO_3_4_ConcurrentLastEvent(t *testing.T) {
 		e.companyEvent(session, "甲")
 	}
 	rs := e.parallel(5, func(int) resp {
-		return e.do(http.MethodPost, pathCompanyEvents, session, `{"name":"最後","date":"2027-06-20"}`)
+		return e.do(http.MethodPost, pathCompanyEvents, session, `{"name":"最後","date":"2027-06-30"}`)
 	})
 	wantOneOK(t, rs, http.StatusUnprocessableEntity, "too_many_events")
 	if n := e.count(`SELECT count(*) FROM events WHERE organization_id IS NOT NULL`); n != 20 {
@@ -367,12 +367,12 @@ func TestUS_CO_3_2_NewEventRules(t *testing.T) {
 	e := newEnv(t)
 	_, session := e.company()
 	for _, c := range []struct{ name, date string }{
-		{strings.Repeat("婚", 51), "2027-06-20"},
-		{"   ", "2027-06-20"},
-		{"婚\n禮", "2027-06-20"},
-		{"婚禮", "2029-06-07"}, // one day past two years
+		{strings.Repeat("婚", 51), "2027-06-30"},
+		{"   ", "2027-06-30"},
+		{"婚\n禮", "2027-06-30"},
+		{"婚禮", "2029-06-17"}, // one day past two years
 		{"婚禮", "2027-02-30"},
-		{"婚禮", "2027-6-20"},
+		{"婚禮", "2027-6-30"},
 	} {
 		e.post(pathCompanyEvents, session, map[string]any{"name": c.name, "date": c.date}).
 			wantError(t, http.StatusUnprocessableEntity, "invalid_event")
@@ -380,15 +380,15 @@ func TestUS_CO_3_2_NewEventRules(t *testing.T) {
 	if n := e.count(`SELECT count(*) FROM events WHERE organization_id IS NOT NULL`); n != 0 {
 		t.Errorf("a refused event was written: %d", n)
 	}
-	e.post(pathCompanyEvents, session, map[string]any{"name": strings.Repeat("婚", 50), "date": "2029-06-06"}).wantResult(t, "ok")
+	e.post(pathCompanyEvents, session, map[string]any{"name": strings.Repeat("婚", 50), "date": "2029-06-16"}).wantResult(t, "ok")
 	// The zone is Taipei's: at 00:30 on the 6th there it is still the 5th by
 	// UTC; the 5th is refused all the same, the 6th taken.
 	e.setClock(at(0, 30))
-	e.post(pathCompanyEvents, session, map[string]any{"name": "昨天", "date": "2027-06-05"}).wantError(t, http.StatusUnprocessableEntity, "invalid_event")
-	r := e.post(pathCompanyEvents, session, map[string]any{"name": "今天", "date": "2027-06-06"})
+	e.post(pathCompanyEvents, session, map[string]any{"name": "昨天", "date": "2027-06-15"}).wantError(t, http.StatusUnprocessableEntity, "invalid_event")
+	r := e.post(pathCompanyEvents, session, map[string]any{"name": "今天", "date": "2027-06-16"})
 	r.wantResult(t, "ok")
 	snap := e.snap(r.body["masterToken"].(string))
-	if ev := snap["event"].(map[string]any); ev["timezone"] != "Asia/Taipei" || ev["date"] != "2027-06-06" {
+	if ev := snap["event"].(map[string]any); ev["timezone"] != "Asia/Taipei" || ev["date"] != "2027-06-16" {
 		t.Errorf("event = %v", ev)
 	}
 }

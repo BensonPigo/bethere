@@ -320,3 +320,18 @@ func TestUS_CA_1_2_FirstTickIsKept(t *testing.T) {
 		t.Errorf("replace after every tick was taken back: %v", err)
 	}
 }
+
+// api.md 9.4: setting a task to the state it is in, by the same holder,
+// writes nothing and logs nothing.
+func TestUS_RN_1_3_MarkingDoneTwiceWritesOnce(t *testing.T) {
+	f := newFixture(t)
+	task, _ := f.s.AddTask(ctx, f.eventID, "搬花", f.masterBy, dayBefore)
+	for i := 0; i < 2; i++ {
+		if err := f.s.SetTaskState(ctx, f.eventID, task, TaskDone, true, f.masterBy, dayBefore); err != nil {
+			t.Fatalf("done #%d: %v", i+1, err)
+		}
+	}
+	if n := countRows(t, f.s, `SELECT count(*) FROM action_logs WHERE event_id = ? AND type = 'task.set'`, f.eventID); n != 1 {
+		t.Errorf("%d task.set logs, want 1", n)
+	}
+}
