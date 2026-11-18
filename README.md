@@ -1,10 +1,14 @@
 # BeThere
 
+[![CI](https://github.com/BensonPigo/bethere/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/BensonPigo/bethere/actions/workflows/ci.yml)
+
 **一款即時婚禮當天時程與工作人員協調工具，當計畫有變時，讓所有人保持同步。**
 
 > A live wedding day schedule and crew coordination app that keeps everyone in sync when plans change. (UI and docs are in Traditional Chinese.)
 
-![總召主控台：左邊是時間軸，右邊是目前環節、推進與平移按鈕](docs/images/master-console.png)
+![總召在平板上按「+10」並確認平移，右邊新秘手機上的倒數從 10 分變成 20 分，頂端出現「時程已更新」](docs/images/demo-shift.gif)
+
+總召在平板上按「+10」，新秘手機上的倒數幾秒內從 10 分變成 20 分，不用任何人通知。
 
 <p>
   <img src="docs/images/stylist-countdown.png" width="32%" alt="新秘：手機放桌上也看得清楚的大字倒數，時程變動時頂端出現提示">
@@ -12,7 +16,7 @@
   <img src="docs/images/host-dashboard.png" width="32%" alt="新人：只顯示一切順利或延誤幾分">
 </p>
 
-左起：新秘的大字倒數、攝影的「下一件事」、新人的平安儀表板。截圖用的是範例資料。
+左起：新秘的大字倒數、攝影的「下一件事」、新人的平安儀表板。畫面都用範例資料錄製。
 
 ## 婚禮當天，時程一定會跑掉
 
@@ -45,6 +49,33 @@ BeThere 想做到的是：總召按下「延後 10 分」，新娘房裡的新�
 - **時間平移只有一份邏輯**：平移與試算都在伺服器算，預覽和實際結果不會不一致。
 - **一台最小的雲端主機**：Google Compute Engine 的 e2-micro，前面是 Caddy 自動申請 HTTPS；同時 3 場活動的負載測試通過。
 - **測試**：每個使用者故事中能自動化的驗收條件都有對應的測試；14 條端對端路線用 Playwright 以 Safari 的引擎實際操作畫面，包含斷網、伺服器停擺、維護模式。
+
+## 架構
+
+```mermaid
+flowchart LR
+    subgraph device["手機／平板的瀏覽器"]
+        spa["網頁（Preact + TypeScript）"]
+        cache[("本機保存最後一份流程表<br/>斷網時照樣顯示")]
+        spa --- cache
+    end
+
+    subgraph vm["一台雲端主機（GCE e2-micro）"]
+        caddy["Caddy<br/>HTTPS"]
+        go["bethere<br/>Go 單一執行檔，內含網頁"]
+        db[("SQLite")]
+        ltm["Litestream<br/>持續備份"]
+        caddy --> go --> db
+        ltm -- "讀取變更" --> db
+    end
+
+    backup[("Google Cloud Storage<br/>備份")]
+
+    spa -- "每 2 秒輪詢，資料沒變不重傳" --> caddy
+    ltm --> backup
+```
+
+完整的架構說明見 [docs/architecture/overview.md](docs/architecture/overview.md)。
 
 ## 怎麼開發的
 
