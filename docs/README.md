@@ -9,6 +9,7 @@
 | [product/vision.md](product/vision.md) | 產品願景與原則（V1～V5）；所有取捨的最上層依據 |
 | [requirements/scope.md](requirements/scope.md) | 功能清單 × 優先層級 × 里程碑；限制；非功能需求（NFR）；原始需求對照 |
 | [requirements/roles-and-scenarios.md](requirements/roles-and-scenarios.md) | 各角色的現場使用情境與原始使用者故事 |
+| [requirements/feature-tree.md](requirements/feature-tree.md) | 功能樹：照使用者整理的功能導覽與各畫面網址 |
 | [requirements/stories.md](requirements/stories.md) | 所有故事與驗收條件（US-x-n） |
 | [design/data-model.md](design/data-model.md) | 實體、狀態轉換、時間平移演算法、領域服務 |
 | [design/sync-and-offline.md](design/sync-and-offline.md) | 輪詢與快照、版本衝突、時鐘、連線狀態、離線快取、備援 Rundown |
