@@ -212,4 +212,204 @@ check "mail sender set again: a new version of the same secret" '[ "$(grep -c "s
 ADDR=none; mailset
 check "mail none: address and secret removed" '! test -e "$FAKE/project.mailfrom" && ! test -e "$FAKE/secret.exists" && said "stop"'
 
+
+# ---- the VM's prepare script (US-O-1, 2, 8), in a scratch directory.
+# The script is cut out of vm-startup.sh as it is (the heredoc) and only its
+# fixed paths are pointed into $ROOT; litestream, the release binary, curl,
+# runuser and gcloud are fakes. Nothing of the real scripts is changed.
+setmd() { printf '%s' "$2" > "$FAKE/md/${1//\//_}"; } # path value
+runrc() { run "$@"; echo $? > "$FAKE/rc"; }
+rc_is() { [ "$(cat "$FAKE/rc")" = "$1" ]; }
+pfresh() {
+  fresh
+  ROOT="$FAKE/root"; export ROOT
+  mkdir -p "$ROOT/opt/bethere" "$ROOT/var/lib/bethere" "$ROOT/etc/caddy" "$ROOT/run" "$FAKE/md"
+  awk '/^cat > \/opt\/bethere\/prepare.sh <<.EOF.$/{on=1;next} on&&/^EOF$/{exit} on' "$OPS/vm-startup.sh" |
+    sed "s#/var/lib/bethere#$ROOT/var/lib/bethere#g; s#/opt/bethere#$ROOT/opt/bethere#g; s#/etc/litestream.yml#$ROOT/etc/litestream.yml#g; s#/etc/caddy#$ROOT/etc/caddy#g; s#/run/bethere#$ROOT/run/bethere#g" > "$ROOT/prepare.sh"
+  cat > "$ROOT/opt/bethere/litestream" <<'EOF'
+#!/usr/bin/env bash
+# Records what the disk looked like when the restore was asked for.
+db="${@: -1}"
+{ echo "args: $*"
+  for f in maintenance.forced member-reset.pending; do [ -e "$ROOT/var/lib/bethere/$f" ] && echo "has $f"; done
+  for s in -wal -shm -journal .tmp; do [ -e "$db$s" ] && echo "has $s"; done; } >> "$FAKE/ls.log"
+case "$(cat "$FAKE/ls.mode" 2>/dev/null || echo ok)" in
+  ok) echo restored > "$db"; chmod 644 "$db" ;;
+  none) ;;
+  *) echo "restore failed" >&2; exit 1 ;;
+esac
+EOF
+  cat > "$ROOT/opt/bethere/bethere" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = features ] && cat "$FAKE/features"
+exit 0
+EOF
+  chmod +x "$ROOT/opt/bethere/litestream" "$ROOT/opt/bethere/bethere"
+  printf 'maintenance\nmail-login\n' > "$FAKE/features"
+  : > "$FAKE/ls.log"
+  setmd instance/attributes/release-bucket rel
+  setmd instance/attributes/litestream-version 0.5.17
+  setmd instance/attributes/backup-bucket test-backups
+  echo 0.5.17 > "$ROOT/opt/bethere/litestream.installed" # already installed: no gcloud
+}
+prep() { runrc bash "$ROOT/prepare.sh" "$@"; }
+ls_log_has() { grep -qx -- "$1" "$FAKE/ls.log"; }
+mode_600() { [ "$(ls -l "$1" | cut -c1-10)" = "-rw-------" ]; }
+
+# US-O-1.2: no database file: the leftovers of a crash go first, the restore
+# markers are on disk before the restore starts, and the file comes out 0600.
+pfresh; touch "$ROOT/var/lib/bethere/bethere.db-wal" "$ROOT/var/lib/bethere/bethere.db-shm" \
+  "$ROOT/var/lib/bethere/bethere.db-journal" "$ROOT/var/lib/bethere/bethere.db.tmp"; prep backup
+check "prepare backup, database missing: -wal, -shm, -journal and .tmp are gone before the restore" \
+  'rc_is 0 && ! ls_log_has "has -wal" && ! ls_log_has "has -shm" && ! ls_log_has "has -journal" && ! ls_log_has "has .tmp" && [ "$(grep -c "^args:" "$FAKE/ls.log")" = 1 ] && [ ! -e "$ROOT/var/lib/bethere/bethere.db-wal" ] && [ ! -e "$ROOT/var/lib/bethere/bethere.db.tmp" ]'
+check "prepare backup: both markers exist when the restore starts (US-O-1.2, 2.6)" \
+  'ls_log_has "has maintenance.forced" && ls_log_has "has member-reset.pending"'
+check "prepare backup: restore with the replica-exists and integrity flags on the database" \
+  'grep -qx -- "args: restore -config $ROOT/etc/litestream.yml -if-replica-exists -integrity-check quick $ROOT/var/lib/bethere/bethere.db" "$FAKE/ls.log"'
+check "prepare backup: the restored database is 0600 (US-O-1.7)" 'mode_600 "$ROOT/var/lib/bethere/bethere.db"'
+check "prepare backup: markers stay after a good restore (only maintenance.sh off and serve remove them)" \
+  '[ -e "$ROOT/var/lib/bethere/maintenance.forced" ] && [ -e "$ROOT/var/lib/bethere/member-reset.pending" ]'
+
+pfresh; echo fail > "$FAKE/ls.mode"; prep backup
+check "prepare backup, restore fails: the start stops, no database, marker stays on" \
+  '! rc_is 0 && [ ! -e "$ROOT/var/lib/bethere/bethere.db" ] && [ -e "$ROOT/var/lib/bethere/maintenance.forced" ] && said "restore failed"'
+pfresh; echo none > "$FAKE/ls.mode"; prep backup
+check "prepare backup, no replica: no file is made (serve then refuses), marker stays on" \
+  'rc_is 0 && [ ! -e "$ROOT/var/lib/bethere/bethere.db" ] && [ -e "$ROOT/var/lib/bethere/maintenance.forced" ]'
+pfresh; echo kept > "$ROOT/var/lib/bethere/bethere.db"; echo wal > "$ROOT/var/lib/bethere/bethere.db-wal"; prep backup
+check "prepare backup, database present: no restore, nothing removed, no marker" \
+  'rc_is 0 && [ ! -s "$FAKE/ls.log" ] && [ "$(cat "$ROOT/var/lib/bethere/bethere.db")" = kept ] && [ -e "$ROOT/var/lib/bethere/bethere.db-wal" ] && [ ! -e "$ROOT/var/lib/bethere/maintenance.forced" ] && [ ! -e "$ROOT/var/lib/bethere/member-reset.pending" ]'
+
+# US-O-1.5, 1.6: the Litestream settings: daily snapshots kept 72 hours,
+# the real database only, never the test service's.
+pfresh; prep backup
+check "litestream.yml: snapshot every 24h, kept 72h" \
+  'grep -qx "snapshot:" "$ROOT/etc/litestream.yml" && grep -qx "  interval: 24h" "$ROOT/etc/litestream.yml" && grep -qx "  retention: 72h" "$ROOT/etc/litestream.yml"'
+check "litestream.yml: only the real database, to the backup bucket" \
+  '[ "$(grep -c "^  - path:" "$ROOT/etc/litestream.yml")" = 1 ] && grep -qx "  - path: $ROOT/var/lib/bethere/bethere.db" "$ROOT/etc/litestream.yml" && grep -qx "      url: gs://test-backups/bethere" "$ROOT/etc/litestream.yml" && ! grep -q "e2e" "$ROOT/etc/litestream.yml" && [ ! -e "$ROOT/etc/litestream.yml.new" ]'
+e2e_unit() { awk "/bethere-e2e.service <<.EOF./{on=1;next} on&&/^EOF\$/{exit} on" "$OPS/vm-startup.sh"; }
+check "systemd units: the real service runs under litestream replicate -exec, the test service never does" \
+  'grep -q "^ExecStart=/opt/bethere/litestream replicate -config /etc/litestream.yml -exec \"/opt/bethere/bethere serve -db /var/lib/bethere/bethere.db " "$OPS/vm-startup.sh" && ! e2e_unit | grep -q litestream && e2e_unit | grep -q "^ExecStart=/opt/bethere/bethere serve -db /var/lib/bethere-e2e/e2e.db"'
+check "the settings are in the tech-stack document too (US-O-1.5)" \
+  'grep -q "Litestream 快照間隔 24h、保留 72h" "$OPS/../../docs/design/tech-stack.md"'
+
+# US-O-2.1: maintenance mode from metadata and the restore marker.
+mflag() { cat "$ROOT/run/bethere/maintenance.env" 2>/dev/null; }
+pfresh; prep maintenance
+check "maintenance: key missing (404) is 0" 'rc_is 0 && [ "$(mflag)" = BETHERE_MAINTENANCE=0 ]'
+pfresh; setmd instance/attributes/bethere-maintenance 0; prep maintenance
+check "maintenance: 0 is 0" 'rc_is 0 && [ "$(mflag)" = BETHERE_MAINTENANCE=0 ]'
+pfresh; setmd instance/attributes/bethere-maintenance 1; prep maintenance
+check "maintenance: 1 is 1 when the release knows the mode" 'rc_is 0 && [ "$(mflag)" = BETHERE_MAINTENANCE=1 ]'
+pfresh; setmd instance/attributes/bethere-maintenance 1; echo mail-login > "$FAKE/features"; prep maintenance
+check "maintenance: 1 with a release that does not know the mode: refused, no file" \
+  '! rc_is 0 && [ ! -e "$ROOT/run/bethere/maintenance.env" ] && said "does not know maintenance mode"'
+for bad in 2 "" true " 1" 01 "1 1"; do
+  pfresh; setmd instance/attributes/bethere-maintenance "$bad"; prep maintenance
+  check "maintenance: value '$bad' is neither 0 nor 1: refused, not opened" \
+    '! rc_is 0 && [ ! -e "$ROOT/run/bethere/maintenance.env" ] && said "is not 0 or 1"'
+done
+for code in 500 403 302; do
+  pfresh; echo "$code" > "$FAKE/mdcode.instance_attributes_bethere-maintenance"; prep maintenance
+  check "maintenance: metadata answers $code: refused, not opened" \
+    '! rc_is 0 && [ ! -e "$ROOT/run/bethere/maintenance.env" ] && said "metadata answered '"$code"'"'
+done
+pfresh; echo fail > "$FAKE/mdcode.instance_attributes_bethere-maintenance"; prep maintenance
+check "maintenance: metadata unreachable: refused, never defaults to open" '! rc_is 0 && [ ! -e "$ROOT/run/bethere/maintenance.env" ]'
+pfresh; touch "$ROOT/var/lib/bethere/maintenance.forced"; setmd instance/attributes/bethere-maintenance 0; prep maintenance
+check "maintenance: the restore marker forces 1 over metadata 0" 'rc_is 0 && [ "$(mflag)" = BETHERE_MAINTENANCE=1 ]'
+pfresh; touch "$ROOT/var/lib/bethere/maintenance.forced"; prep maintenance
+check "maintenance: the restore marker forces 1 when the key is missing" 'rc_is 0 && [ "$(mflag)" = BETHERE_MAINTENANCE=1 ]'
+pfresh; touch "$ROOT/var/lib/bethere/maintenance.forced"; echo mail-login > "$FAKE/features"; prep maintenance
+check "maintenance: the marker with a release that does not know the mode: refused" '! rc_is 0 && [ ! -e "$ROOT/run/bethere/maintenance.env" ]'
+pfresh; mkdir -p "$ROOT/run/bethere"; echo BETHERE_MAINTENANCE=0 > "$ROOT/run/bethere/maintenance.env"; setmd instance/attributes/bethere-maintenance 2; prep maintenance
+check "maintenance: a refused start leaves no earlier mode behind" '! rc_is 0 && [ ! -e "$ROOT/run/bethere/maintenance.env" ]'
+
+# US-O-8.2: the support address never adds a variable to the unit.
+sfile() { cat "$ROOT/run/bethere/support.env"; }
+pfresh; setmd project/attributes/bethere-support-email help@example.com; prep support
+check "support: a plain address is passed on" 'rc_is 0 && [ "$(sfile)" = BETHERE_SUPPORT_EMAIL=help@example.com ]'
+pfresh; setmd project/attributes/bethere-support-email "$(printf 'a@b.com\nBETHERE_MAINTENANCE=0')"; prep support
+check "support: an address with a line break and a variable: none shown, one line, no second variable" \
+  'rc_is 0 && [ "$(sfile)" = BETHERE_SUPPORT_EMAIL= ] && [ "$(wc -l < "$ROOT/run/bethere/support.env" | tr -d " ")" = 1 ] && ! grep -q MAINTENANCE "$ROOT/run/bethere/support.env"'
+pfresh; setmd project/attributes/bethere-support-email "$(printf 'BETHERE_MAINTENANCE=0\nhelp@example.com')"; prep support
+check "support: the variable on the first line: none shown, no second variable" \
+  'rc_is 0 && [ "$(sfile)" = BETHERE_SUPPORT_EMAIL= ]'
+pfresh; setmd project/attributes/bethere-support-email 'help@example.com X=1'; prep support
+check "support: an address with a space: none shown" '[ "$(sfile)" = BETHERE_SUPPORT_EMAIL= ]'
+pfresh; prep support
+check "support: no address (404): none shown, the start goes on" 'rc_is 0 && [ "$(sfile)" = BETHERE_SUPPORT_EMAIL= ]'
+pfresh; echo 500 > "$FAKE/mdcode.project_attributes_bethere-support-email"; prep support
+check "support: metadata error: none shown, the start goes on" 'rc_is 0 && [ "$(sfile)" = BETHERE_SUPPORT_EMAIL= ]'
+
+# ---- maintenance.sh (US-O-2.6, 12.5, 12.6) against a fake VM's files.
+vmfs() { mkdir -p "$FAKE/vm.fs/lib" "$FAKE/vm.fs/run"; echo "${1:-1}" > "$FAKE/meta.bethere-maintenance"; }
+msh() { runrc env PROJECT=test-proj "$OPS/maintenance.sh" "$@"; }
+fresh; vmfs 1; touch "$FAKE/vm.fs/lib/maintenance.forced" "$FAKE/vm.fs/lib/member-reset.pending"; echo open > "$FAKE/mode"; msh off
+check "maintenance.sh off: metadata 0, restore marker removed, service restarted, checked from outside" \
+  'rc_is 0 && called "add-metadata bethere-1 --zone asia-east1-c --metadata bethere-maintenance=0" && [ ! -e "$FAKE/vm.fs/lib/maintenance.forced" ] && called "systemctl restart bethere" && said "BETHERE_MAINTENANCE=0" && said "marker=absent" && said "open: https://bethere.example/"'
+check "maintenance.sh off: member-reset.pending stays, status says the members are not cleared yet (US-O-12.5, 12.6)" \
+  '[ -e "$FAKE/vm.fs/lib/member-reset.pending" ] && said "member_reset=pending" && said "成員連結尚未清除"'
+fresh; vmfs 0; touch "$FAKE/vm.fs/lib/maintenance.forced"; msh on
+check "maintenance.sh on: metadata 1, the marker is not touched, restarted, in maintenance mode" \
+  'rc_is 0 && called "--metadata bethere-maintenance=1" && [ -e "$FAKE/vm.fs/lib/maintenance.forced" ] && called "systemctl restart bethere" && said "BETHERE_MAINTENANCE=1" && said "marker=present" && said "maintenance mode: https://bethere.example/" && ! said "成員連結尚未清除"'
+fresh; vmfs 1; touch "$FAKE/vm.fs/lib/maintenance.forced" "$FAKE/vm.fs/lib/member-reset.pending"; echo BETHERE_MAINTENANCE=1 > "$FAKE/vm.fs/run/maintenance.env"; msh status
+check "maintenance.sh status: shows metadata, marker and the pending member clearing; changes nothing" \
+  'rc_is 0 && said "metadata bethere-maintenance=1" && said "marker=present" && said "member_reset=pending" && said "成員連結尚未清除" && ! called add-metadata && ! called "systemctl restart" && [ -e "$FAKE/vm.fs/lib/maintenance.forced" ]'
+fresh; vmfs 0; echo BETHERE_MAINTENANCE=1 > "$FAKE/vm.fs/run/maintenance.env"; msh status
+check "maintenance.sh status: nothing pending says nothing about members" 'rc_is 0 && said "marker=absent" && ! said "member_reset" && ! said "成員連結尚未清除"'
+fresh; vmfs 1; msh status
+check "maintenance.sh status: a service that has not started since boot is an error" '! rc_is 0 && said "has not started since boot"'
+fresh; vmfs 1; msh bogus
+check "maintenance.sh: an unknown word is refused with usage, nothing called on the VM" 'rc_is 2 && said "usage: maintenance.sh on|off|status" && ! called add-metadata && ! called "compute ssh"'
+fresh; vmfs 1; msh
+check "maintenance.sh: no word is refused with usage" 'rc_is 2 && said "usage: maintenance.sh on|off|status"'
+
+# US-O-6.4: every script that acts on a project refuses without PROJECT and
+# calls nothing (env.sh itself and the VM's startup script excepted).
+for script in "$OPS"/*.sh; do
+  name="${script##*/}"
+  case "$name" in env.sh | vm-startup.sh) continue ;; esac
+  fresh; runrc env -u PROJECT "$script" </dev/null
+  check "$name without PROJECT: refused, nothing called" '! rc_is 0 && ! test -s "$FAKE/calls" && said "set PROJECT first"'
+done
+
+# US-O-1.4: the backup bucket: same region, no soft delete, no versions, no
+# lifecycle rules; the VM's account may only add and read objects there.
+BK=gs://test-proj-backups RL=gs://test-proj-releases SA=serviceAccount:bethere-vm@test-proj.iam.gserviceaccount.com
+fresh; touch "$FAKE/nobucket"; runrc env PROJECT=test-proj "$OPS/setup.sh"
+check "setup: the backup bucket is made in the region with soft delete off" \
+  'rc_is 0 && grep "buckets create $BK " "$FAKE/calls" | grep -q -- "--location asia-east1" && grep "buckets create $BK " "$FAKE/calls" | grep -q -- "--soft-delete-duration 0"'
+check "setup: soft delete, versioning and lifecycle rules of the backup bucket are cleared" \
+  'grep "buckets update $BK " "$FAKE/calls" | grep -q -- "--clear-soft-delete" && grep "buckets update $BK " "$FAKE/calls" | grep -q -- "--no-versioning" && grep "buckets update $BK " "$FAKE/calls" | grep -q -- "--clear-lifecycle" && ! grep -q -- " --versioning" "$FAKE/calls" && ! grep -q -- "--lifecycle-file" "$FAKE/calls"'
+check "setup: the release bucket is in the same region" 'grep "buckets create $RL " "$FAKE/calls" | grep -q -- "--location asia-east1"'
+check "setup: the VM account is objectAdmin of the backups and only objectViewer of the releases" \
+  'grep "add-iam-policy-binding $BK " "$FAKE/calls" | grep -q -- "--member $SA --role roles/storage.objectAdmin" && grep "add-iam-policy-binding $RL " "$FAKE/calls" | grep -q -- "--member $SA --role roles/storage.objectViewer" && [ "$(grep -c add-iam-policy-binding "$FAKE/calls")" = 2 ]'
+fresh; runrc env PROJECT=test-proj "$OPS/setup.sh"
+check "setup run again: no bucket is made again, the backup bucket's settings are applied again" \
+  'rc_is 0 && ! called "buckets create" && grep -q "buckets update $BK .*--clear-soft-delete.*--no-versioning.*--clear-lifecycle" "$FAKE/calls"'
+
+# US-O-13.1: the load test's data never goes on the real project.
+fresh; runrc env PROJECT=bethere-prod-0606 "$OPS/loadtest-setup.sh"
+check "loadtest-setup on the real project: refused before anything runs on a VM" 'rc_is 2 && said "refusing: the load test never runs on the real project" && ! called "compute ssh"'
+fresh; runrc env PROJECT=drill-proj "$OPS/loadtest-setup.sh"
+check "loadtest-setup on another project: goes on to the VM" 'rc_is 0 && ! said "refusing" && called "compute ssh"'
+
+# US-O-7.1: the uptime check and the alert's settings.
+policy_has() { policy | grep -qF -- "$1"; }
+fresh; mon ALERT_EMAIL=dev@example.com
+check "monitoring: the check opens /healthz every minute, 10 s timeout, from outside" \
+  'grep "uptime create" "$FAKE/calls" | grep -q -- "--path=/healthz" && grep "uptime create" "$FAKE/calls" | grep -q -- "--period=1 " && grep "uptime create" "$FAKE/calls" | grep -q -- "--timeout=10 "'
+check "monitoring: the alert fires after 2 minutes of failures, counted per minute" \
+  'policy_has "\"duration\": \"120s\"" && policy_has "\"alignmentPeriod\": \"60s\"" && policy_has "\"thresholdValue\": 1" && policy_has "COMPARISON_GT" && policy_has "REDUCE_COUNT_FALSE"'
+check "monitoring: mail when it opens and when it recovers" 'policy_has "\"notificationPrompts\": [\"OPENED\", \"CLOSED\"]" && policy_has "\"autoClose\": \"1800s\"" && policy_has "notificationChannels/77"'
+
+# US-O-6.2: a rebuild deletes every VM there is (disks kept), makes exactly
+# one, and puts it on the static IP.
+ARGS=("$V"); fresh; printf 'bethere-1 asia-east1-c\nbethere-2 asia-east1-a\n' > "$FAKE/vms"; rebuild
+check "rebuild with two VMs: both deleted in their own zones, disks kept" \
+  'called "instances delete bethere-1 --zone asia-east1-c --keep-disks=all" && called "instances delete bethere-2 --zone asia-east1-a --keep-disks=all" && said "bethere-2 asia-east1-a"'
+check "rebuild with two VMs: exactly one is created, after the deletions, on the existing static IP" \
+  '[ "$(grep -c "instances create" "$FAKE/calls")" = 1 ] && [ "$(line_of "instances delete bethere-2")" -lt "$(line_of "instances create")" ] && create_has "--address 10.0.0.1" && ! called "addresses create" && ! called "addresses delete" && said "rebuilt in"'
+
 exit $failed

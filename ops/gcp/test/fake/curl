@@ -9,6 +9,28 @@ if [[ "$args" == *notificationChannels* ]]; then
   if [ -e "$FAKE/channel" ]; then echo '{"notificationChannels": [{"name": "projects/test-proj/notificationChannels/77"}]}'; else echo '{}'; fi
   exit 0
 fi
+# The metadata server (prepare.sh): the value of <path> is $FAKE/md/<path with
+# "/" as "_">, and 404 when that file is missing; $FAKE/mdcode.<path> forces
+# another answer code, or "fail" for no answer at all (curl exit 7).
+if [[ "$args" == *metadata.google.internal/computeMetadata/v1/* ]]; then
+  key="${args##*computeMetadata/v1/}"; key="${key%% *}"; key="${key//\//_}"
+  f="$FAKE/md/$key"; code="$(cat "$FAKE/mdcode.$key" 2>/dev/null)"
+  [ -n "$code" ] || { [ -e "$f" ] && code=200 || code=404; }
+  o=""; w=""; fail=""; set -- "$@"
+  while [ $# -gt 0 ]; do
+    case "$1" in -o) o="$2" ;; -w) w=1 ;; -*f*) [[ "$1" == -*f* && "$1" != --* ]] && fail=1 ;; esac
+    shift
+  done
+  if [ "$code" = fail ]; then [ -z "$w" ] || printf 000; exit 7; fi
+  if [ -n "$o" ]; then
+    if [ "$code" = 200 ]; then cat "$f" > "$o"; else echo "answer $code" > "$o"; fi
+    [ -z "$w" ] || printf '%s' "$code"
+    exit 0
+  fi
+  if [ "$code" = 200 ]; then cat "$f"; exit 0; fi
+  [ -z "$fail" ] || exit 22
+  exit 0
+fi
 out=""
 while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
 mode="$(cat "$FAKE/mode" 2>/dev/null)"

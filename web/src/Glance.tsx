@@ -6,7 +6,8 @@ import { hasPanel, JobPanel } from "./JobPanels";
 import { ThemeToggle } from "./theme";
 import { delayText, isEarlier, noticeText, noticedCues } from "./notice";
 import { OriginalTime } from "./OriginalTime";
-import { countdownText, inProgressCue, stylistView } from "./roleView";
+import { countdownText, stylistView } from "./roleView";
+import { currentLine, laterCues } from "./uiLogic";
 
 type Props = {
   snap: RoleSnapshot;
@@ -60,10 +61,7 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
       );
       break;
     case "countdown": {
-      const later = snap.cues
-        .filter((c) => c.status === "Pending" && c.seq > view.target.seq)
-        .sort((a, b) => a.seq - b.seq)
-        .slice(0, 3);
+      const later = laterCues(snap.cues, view.target);
       main = (
         <>
           <div class={`next-card ${marked.has(String(view.target.id)) ? "flash" : ""}`}>
@@ -94,7 +92,6 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
     }
   }
   // The cue in progress, whoever it is assigned to: its title only (US-X-6.4).
-  const current = snap.currentTitle ?? inProgressCue(snap.cues)?.title ?? null;
   return (
     <div class="glance">
       {change && <div class={`change-banner ${isEarlier(change) ? "earlier" : "later"}`}>{noticeText(change, tz)}</div>}
@@ -104,7 +101,7 @@ export function Glance({ snap, now, skew, change, offline, busy, write, readOnly
       </div>
       {view.kind !== "preDay" && snap.eventStatus === "Live" && (
         <div class="current-line">
-          目前：{current ?? "準備中"}
+          {currentLine(snap)}
           {/* US-X-10.2: the MC keeps an eye on the hosts' side. */}
           <span class={`delay ${delayText(snap.delayMin ?? 0).ok ? "ok" : "late"}`}>・{delayText(snap.delayMin ?? 0).text}</span>
         </div>

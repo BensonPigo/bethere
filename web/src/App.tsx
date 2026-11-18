@@ -12,8 +12,8 @@ import { monthDay } from "./notice";
 import { isEventDay } from "./roleView";
 import { SupportNote } from "./support";
 import { useSession } from "./session";
+import { offlineText } from "./uiLogic";
 
-const OFFLINE_WARN_MS = 5 * 60 * 1000;
 
 export function App() {
   const token = tokenFromHash(location.hash);
@@ -52,7 +52,6 @@ export function App() {
 
   const correctedNow = s.now + s.skew;
   const tz = snap.eventDay?.timezone || DEFAULT_TZ;
-  const offlineFor = s.now - (s.lastOk ?? s.now);
   const master = isMasterSnapshot(snap);
   // ADR-0020: "not started" is a strip over the screen, never instead of it.
   const notStarted =
@@ -65,8 +64,7 @@ export function App() {
       {lineBanner}
       {s.offline && (
         <div class="offline-banner">
-          離線中，資料更新於 {formatHM(snap.serverTime, tz)}
-          {s.lastOk !== null && offlineFor > OFFLINE_WARN_MS ? "・倒數可能不準" : ""}
+          {offlineText(formatHM(snap.serverTime, tz), s.lastOk, s.now)}
         </div>
       )}
       {inMaintenance(snap) && (

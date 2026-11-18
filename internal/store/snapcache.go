@@ -20,7 +20,9 @@ type generation struct{ schema, n int64 }
 // snapshotCache holds one generation's events: each event's data as the
 // store read it, every list included, Owner left empty, nothing of the
 // present time and nothing kept only in memory. It is shared by every poll
-// and only ever read. No events (nil) means no generation.
+// and only ever read: callers must not change the slices, maps or pointers
+// they get (guarded by the server's US-O-14.3 concurrent poll test). No
+// events (nil) means no generation.
 type snapshotCache struct {
 	mu     sync.Mutex
 	gen    generation

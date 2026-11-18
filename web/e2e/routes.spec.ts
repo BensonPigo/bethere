@@ -5,7 +5,7 @@
 // stay with real people on real phones.
 import { devices, expect, test } from "@playwright/test";
 import type { Browser, BrowserContext, Page } from "@playwright/test";
-import { createInvite, issueAdminLink, loadState, startServer, stopServer, SUPPORT_EMAIL, target, tomorrow } from "./target";
+import { createInvite, endEvent, issueAdminLink, loadState, startServer, stopServer, SUPPORT_EMAIL, target, tomorrow } from "./target";
 import type { Links, RoleName } from "./target";
 
 // NFR-2 is 3 seconds for 95% of devices; one poll is 2 seconds. A route
@@ -28,12 +28,27 @@ function event(i: number): Links {
   return loadState().events[i];
 }
 
+// Every confirmation window is recorded with its text; it is accepted unless
+// `accept` is turned off, which presses 取消.
+type Dialogs = { messages: string[]; accept: boolean };
+const dialogLogs = new WeakMap<Page, Dialogs>();
+function watchDialogs(page: Page): Dialogs {
+  const d: Dialogs = { messages: [], accept: true };
+  dialogLogs.set(page, d);
+  page.on("dialog", (dlg) => {
+    d.messages.push(dlg.message());
+    void (d.accept ? dlg.accept() : dlg.dismiss());
+  });
+  return d;
+}
+const dialogsOf = (page: Page) => dialogLogs.get(page)!;
+
 // open opens a role's link on its own device, as tapping it in LINE would.
-async function open(browser: Browser, links: Links, role: RoleName): Promise<Page> {
-  const ctx = await browser.newContext({ ...(role === "總召" ? IPAD : IPHONE), baseURL: loadState().baseURL });
+async function open(browser: Browser, links: Links, role: RoleName, extra: { serviceWorkers?: "block" } = {}): Promise<Page> {
+  const ctx = await browser.newContext({ ...(role === "總召" ? IPAD : IPHONE), baseURL: loadState().baseURL, ...extra });
   contexts.push(ctx);
   const page = await ctx.newPage();
-  page.on("dialog", (d) => void d.accept()); // the two-step confirmations
+  watchDialogs(page); // the two-step confirmations
   await page.goto(`/#t=${links[role]}`);
   return page;
 }
@@ -94,6 +109,21 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
   const master = await open(browser, links, "總召");
   await expect(master.locator(".current .label")).toHaveText("活動尚未開始");
 
+  await test.step("沒有「開始活動」按鈕，時間軸列出時間與狀態圖示（US-M-3.9、US-M-1.1）", async () => {
+    await expect(master.getByRole("button", { name: /開始活動/ })).toHaveCount(0);
+    await master.getByRole("button", { name: "編輯流程表" }).click();
+    await expect(master.locator(".editor")).toBeVisible();
+    await expect(master.locator(".editor").getByRole("button", { name: /開始活動/ })).toHaveCount(0);
+    await master.locator(".editor").getByRole("button", { name: "關閉" }).click();
+    const rows = master.locator(".timeline .cue");
+    await expect(rows).toHaveCount(5);
+    for (let i = 0; i < 5; i++) {
+      await expect(rows.nth(i).locator(".time")).toHaveText(/^\d\d:\d\d/);
+      await expect(rows.nth(i).locator(".icon")).toHaveText("○");
+    }
+    await expect(cueRow(master, "一進預備").locator(".mark")).toContainText("■ 固定");
+  });
+
   await test.step("活動開始前略過與復原（US-M-6.3、6.4）", async () => {
     await openCue(master, "迎賓");
     await master.getByRole("button", { name: "略過" }).click();
@@ -106,14 +136,22 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
 
   await test.step("第一次推進即開始活動（US-M-3.6）", async () => {
     await expect(master.locator(".prep-guide")).toBeVisible();
-    await advance(master);
+    // US-M-3.3: no confirmation; the button locks at once and comes back after about a second.
+    const push = master.getByRole("button", { name: "推進", exact: true });
+    await push.click();
+    await expect(push).toBeDisabled();
+    await expect(push).toBeEnabled();
     await expect(master.locator(".current .cue-title")).toHaveText("新娘化妝");
     await expect(master.locator(".prep-guide")).toHaveCount(0); // US-M-18.1
+    await expect(cueRow(master, "新娘化妝").locator(".icon")).toHaveText("▶"); // US-M-1.1
+    await expect(cueRow(master, "迎賓").locator(".icon")).toHaveText("○");
   });
 
   await test.step("預覽列出不會移動的固定環節（US-M-2.1）", async () => {
+    for (const label of ["+5", "+10", "−5"]) await expect(master.getByRole("button", { name: label, exact: true })).toBeEnabled();
     await master.getByRole("button", { name: "+10", exact: true }).click();
     const panel = master.getByRole("dialog");
+    await expect(panel.locator(".shift-title")).toHaveText("從「迎賓」起 +10 分"); // the start is the next pending cue
     await expect(panel.locator(".move.fixed")).toHaveText(/一進預備.*固定，不移動/);
     await panel.getByRole("button", { name: "取消" }).click();
     await expect(panel).toBeHidden();
@@ -143,6 +181,17 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
     await closeDialog(master);
   });
 
+  await test.step("總召代為打卡與取消打卡（US-M-1.7）", async () => {
+    const row = master.locator(".role-row", { hasText: "攝影" });
+    await expect(row).not.toContainText("● 已就位");
+    await row.click();
+    await master.getByRole("dialog").getByRole("button", { name: "代為打卡" }).click();
+    await expect(row).toContainText("● 已就位", { timeout: PROPAGATE_MS });
+    await row.click();
+    await master.getByRole("dialog").getByRole("button", { name: "取消打卡" }).click();
+    await expect(row).not.toContainText("● 已就位", { timeout: PROPAGATE_MS });
+  });
+
   await test.step("改標題（US-M-8.7）", async () => {
     await openCue(master, "送客");
     const d = master.getByRole("dialog");
@@ -150,6 +199,64 @@ test("總召的一天：略過、推進、平移、復原、新增、改派、�
     await d.getByRole("button", { name: "儲存標題與備註" }).click();
     await closeDialog(master);
     await expect(cueRow(master, "送客合照")).toBeVisible();
+  });
+
+  // Two Master devices: the second one cannot see the first one's change yet,
+  // as its reads are cut for a moment (US-M-3.4, US-M-2.7).
+  // No service worker on this device, so the test can cut its reads.
+  const second = await open(browser, links, "總召", { serviceWorkers: "block" });
+  const title = (p: Page) => p.locator(".current .cue-title");
+  await expect(title(second)).toHaveText(await title(master).innerText());
+  const stale = "畫面已更新，請重新確認";
+
+  await test.step("另一台總召在畫面過時時推進，被拒絕並自動刷新（US-M-3.4）", async () => {
+    await second.route("**/api/snapshot**", (r) => r.abort());
+    await advance(master);
+    const now = await title(master).innerText();
+    await expect(title(second)).not.toHaveText(now);
+    await second.getByRole("button", { name: "推進", exact: true }).click();
+    await expect(second.getByText(stale)).toBeVisible();
+    await second.unroute("**/api/snapshot**");
+    await expect(title(second)).toHaveText(now, { timeout: PROPAGATE_MS });
+  });
+
+  await test.step("另一台總召在畫面過時時平移，被拒絕（US-M-2.7）", async () => {
+    await second.route("**/api/snapshot**", (r) => r.abort());
+    await advance(master);
+    const now = await title(master).innerText();
+    await second.getByRole("button", { name: "+10", exact: true }).click();
+    await second.getByRole("dialog").getByRole("button", { name: "確認平移" }).click();
+    await expect(second.getByText(stale)).toBeVisible();
+    await second.unroute("**/api/snapshot**");
+    await expect(title(second)).toHaveText(now, { timeout: PROPAGATE_MS });
+  });
+
+  await test.step("提早時，已逾時的環節不移動並在預覽中標示（US-M-2.4）", async () => {
+    // A cue inserted 5 minutes in the past is the next pending one, and already overdue.
+    const [hh, mm] = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .format(new Date()).split(":").map(Number);
+    const past = Math.max(0, hh * 60 + mm - 5);
+    test.skip(hh * 60 + mm < 2, "too close to midnight for a start 5 minutes in the past");
+    const clockText = `${String(Math.floor(past / 60)).padStart(2, "0")}:${String(past % 60).padStart(2, "0")}`;
+    const current = await title(master).innerText();
+    await openCue(master, current);
+    await master.getByRole("button", { name: "在此之後新增環節" }).click();
+    const d = master.getByRole("dialog");
+    await d.getByLabel("開始時間").fill(clockText);
+    await d.getByLabel("標題").fill("遲到的環節");
+    await d.getByRole("button", { name: "新增", exact: true }).click();
+    await expect(d).toBeHidden();
+    await master.waitForTimeout(1200);
+    await master.getByRole("button", { name: "−5", exact: true }).click();
+    const panel = master.getByRole("dialog");
+    await expect(panel.locator(".shift-title")).toHaveText("從「遲到的環節」起 −5 分");
+    const held = panel.locator(".move.overdue");
+    await expect(held).toHaveCount(1);
+    await expect(held.locator(".title")).toHaveText("遲到的環節");
+    await expect(held.locator(".times")).toHaveText(`${clockText} 已逾時，不移動`);
+    await expect(held.getByRole("checkbox")).toHaveCount(0);
+    await panel.getByRole("button", { name: "取消" }).click();
+    await expect(panel).toBeHidden();
   });
 });
 
@@ -168,6 +275,12 @@ test("廠商收到變更：打卡、平移與新增環節的提示、目前環�
     await timed("打卡 → 總召", () =>
       expect(master.locator(".role-row", { hasText: "攝影" })).toContainText("● 已就位", { timeout: PROPAGATE_MS }),
     );
+  });
+
+  await test.step("活動日當天、活動還沒開始：新秘照常看到倒數，只多一條窄條；工作人員的畫面沒有客服信箱（US-ST-1.8、US-O-8.3）", async () => {
+    await expect(stylist.locator(".draft-strip")).toHaveText("活動尚未開始");
+    await expect(stylist.locator(".big-num")).toBeVisible();
+    await expect(stylist.locator(".support-note")).toHaveCount(0);
   });
 
   await test.step("新秘第一次開啟時回答已到場（US-X-5.2）", async () => {
@@ -216,6 +329,51 @@ test("廠商收到變更：打卡、平移與新增環節的提示、目前環�
     await phone.reload();
     await expect(phone.locator(".big-num")).toBeVisible();
     await expect(phone.getByText("此瀏覽器不支援螢幕常亮")).toBeHidden();
+    // US-ST-1.7: nothing to tap on the countdown, but the keep-awake layer
+    // (and the theme switch, a setting that is not part of the countdown).
+    const loose = await phone
+      .locator(".stylist")
+      .locator("a, button, input, select, textarea, [role=button]")
+      .evaluateAll((els) => els.filter((e) => !e.closest(".overlay") && !e.classList.contains("theme-toggle")).length);
+    expect(loose).toBe(0);
+  });
+
+  await test.step("瀏覽器支援常亮時：提示「點一下，保持螢幕常亮」，點了就申請，取得後提示消失（US-ST-1.6）", async () => {
+    const ctx = await browser.newContext({ ...IPHONE, baseURL: loadState().baseURL });
+    contexts.push(ctx);
+    // A wake lock the page cannot get on its own: the first request, made
+    // without a tap, is refused; the next one is granted.
+    await ctx.addInitScript(() => {
+      const w = window as unknown as { __wakeCalls: number };
+      w.__wakeCalls = 0;
+      Object.defineProperty(Navigator.prototype, "wakeLock", {
+        configurable: true,
+        get: () => ({
+          request: async () => {
+            w.__wakeCalls++;
+            if (w.__wakeCalls === 1) throw new DOMException("needs a tap", "NotAllowedError");
+            return { addEventListener: () => undefined, release: async () => undefined };
+          },
+        }),
+      });
+    });
+    const phone = await ctx.newPage();
+    await phone.goto(`/#t=${links.新秘}`);
+    const hint = phone.getByText("點一下，保持螢幕常亮");
+    await expect(hint).toBeVisible();
+    await hint.click();
+    await expect(hint).toBeHidden();
+    expect(await phone.evaluate(() => (window as unknown as { __wakeCalls: number }).__wakeCalls)).toBeGreaterThanOrEqual(2);
+  });
+
+  await test.step("LINE 內建瀏覽器只多一行小字，一般瀏覽器沒有（US-X-3.1）", async () => {
+    await expect(media.locator(".line-note")).toHaveCount(0);
+    const ctx = await browser.newContext({ ...IPHONE, userAgent: `${IPHONE.userAgent} Line/13.0.0`, baseURL: loadState().baseURL });
+    contexts.push(ctx);
+    const phone = await ctx.newPage();
+    await phone.goto(`/#t=${links.攝影}`);
+    await expect(phone.locator(".line-note")).toHaveText("斷網時可能打不開，可改用 Safari／Chrome 開啟");
+    await expect(phone.locator(".glance-head > span")).toHaveText("攝影"); // not blocked, not redirected
   });
 });
 
@@ -230,12 +388,33 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷、以�
   let link = "";
   await test.step("總召重發攝影的連結（US-M-7.1）", async () => {
     await master.locator(".role-row", { hasText: "攝影" }).click();
+    const asked = dialogsOf(master);
+    const reissues: string[] = [];
+    master.on("request", (r) => r.url().includes("/api/roles/reissue") && reissues.push(r.url()));
+    asked.accept = false; // 取消: nothing is sent, the screen stays
     await master.getByRole("button", { name: "重發連結" }).click();
+    await expect.poll(() => asked.messages.length).toBe(1);
+    expect(asked.messages[0]).toBe("舊連結將立即失效，對方需要新連結。確定嗎？");
+    expect(reissues).toEqual([]);
+    await expect(master.locator(".link-text")).toHaveCount(0);
+    await expect(master.getByRole("button", { name: "重發連結" })).toBeVisible();
+    asked.accept = true;
+    await master.getByRole("button", { name: "重發連結" }).click();
+    await expect.poll(() => asked.messages.length).toBe(2);
     const text = master.locator(".link-text");
     await expect(text).toHaveValue(/#t=[A-Za-z0-9_-]{22}$/);
     link = await text.inputValue();
     await expect(master.getByRole("dialog").locator("a")).toHaveCount(0); // text, never a link to tap
     await expect(master.getByRole("dialog").locator("img.qr")).toBeVisible(); // US-M-13.1
+    await closeDialog(master);
+    // US-M-13.3: once closed, neither the QR code nor the link comes back, and nothing is stored.
+    await expect(master.locator("img.qr")).toHaveCount(0);
+    await expect(master.locator(".link-text")).toHaveCount(0);
+    const keep = await master.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
+    expect(keep).not.toContain(link.split("#t=")[1]);
+    await master.locator(".role-row", { hasText: "攝影" }).click();
+    await expect(master.locator("img.qr")).toHaveCount(0);
+    await expect(master.locator(".link-text")).toHaveCount(0);
     await closeDialog(master);
   });
 
@@ -253,6 +432,8 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷、以�
   await test.step("撤銷後新連結也失效（US-M-7.2）", async () => {
     await master.locator(".role-row", { hasText: "攝影" }).click();
     await master.getByRole("button", { name: "撤銷連結" }).click();
+    await expect.poll(() => dialogsOf(master).messages).toHaveLength(3); // US-M-7.7: the same words
+    expect(dialogsOf(master).messages[2]).toBe("舊連結將立即失效，對方需要新連結。確定嗎？");
     await expect(master.locator(".role-row", { hasText: "攝影" })).toContainText("連結未發或已撤銷", { timeout: PROPAGATE_MS });
     const page = contexts[contexts.length - 1].pages()[0];
     await expect(page.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS });
@@ -284,8 +465,13 @@ test("連結外流：重發後舊連結失效、新連結可用、撤銷、以�
     await timed("換發 → 舊總召連結失效", () =>
       expect(master.getByText("連結已失效，請向總召索取新連結")).toBeVisible({ timeout: PROPAGATE_MS }),
     );
+    // US-O-3.3: the new link is shown once, as text with a copy button.
+    await expect(op.getByRole("button", { name: "複製" })).toBeVisible();
+    await expect(op.getByText("只顯示這一次")).toBeVisible();
     const fresh = await open(browser, { ...links, 總召: (await text.inputValue()).split("#t=")[1] }, "總召");
     await expect(fresh.getByRole("button", { name: "推進", exact: true })).toBeVisible();
+    await op.reload();
+    await expect(op.locator(".link-text")).toHaveCount(0);
   });
 });
 
@@ -303,6 +489,7 @@ test("斷網：仍看得到時程與倒數、打卡停用、恢復後自己更�
     await expect(media.locator(".offline-banner")).toContainText("離線中", { timeout: OFFLINE_MS });
     await expect(media.locator(".next-card .count")).toContainText("倒數");
     await expect(media.getByRole("button", { name: "我已就位" })).toBeDisabled(); // US-X-5.7
+    await expect(media.locator(".checkin-bar .reason")).toHaveText("離線中，無法打卡");
   });
 
   await test.step("斷網中重新開啟頁面（US-X-8.C1 的自動部分）", async () => {
@@ -315,6 +502,21 @@ test("斷網：仍看得到時程與倒數、打卡停用、恢復後自己更�
     await master.context().setOffline(true);
     await expect(master.locator(".offline-banner")).toBeVisible({ timeout: OFFLINE_MS });
     await expect(master.getByRole("button", { name: "推進", exact: true })).toBeDisabled();
+    await expect(master.locator(".panel .reason")).toHaveText("離線中，無法操作");
+    for (const label of ["+5", "+10", "−5"]) await expect(master.getByRole("button", { name: label, exact: true })).toBeDisabled();
+    await expect(master.getByRole("button", { name: /復原上一步/ })).toBeDisabled();
+    await openCue(master, "迎賓");
+    const cueDialog = master.getByRole("dialog");
+    await expect(cueDialog.getByRole("button", { name: "略過" })).toBeDisabled();
+    await expect(cueDialog.getByRole("button", { name: "在此之後新增環節" })).toBeDisabled();
+    await expect(cueDialog.getByRole("button", { name: "儲存指派" })).toBeDisabled();
+    await closeDialog(master);
+    await master.locator(".role-row", { hasText: "攝影" }).click();
+    const roleDialog = master.getByRole("dialog");
+    await expect(roleDialog.getByRole("button", { name: "代為打卡" })).toBeDisabled();
+    await expect(roleDialog.getByRole("button", { name: "重發連結" })).toBeDisabled();
+    await expect(roleDialog.getByRole("button", { name: "撤銷連結" })).toBeDisabled();
+    await closeDialog(master);
     await master.context().setOffline(false);
     await expect(master.locator(".offline-banner")).toBeHidden({ timeout: OFFLINE_MS });
   });
@@ -346,6 +548,21 @@ test("新人儀表板：開始前、一切順利、延誤、復原", async ({ br
   );
   await undo(master);
   await expect(host.locator(".dashboard .state")).toHaveText("一切順利", { timeout: PROPAGATE_MS });
+
+  await test.step("連結失效時的畫面同其他角色（US-H-1.6）", async () => {
+    const gone = await open(browser, { ...links, 新人: "A".repeat(22) }, "新人");
+    await expect(gone.getByText("連結已失效，請向總召索取新連結")).toBeVisible();
+  });
+
+  await test.step("活動結束時的畫面同其他角色（US-H-1.6）", async () => {
+    // Ending an event moves its date in the database, which only the local run can do.
+    if (target !== "local") return;
+    const over = event(7); // its own event, so no other route sees it end
+    const page = await open(browser, over, "新人");
+    await expect(page.locator(".dashboard .state")).toBeVisible();
+    endEvent("E2E 8");
+    await expect(page.getByText("活動已結束，感謝你的協助")).toBeVisible({ timeout: PROPAGATE_MS });
+  });
 });
 
 test("備援流程表：總召印全部或某角色，攝影印自己的，新人沒有", async ({ browser }) => {
@@ -355,6 +572,9 @@ test("備援流程表：總召印全部或某角色，攝影印自己的，新�
   await expect(master).toHaveURL(/\/print#t=/);
   const rows = (p: Page) => p.locator(".print tbody tr");
   await expect(rows(master)).toHaveCount(5); // US-X-9.1
+  // US-X-9.5: the event, when it was exported, the data's time and its version.
+  await expect(master.locator(".print h1")).toContainText("E2E 5");
+  await expect(master.locator("main.print > p")).toHaveText(/^匯出於 \d\d:\d\d・資料時間 \d\d:\d\d・版本 \d+$/);
   await expect(rows(master).filter({ hasText: "迎賓" })).toContainText("攝影：大門口 welcome.mp3");
   await master.getByLabel("印給").selectOption({ label: "新秘" }); // US-X-9.2
   await expect(rows(master)).toHaveCount(3);
@@ -366,6 +586,13 @@ test("備援流程表：總召印全部或某角色，攝影印自己的，新�
   await expect(media.locator(".print tbody")).not.toContainText("新秘");
   await expect(media.locator(".print h1")).toContainText("攝影");
 
+  // US-X-9.5: in the LINE browser the page says to use Safari or Chrome.
+  const ctx = await browser.newContext({ ...IPHONE, userAgent: `${IPHONE.userAgent} Line/13.0.0`, baseURL: loadState().baseURL });
+  contexts.push(ctx);
+  const inLine = await ctx.newPage();
+  await inLine.goto(`/print#t=${links.攝影}`);
+  await expect(inLine.getByText("LINE 裡可能無法列印，請改用 Safari／Chrome 開啟這一頁。")).toBeVisible();
+
   const host = await open(browser, links, "新人");
   await host.goto(`/print#t=${links["新人"]}`);
   await expect(host.locator(".print")).toContainText("這個連結沒有可列印的流程表"); // US-X-9.4
@@ -373,7 +600,7 @@ test("備援流程表：總召印全部或某角色，攝影印自己的，新�
 
 test("現場工作：領班收到、迎賓查桌號與報到、呼叫機動組、禮金檢核", async ({ browser }) => {
   // Before the day (the second event of tomorrow): the Master sets up the guest list and the checklist.
-  const prep = event(8);
+  const prep = event(9);
   const master = await open(browser, prep, "總召");
   await master.getByRole("button", { name: /現場工作/ }).click();
   await master.getByRole("button", { name: "賓客名單" }).click();
@@ -421,6 +648,16 @@ test("現場工作：領班收到、迎賓查桌號與報到、呼叫機動組�
   await timed("收到 → 總召", () =>
     expect(cueRow(console_, "迎賓")).toContainText("領班收到", { timeout: PROPAGATE_MS }),
   );
+
+  // US-ST-1.4: the stylist's last cue is running, then every task is done.
+  const stylist = await open(browser, day, "新秘");
+  await advance(console_); // 迎賓
+  await advance(console_); // 一進預備
+  await advance(console_); // 敬酒
+  await advance(console_); // 送客
+  await expect(stylist.locator(".msg")).toHaveText("送客進行中", { timeout: PROPAGATE_MS });
+  await advance(console_);
+  await expect(stylist.locator(".msg")).toHaveText("今日任務已完成", { timeout: PROPAGATE_MS });
 });
 
 // ---------------------------------------------------------------- 婚前準備
@@ -437,10 +674,14 @@ const PASTED = [
 const editorRow = (master: Page, i: number) => master.locator(".editor-row").nth(i);
 
 test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上匯入、刪除角色", async ({ browser }) => {
-  const links = event(7); // the first event of tomorrow: its day has not begun
+  const links = event(8); // the first event of tomorrow: its day has not begun
   const master = await open(browser, links, "總召");
   const stylist = await open(browser, links, "新秘");
   await expect(stylist.locator(".preday")).toContainText("新娘化妝");
+  // Tomorrow's event: the button is off and says why; there is no start button (US-M-3.7, US-M-3.9).
+  await expect(master.getByRole("button", { name: "推進", exact: true })).toBeDisabled();
+  await expect(master.locator(".panel .reason")).toHaveText("活動日當天才能開始");
+  await expect(master.getByRole("button", { name: /開始活動/ })).toHaveCount(0);
   // Rundown, roles and every link are there: the checklist is one line (US-M-18.4).
   await expect(master.locator(".prep-guide.done")).toHaveText("婚前準備完成：活動日當天按「推進」開始");
 
@@ -448,15 +689,18 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await master.getByRole("button", { name: "編輯流程表" }).click();
     let row = editorRow(master, 0);
     await expect(row.locator("input.title")).toHaveValue("新娘化妝");
-    // A value reported by a change event only, as some pickers do.
-    await row.locator("input.time").evaluate((el: HTMLInputElement) => {
-      el.value = "09:10";
+    // A value reported by a change event only, as some pickers do. The first
+    // cue starts at the clock time of the run, so the new value must differ from it.
+    const original = await row.locator("input.time").inputValue();
+    const moved = original === "09:10" ? "09:15" : "09:10";
+    await row.locator("input.time").evaluate((el: HTMLInputElement, v: string) => {
+      el.value = v;
       el.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    }, moved);
     await expect(row.getByRole("button", { name: "儲存" })).toBeEnabled();
     await row.getByRole("button", { name: "儲存" }).click();
     await master.waitForTimeout(1200);
-    await expect(stylist.locator(".preday-row", { hasText: "新娘化妝" }).locator(".time")).toHaveText("09:10", { timeout: PROPAGATE_MS });
+    await expect(stylist.locator(".preday-row", { hasText: "新娘化妝" }).locator(".time")).toHaveText(moved, { timeout: PROPAGATE_MS });
     row = editorRow(master, 0); // the row starts over from the new version
     await row.locator("input.title").fill("新娘化妝（加長）");
     await row.locator("input.duration").fill("45");
@@ -469,10 +713,38 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await expect(stylist.locator(".preday-row", { hasText: "新娘化妝（加長）" }).locator(".time")).toHaveText("09:20");
   });
 
+  await test.step("另一台總召先改了流程表，儲存被拒並載入最新內容（US-M-10.9）", async () => {
+    // No service worker on this device, so the test can cut its reads.
+    const second = await open(browser, links, "總召", { serviceWorkers: "block" });
+    await second.getByRole("button", { name: "編輯流程表" }).click();
+    await expect(editorRow(second, 1).locator("input.title")).toHaveValue("迎賓");
+    await second.route("**/api/snapshot**", (r) => r.abort());
+    const before = await editorRow(master, 1).locator("input.duration").inputValue();
+    const longer = String(Number(before) + 5);
+    await editorRow(master, 1).locator("input.duration").fill(longer);
+    await editorRow(master, 1).getByRole("button", { name: "儲存" }).click();
+    await master.waitForTimeout(1200);
+    await editorRow(second, 1).locator("input.title").fill("迎賓（第二台）");
+    await editorRow(second, 1).getByRole("button", { name: "儲存" }).click();
+    await expect(second.getByText("流程表已被更新")).toBeVisible();
+    // The latest rundown is loaded and the first device's change is kept.
+    await expect(editorRow(second, 1).locator("input.title")).toHaveValue("迎賓");
+    await expect(editorRow(second, 1).locator("input.duration")).toHaveValue(longer);
+    await second.unroute("**/api/snapshot**");
+    await expect(editorRow(master, 1).locator("input.title")).toHaveValue("迎賓");
+  });
+
   await test.step("上移與刪除環節（US-M-10.3、10.4）", async () => {
     await editorRow(master, 3).getByRole("button", { name: "上移" }).click(); // 敬酒 above 一進預備
     await master.waitForTimeout(1200);
     await expect(editorRow(master, 2).locator("input.title")).toHaveValue("敬酒");
+    const asked = dialogsOf(master);
+    asked.accept = false; // 取消: the cue stays
+    await editorRow(master, 2).getByRole("button", { name: "刪除" }).click();
+    await expect.poll(() => asked.messages.length).toBe(1);
+    expect(asked.messages[0]).toBe("刪除「敬酒」？指派與備註會一起刪除。");
+    await expect(master.locator(".editor-row")).toHaveCount(5);
+    asked.accept = true;
     await editorRow(master, 2).getByRole("button", { name: "刪除" }).click();
     await master.waitForTimeout(1200);
     await expect(master.locator(".editor-row")).toHaveCount(4);
@@ -489,6 +761,7 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await expect(d.locator("img.qr")).toBeVisible();
     link = await d.locator(".link-text").inputValue();
     await closeDialog(master);
+    await expect(master.locator("img.qr")).toHaveCount(0); // US-M-13.3
     const phone = await open(browser, { ...links, 新人: link.split("#t=")[1] }, "新人");
     await expect(phone.locator(".glance-head > span")).toHaveText("伴娘");
   });
@@ -510,6 +783,12 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
     await master.getByRole("button", { name: "預覽", exact: true }).click();
     await expect(master.locator(".missing-roles")).toContainText("主持");
     await expect(master.locator(".import-preview tr")).toHaveCount(3);
+    const asked = dialogsOf(master);
+    asked.accept = false; // 取消: the rundown is not replaced
+    await master.getByRole("button", { name: "建立 1 個角色並匯入" }).click();
+    await expect.poll(() => asked.messages.at(-1)).toBe("現有的 4 個環節與指派將被取代。確定嗎？");
+    await expect(master.locator(".import-text")).toBeVisible();
+    asked.accept = true;
     await master.getByRole("button", { name: "建立 1 個角色並匯入" }).click();
     await expect(master.locator(".import-text")).toBeHidden();
     await expect(master.locator(".editor-row")).toHaveCount(3);
@@ -520,6 +799,12 @@ test("婚前準備：編輯流程表、新增角色與 QR Code、預覽、貼上
 
   await test.step("刪除角色「伴娘」，她的手機看到連結已失效（US-M-11.5）", async () => {
     await master.locator(".role-row", { hasText: "伴娘" }).click();
+    const asked = dialogsOf(master);
+    asked.accept = false; // 取消: the role stays
+    await master.getByRole("button", { name: "刪除角色" }).click();
+    await expect.poll(() => asked.messages.at(-1)).toBe("刪除「伴娘」？連結立即失效，指派與打卡一併刪除。");
+    await expect(master.locator(".role-row", { hasText: "伴娘" })).toHaveCount(1);
+    asked.accept = true;
     await master.getByRole("button", { name: "刪除角色" }).click();
     await expect(master.locator(".role-row", { hasText: "伴娘" })).toHaveCount(0);
     const phone = contexts[contexts.length - 1].pages()[0];
@@ -635,6 +920,13 @@ test("系統後台：發邀請碼、用它建立活動、在清單看到", async
     const stored = await page.evaluate(() => JSON.stringify({ ...localStorage }) + JSON.stringify({ ...sessionStorage }));
     expect(stored).not.toContain(admin);
     expect(stored).not.toContain(code);
+  });
+
+  await test.step("離開再按上一頁回來，邀請碼不再顯示（US-O-10.2）", async () => {
+    await page.goto("/new");
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "系統後台" })).toBeVisible();
+    await expect(page.locator(".link-text")).toHaveCount(0);
   });
 
   await test.step("用這組碼在 /new 建立活動，回到後台看到它（US-O-9.2）", async () => {

@@ -6,7 +6,7 @@
 //     through `gcloud compute ssh` with the operator's own login.
 // The real service and database on the VM are never touched.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -110,9 +110,14 @@ function localServe(s: NonNullable<State["local"]>, init: boolean, maintenance =
   if (init) env.BETHERE_INIT = "1";
   env.BETHERE_MAINTENANCE = maintenance ? "1" : "0";
   env.BETHERE_SUPPORT_EMAIL = SUPPORT_EMAIL;
+  // Login mails go into the service log (US-CO-1.14), which mailLinks reads.
+  env.BETHERE_MAIL = "log";
+  env.BETHERE_BASE_URL = `http://127.0.0.1:${LOCAL_PORT}`;
+  const log = openSync(join(s.dir, "server.log"), "a");
   const p = spawn(s.bin, ["serve", "-db", join(s.dir, "e2e.db"), "-addr", `127.0.0.1:${LOCAL_PORT}`], {
-    env, stdio: ["ignore", "ignore", "inherit"], detached: true,
+    env, stdio: ["ignore", log, log], detached: true,
   });
+  closeSync(log);
   p.unref();
   return p.pid!;
 }
@@ -241,4 +246,61 @@ export function issueAdminLink(): string {
   const tok = out.match(/\/admin#t=([A-Za-z0-9_-]{22})\b/);
   if (!tok) throw new Error(`issue-admin-link printed no link:\n${out}`);
   return tok[1];
+}
+
+// ---------------------------------------------------------------- companies
+
+// The two test companies of the company routes, each with its first member
+// (US-O-11.1); the database is new on every run, so the names are fixed.
+export const COMPANIES = {
+  login: { name: "E2E 婚顧甲", email: "owner-a@e2e.example", colleague: "colleague-a@e2e.example", stranger: "stranger@e2e.example" },
+  events: { name: "E2E 婚顧乙", email: "owner-b@e2e.example", colleague: "colleague-b@e2e.example" },
+} as const;
+
+// createCompany makes a company as the developer does in the admin page
+// (US-O-11.1): through the admin API with a fresh admin link.
+export async function createCompany(name: string, email: string) {
+  const token = issueAdminLink();
+  const r = await fetch(`${loadState().baseURL}/api/admin/organizations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ name, email }),
+  });
+  if (!r.ok) throw new Error(`creating company ${name} failed: ${r.status} ${await r.text()}`);
+}
+
+// issueLoginLink makes a member's login link as the developer does when
+// mail does not arrive (US-O-12.8); it works on both targets.
+export function issueLoginLink(email: string): string {
+  const s = loadState();
+  const base = "https://bethere.example";
+  const out =
+    target === "vm"
+      ? vm(`sudo -u bethere ${VM_BIN} issue-login-link -db ${VM_DB} -email ${email} -base-url ${base}`)
+      : execFileSync(s.local!.bin, ["issue-login-link", "-db", join(s.local!.dir, "e2e.db"), "-email", email, "-base-url", base], { encoding: "utf8" });
+  const tok = out.match(/\/company#t=([A-Za-z0-9_-]{22})\b/);
+  if (!tok) throw new Error(`issue-login-link printed no link:\n${out}`);
+  return tok[1];
+}
+
+// mailLinks are the login mail links the local server wrote into its log
+// for an email, oldest first (BETHERE_MAIL=log, US-CO-1.14). The VM's test
+// service sends no mail, so the steps that need one run locally only.
+export function mailLinks(email: string): string[] {
+  const s = loadState();
+  if (!s.local) return [];
+  const links: string[] = [];
+  for (const line of readFileSync(join(s.local.dir, "server.log"), "utf8").split("\n")) {
+    if (!line.includes("mail (log only)")) continue;
+    const rec = JSON.parse(line) as { to?: string; link?: string };
+    if (rec.to === email && rec.link) links.push(rec.link.split("#t=")[1]);
+  }
+  return links;
+}
+
+// endEvent moves an event of a company into the past, which no screen
+// can do: its day is over (US-CO-4.4). Local only: the VM has no sqlite3.
+export function endEvent(name: string) {
+  const s = loadState();
+  execFileSync("sqlite3", [join(s.local!.dir, "e2e.db"), `UPDATE events SET event_date = '2020-01-01' WHERE name = '${name.replaceAll("'", "''")}'`]);
 }
