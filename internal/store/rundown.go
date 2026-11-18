@@ -162,97 +162,164 @@ type validated struct {
 // and a role to create for the pasted import (allowMissing) if it is a
 // valid role name. Messages are for the Master to read.
 func validateRows(e domain.Event, rows []ImportRow, roles []RoleInfo, allowMissing bool) validated {
+	rc := newRoleCheck(roles, allowMissing)
+	v := validated{problems: make([][]string, len(rows))}
+	seqLine := map[int]int{}
+	cues := make([]domain.Cue, len(rows))
+	for i, row := range rows {
+		ps := rowFieldProblems(row)
+		if p, dup := seqProblem(seqLine, row); dup {
+			ps = append(ps, p)
+		}
+		ps = append(ps, rc.check(row.Roles)...)
+		cues[i] = rowCue(e, row)
+		if !domain.InRange(cues[i].ScheduledStart) {
+			ps = append(ps, "start 超出支援的年份")
+		}
+		v.problems[i] = ps
+	}
+	v.missing = rc.missing
+	v.cues, v.rows = bySeq(rows, cues)
+	return v
+}
+
+// rowFieldProblems checks one row's own fields. A row the reader could not
+// read is already refused; its fields are not checked again, so one
+// mistake is listed once. Checks across rows and against the roles run for
+// every row.
+func rowFieldProblems(row ImportRow) []string {
+	if len(row.Problems) > 0 {
+		return append([]string(nil), row.Problems...)
+	}
+	var ps []string
+	if row.Seq < 1 {
+		ps = append(ps, "seq 必須是正整數")
+	}
+	if _, ok := domain.CleanTitle(row.Title); !ok {
+		ps = append(ps, fmt.Sprintf("title 必填，最多 %d 字", domain.MaxTitleRunes))
+	}
+	ps = append(ps, rowTimeProblems(row)...)
+	for _, note := range []struct{ name, text string }{{"role_note", row.RoleNote}, {"note", row.Note}} {
+		if t := note.text; !domain.ValidNote(&t) {
+			ps = append(ps, fmt.Sprintf("%s 最多 %d 字", note.name, domain.MaxNoteRunes))
+		}
+	}
+	return ps
+}
+
+// rowTimeProblems checks a row's length and start time.
+func rowTimeProblems(row ImportRow) []string {
+	var ps []string
+	if row.DurationMin < 0 || row.DurationMin > MaxCueDurationMin {
+		ps = append(ps, fmt.Sprintf("duration_min 必須是 0 到 %d 的整數", MaxCueDurationMin))
+	}
+	if row.StartHour < 0 || row.StartHour > 23 || row.StartMinute < 0 || row.StartMinute > 59 {
+		ps = append(ps, "start 必須是 HH:MM（00:00 到 23:59）")
+	}
+	return ps
+}
+
+// seqProblem reports a seq an earlier row already has, and otherwise
+// records the row's seq; a seq below 1 is the row's own problem.
+func seqProblem(seqLine map[int]int, row ImportRow) (string, bool) {
+	if row.Seq < 1 {
+		return "", false
+	}
+	if first, dup := seqLine[row.Seq]; dup {
+		return fmt.Sprintf("seq %d 與第 %d 列重複", row.Seq, first), true
+	}
+	seqLine[row.Seq] = row.Line
+	return "", false
+}
+
+// roleCheck matches the role names of the rows against every role of the
+// event, and collects the names to create for the pasted import.
+type roleCheck struct {
+	byName       map[string][]RoleInfo
+	allowMissing bool
+	isMissing    map[string]bool
+	missing      []string
+}
+
+func newRoleCheck(roles []RoleInfo, allowMissing bool) *roleCheck {
 	byName := map[string][]RoleInfo{}
 	for _, r := range roles {
 		byName[r.Name] = append(byName[r.Name], r)
 	}
-	v := validated{problems: make([][]string, len(rows))}
-	seqLine := map[int]int{}
-	missing := map[string]bool{}
-	cues := make([]domain.Cue, len(rows))
-	for i, row := range rows {
-		bad := func(format string, args ...any) {
-			v.problems[i] = append(v.problems[i], fmt.Sprintf(format, args...))
+	return &roleCheck{byName: byName, allowMissing: allowMissing, isMissing: map[string]bool{}}
+}
+
+// check is the problems of one row's role names.
+func (rc *roleCheck) check(names []string) []string {
+	var ps []string
+	seen := map[string]bool{}
+	for _, name := range names {
+		if p := rc.problem(name, seen[name]); p != "" {
+			ps = append(ps, p)
 		}
-		// A row the reader could not read is already refused; its fields
-		// are not checked again, so one mistake is listed once. Checks
-		// across rows and against the roles run for every row.
-		if len(row.Problems) > 0 {
-			for _, p := range row.Problems {
-				bad("%s", p)
-			}
-		} else {
-			if row.Seq < 1 {
-				bad("seq 必須是正整數")
-			}
-			if _, ok := domain.CleanTitle(row.Title); !ok {
-				bad("title 必填，最多 %d 字", domain.MaxTitleRunes)
-			}
-			if row.DurationMin < 0 || row.DurationMin > MaxCueDurationMin {
-				bad("duration_min 必須是 0 到 %d 的整數", MaxCueDurationMin)
-			}
-			if row.StartHour < 0 || row.StartHour > 23 || row.StartMinute < 0 || row.StartMinute > 59 {
-				bad("start 必須是 HH:MM（00:00 到 23:59）")
-			}
-			for _, note := range []struct{ name, text string }{{"role_note", row.RoleNote}, {"note", row.Note}} {
-				if t := note.text; !domain.ValidNote(&t) {
-					bad("%s 最多 %d 字", note.name, domain.MaxNoteRunes)
-				}
-			}
-		}
-		if row.Seq >= 1 {
-			if first, dup := seqLine[row.Seq]; dup {
-				bad("seq %d 與第 %d 列重複", row.Seq, first)
-			} else {
-				seqLine[row.Seq] = row.Line
-			}
-		}
-		seen := map[string]bool{}
-		for _, name := range row.Roles {
-			switch found := byName[name]; {
-			case name == "":
-				bad("roles 有空白的角色名稱")
-			case seen[name]:
-				bad("角色「%s」列了兩次", name)
-			case len(found) > 1:
-				bad("有 %d 個角色都叫「%s」", len(found), name)
-			case len(found) == 1 && !found[0].Type.HasOwnCues():
-				bad("角色「%s」不能被指派環節（總召看全部、新人只看儀表板）", name)
-			case len(found) == 1:
-			case !allowMissing:
-				bad("角色「%s」不存在", name)
-			default:
-				if _, ok := domain.CleanRoleName(name); !ok {
-					bad("角色名稱「%s」不合法：最多 %d 字，不能含分號或看不見的字元", name, domain.MaxRoleNameRunes)
-				} else if !missing[name] {
-					missing[name] = true
-					v.missing = append(v.missing, name)
-				}
-			}
-			seen[name] = true
-		}
-		cues[i] = domain.Cue{
-			Seq:   row.Seq,
-			Title: strings.TrimSpace(row.Title),
-			ScheduledStart: time.Date(e.Date.Year, e.Date.Month, e.Date.Day,
-				row.StartHour, row.StartMinute, 0, 0, e.Location),
-			DurationMin: row.DurationMin,
-			IsFixed:     row.Fixed,
-		}
-		if !domain.InRange(cues[i].ScheduledStart) {
-			bad("start 超出支援的年份")
-		}
+		seen[name] = true
 	}
+	return ps
+}
+
+// problem is what is wrong with one role name, or "" when nothing is.
+func (rc *roleCheck) problem(name string, again bool) string {
+	switch found := rc.byName[name]; {
+	case name == "":
+		return "roles 有空白的角色名稱"
+	case again:
+		return fmt.Sprintf("角色「%s」列了兩次", name)
+	case len(found) > 1:
+		return fmt.Sprintf("有 %d 個角色都叫「%s」", len(found), name)
+	case len(found) == 1 && !found[0].Type.HasOwnCues():
+		return fmt.Sprintf("角色「%s」不能被指派環節（總召看全部、新人只看儀表板）", name)
+	case len(found) == 1:
+		return ""
+	case !rc.allowMissing:
+		return fmt.Sprintf("角色「%s」不存在", name)
+	}
+	return rc.addMissing(name)
+}
+
+// addMissing records a valid name no role has, once.
+func (rc *roleCheck) addMissing(name string) string {
+	if _, ok := domain.CleanRoleName(name); !ok {
+		return fmt.Sprintf("角色名稱「%s」不合法：最多 %d 字，不能含分號或看不見的字元", name, domain.MaxRoleNameRunes)
+	}
+	if !rc.isMissing[name] {
+		rc.isMissing[name] = true
+		rc.missing = append(rc.missing, name)
+	}
+	return ""
+}
+
+// rowCue is the cue a row describes, on the event day.
+func rowCue(e domain.Event, row ImportRow) domain.Cue {
+	return domain.Cue{
+		Seq:   row.Seq,
+		Title: strings.TrimSpace(row.Title),
+		ScheduledStart: time.Date(e.Date.Year, e.Date.Month, e.Date.Day,
+			row.StartHour, row.StartMinute, 0, 0, e.Location),
+		DurationMin: row.DurationMin,
+		IsFixed:     row.Fixed,
+	}
+}
+
+// bySeq orders the cues and their rows by seq, keeping the given order
+// among equal seqs.
+func bySeq(rows []ImportRow, cues []domain.Cue) ([]domain.Cue, []ImportRow) {
 	order := make([]int, len(rows))
 	for i := range order {
 		order[i] = i
 	}
 	slices.SortStableFunc(order, func(a, b int) int { return rows[a].Seq - rows[b].Seq })
+	var cs []domain.Cue
+	var rs []ImportRow
 	for _, i := range order {
-		v.cues = append(v.cues, cues[i])
-		v.rows = append(v.rows, rows[i])
+		cs = append(cs, cues[i])
+		rs = append(rs, rows[i])
 	}
-	return v
+	return cs, rs
 }
 
 func nullText(s string) any {
