@@ -72,33 +72,46 @@ func parseGuests(text string) []store.GuestRow {
 		}
 		header := first
 		first = false
-		sep := ","
-		if strings.Contains(line, "\t") {
-			sep = "\t"
-		}
-		cells := strings.Split(line, sep)
+		cells := guestCells(line)
 		if header && strings.TrimSpace(cells[0]) == "姓名" {
 			continue
 		}
-		if len(cells) < 2 || len(cells) > 3 {
+		g, ok := guestRow(cells)
+		if !ok {
 			return nil
-		}
-		name, okName := domain.CleanLabel(cells[0], maxGuestName)
-		table, okTable := domain.CleanLabel(cells[1], maxGuestTable)
-		if !okName || !okTable {
-			return nil
-		}
-		g := store.GuestRow{Name: name, Table: table}
-		if len(cells) == 3 && strings.TrimSpace(cells[2]) != "" {
-			note, ok := domain.CleanLabel(cells[2], maxGuestNote)
-			if !ok {
-				return nil
-			}
-			g.Note = &note
 		}
 		rows = append(rows, g)
 	}
 	return rows
+}
+
+// guestCells splits a line by tabs when it has one, by commas otherwise.
+func guestCells(line string) []string {
+	if strings.Contains(line, "\t") {
+		return strings.Split(line, "\t")
+	}
+	return strings.Split(line, ",")
+}
+
+// guestRow is the guest of one line's cells: name, table, optional note.
+func guestRow(cells []string) (store.GuestRow, bool) {
+	if len(cells) < 2 || len(cells) > 3 {
+		return store.GuestRow{}, false
+	}
+	name, okName := domain.CleanLabel(cells[0], maxGuestName)
+	table, okTable := domain.CleanLabel(cells[1], maxGuestTable)
+	if !okName || !okTable {
+		return store.GuestRow{}, false
+	}
+	g := store.GuestRow{Name: name, Table: table}
+	if len(cells) == 3 && strings.TrimSpace(cells[2]) != "" {
+		note, ok := domain.CleanLabel(cells[2], maxGuestNote)
+		if !ok {
+			return store.GuestRow{}, false
+		}
+		g.Note = &note
+	}
+	return g, true
 }
 
 // checklistLines is one item per non-blank line; the store checks each.

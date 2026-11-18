@@ -76,15 +76,8 @@ func (s *Store) ImportRundown(ctx context.Context, eventID int64, rows []ImportR
 		if err != nil {
 			return err
 		}
-		if e.Status != domain.Draft {
-			return domain.ErrNotDraft
-		}
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM cues WHERE event_id = ?`, eventID).Scan(&n); err != nil {
+		if err := checkEmptyDraft(ctx, tx, e, eventID); err != nil {
 			return err
-		}
-		if n > 0 {
-			return ErrRundownExists
 		}
 		roles, err := loadRoles(ctx, tx, eventID)
 		if err != nil {
@@ -94,28 +87,8 @@ func (s *Store) ImportRundown(ctx context.Context, eventID int64, rows []ImportR
 		if err != nil {
 			return err
 		}
-		ids := map[string]int64{}
-		for _, r := range roles {
-			ids[r.Name] = r.ID
-		}
-		for i, c := range v.cues {
-			row := v.rows[i]
-			res, err := tx.ExecContext(ctx, `INSERT INTO cues (event_id, seq, title, scheduled_start, duration_min, is_fixed, note_public)
-				VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				eventID, c.Seq, c.Title, toNS(c.ScheduledStart), c.DurationMin, c.IsFixed, nullText(row.Note))
-			if err != nil {
-				return err
-			}
-			cueID, err := res.LastInsertId()
-			if err != nil {
-				return err
-			}
-			for _, name := range row.Roles {
-				if _, err := tx.ExecContext(ctx, `INSERT INTO cue_roles (cue_id, role_id, role_note) VALUES (?, ?, ?)`,
-					cueID, ids[name], nullText(row.RoleNote)); err != nil {
-					return err
-				}
-			}
+		if err := writeRundown(ctx, tx, eventID, v, roles); err != nil {
+			return err
 		}
 		if err := logAction(ctx, tx, eventID, actor, "import-rundown", map[string]any{"cues": len(v.cues)}, now); err != nil {
 			return err
@@ -123,6 +96,51 @@ func (s *Store) ImportRundown(ctx context.Context, eventID int64, rows []ImportR
 		_, err = bumpVersion(ctx, tx, eventID)
 		return err
 	})
+}
+
+// checkEmptyDraft refuses the command's import into an event that is not a
+// draft or already has cues (US-M-0.2a).
+func checkEmptyDraft(ctx context.Context, tx *sql.Tx, e domain.Event, eventID int64) error {
+	if e.Status != domain.Draft {
+		return domain.ErrNotDraft
+	}
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM cues WHERE event_id = ?`, eventID).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrRundownExists
+	}
+	return nil
+}
+
+// writeRundown writes every validated cue with its public note and its
+// role assignments with the row's role note.
+func writeRundown(ctx context.Context, tx *sql.Tx, eventID int64, v validated, roles []RoleInfo) error {
+	ids := map[string]int64{}
+	for _, r := range roles {
+		ids[r.Name] = r.ID
+	}
+	for i, c := range v.cues {
+		row := v.rows[i]
+		res, err := tx.ExecContext(ctx, `INSERT INTO cues (event_id, seq, title, scheduled_start, duration_min, is_fixed, note_public)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			eventID, c.Seq, c.Title, toNS(c.ScheduledStart), c.DurationMin, c.IsFixed, nullText(row.Note))
+		if err != nil {
+			return err
+		}
+		cueID, err := res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		for _, name := range row.Roles {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO cue_roles (cue_id, role_id, role_note) VALUES (?, ?, ?)`,
+				cueID, ids[name], nullText(row.RoleNote)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // checkRundown is the command's import: every role must exist already

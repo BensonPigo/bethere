@@ -159,17 +159,9 @@ func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 		if err != nil {
 			return err
 		}
-		started := false
-		if phase == opStartsLive && e.Status == domain.Draft {
-			if e, err = startEvent(ctx, tx, e, actor, now); err != nil {
-				return err
-			}
-			started = true
-		}
-		if phase != opDraftToo {
-			if err := e.RequireLive(now); err != nil {
-				return err
-			}
+		started, err := readyForOp(ctx, tx, e, phase, actor, now)
+		if err != nil {
+			return err
 		}
 		cues, err := loadCues(ctx, tx, eventID)
 		if err != nil {
@@ -181,13 +173,8 @@ func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 		if len(op.Changes) == 0 && !started {
 			return nil
 		}
-		if len(op.Changes) > 0 {
-			if err := writeChanges(ctx, tx, eventID, op); err != nil {
-				return err
-			}
-			if err := logAction(ctx, tx, eventID, actor, opLogPrefix+string(op.Kind), encodeOp(op), now); err != nil {
-				return err
-			}
+		if err := recordOp(ctx, tx, eventID, actor, op, now); err != nil {
+			return err
 		}
 		version, err = bumpVersion(ctx, tx, eventID)
 		return err
@@ -196,6 +183,38 @@ func (s *Store) applyCueOp(ctx context.Context, eventID, expectVersion int64, ac
 		return 0, domain.Op{}, err
 	}
 	return version, op, nil
+}
+
+// readyForOp starts a draft on its day for an advance, and refuses an
+// event that is not live unless the operation runs in draft too. It
+// reports whether it started the event.
+func readyForOp(ctx context.Context, tx *sql.Tx, e domain.Event, phase opPhase, actor Actor, now time.Time) (bool, error) {
+	started := false
+	if phase == opStartsLive && e.Status == domain.Draft {
+		var err error
+		if e, err = startEvent(ctx, tx, e, actor, now); err != nil {
+			return false, err
+		}
+		started = true
+	}
+	if phase != opDraftToo {
+		if err := e.RequireLive(now); err != nil {
+			return started, err
+		}
+	}
+	return started, nil
+}
+
+// recordOp writes an operation's changes and logs it; an operation that
+// changes nothing writes nothing.
+func recordOp(ctx context.Context, tx *sql.Tx, eventID int64, actor Actor, op domain.Op, now time.Time) error {
+	if len(op.Changes) == 0 {
+		return nil
+	}
+	if err := writeChanges(ctx, tx, eventID, op); err != nil {
+		return err
+	}
+	return logAction(ctx, tx, eventID, actor, opLogPrefix+string(op.Kind), encodeOp(op), now)
 }
 
 // UndoLastCueOp reverses the latest cue operation, once (data-model.md
@@ -211,22 +230,7 @@ func (s *Store) UndoLastCueOp(ctx context.Context, eventID, expectVersion int64,
 		if _, err := guardVersion(ctx, tx, eventID, expectVersion, actor, now); err != nil {
 			return err
 		}
-		var (
-			logID   int64
-			typ     string
-			payload string
-			undone  sql.NullInt64
-		)
-		err := tx.QueryRowContext(ctx, `SELECT id, type, payload, undone_at FROM action_logs
-			WHERE event_id = ? AND type LIKE 'cue.%' ORDER BY id DESC LIMIT 1`, eventID).
-			Scan(&logID, &typ, &payload, &undone)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && undone.Valid) {
-			return ErrNothingToUndo
-		}
-		if err != nil {
-			return err
-		}
-		op, err := decodeOp(typ, payload)
+		logID, op, err := lastCueOp(ctx, tx, eventID)
 		if err != nil {
 			return err
 		}
@@ -237,14 +241,7 @@ func (s *Store) UndoLastCueOp(ctx context.Context, eventID, expectVersion int64,
 		if undo, err = domain.Undo(cues, op); err != nil {
 			return err
 		}
-		if err := writeChanges(ctx, tx, eventID, undo); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE action_logs SET undone_at = ? WHERE id = ?`, toNS(now), logID); err != nil {
-			return err
-		}
-		if err := logAction(ctx, tx, eventID, actor, "undo",
-			map[string]any{"of": logID, "op": encodeOp(undo)}, now); err != nil {
+		if err := recordUndo(ctx, tx, eventID, logID, undo, actor, now); err != nil {
 			return err
 		}
 		version, err = bumpVersion(ctx, tx, eventID)
@@ -254,6 +251,40 @@ func (s *Store) UndoLastCueOp(ctx context.Context, eventID, expectVersion int64,
 		return 0, domain.Op{}, err
 	}
 	return version, undo, nil
+}
+
+// lastCueOp is the latest cue operation of an event and its log id; one
+// already undone leaves nothing to undo.
+func lastCueOp(ctx context.Context, tx *sql.Tx, eventID int64) (int64, domain.Op, error) {
+	var (
+		logID   int64
+		typ     string
+		payload string
+		undone  sql.NullInt64
+	)
+	err := tx.QueryRowContext(ctx, `SELECT id, type, payload, undone_at FROM action_logs
+		WHERE event_id = ? AND type LIKE 'cue.%' ORDER BY id DESC LIMIT 1`, eventID).
+		Scan(&logID, &typ, &payload, &undone)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && undone.Valid) {
+		return 0, domain.Op{}, ErrNothingToUndo
+	}
+	if err != nil {
+		return 0, domain.Op{}, err
+	}
+	op, err := decodeOp(typ, payload)
+	return logID, op, err
+}
+
+// recordUndo writes the reversal, marks the operation undone and logs the
+// undo.
+func recordUndo(ctx context.Context, tx *sql.Tx, eventID, logID int64, undo domain.Op, actor Actor, now time.Time) error {
+	if err := writeChanges(ctx, tx, eventID, undo); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE action_logs SET undone_at = ? WHERE id = ?`, toNS(now), logID); err != nil {
+		return err
+	}
+	return logAction(ctx, tx, eventID, actor, "undo", map[string]any{"of": logID, "op": encodeOp(undo)}, now)
 }
 
 // writeChanges stores the fields an Op owns for every changed cue. Cues

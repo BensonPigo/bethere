@@ -53,30 +53,55 @@ func PlanShift(cues []Cue, req ShiftRequest, now time.Time) (ShiftPlan, error) {
 	}
 	// Keep only exclusions that name a cue of this rundown, once each; the
 	// request is logged for the after-event review (data-model.md, ActionLog).
+	req.Excluded = knownExclusions(cues, req.Excluded)
+
+	op := Op{Kind: OpShift, Shift: &req}
+	changes, err := shiftChanges(cues, from, req, now)
+	if err != nil {
+		return ShiftPlan{}, err
+	}
+	op.Changes = changes
+	return ShiftPlan{Op: op, Conflicts: Conflicts(op.ApplyTo(cues))}, nil
+}
+
+// knownExclusions is the excluded ids that name a cue of cues, once each,
+// in the order given.
+func knownExclusions(cues []Cue, ids []int64) []int64 {
 	var excluded []int64
-	for _, id := range req.Excluded {
+	for _, id := range ids {
 		if _, ok := find(cues, id); ok && !slices.Contains(excluded, id) {
 			excluded = append(excluded, id)
 		}
 	}
-	req.Excluded = excluded
+	return excluded
+}
 
-	op := Op{Kind: OpShift, Shift: &req}
+// shiftChanges moves every cue the shift applies to, in seq order; a cue
+// pulled earlier than now refuses the whole shift.
+func shiftChanges(cues []Cue, from Cue, req ShiftRequest, now time.Time) ([]Change, error) {
+	var changes []Change
 	for _, c := range bySeq(cues) {
-		if c.Seq < from.Seq || c.Status != Pending || c.IsFixed || slices.Contains(req.Excluded, c.ID) {
+		if !shiftMoves(c, from, req, now) {
 			continue
-		}
-		if req.DeltaMin < 0 && c.EffectiveStart().Before(now) {
-			continue // already overdue; pulling it earlier means nothing
 		}
 		shifted := c
 		shifted.OffsetMin += req.DeltaMin
 		if req.DeltaMin < 0 && shifted.EffectiveStart().Before(now) {
-			return ShiftPlan{}, &ShiftTooEarlyError{CueID: c.ID, NewStart: shifted.EffectiveStart()}
+			return nil, &ShiftTooEarlyError{CueID: c.ID, NewStart: shifted.EffectiveStart()}
 		}
-		op.Changes = append(op.Changes, Change{Before: c, After: shifted})
+		changes = append(changes, Change{Before: c, After: shifted})
 	}
-	return ShiftPlan{Op: op, Conflicts: Conflicts(op.ApplyTo(cues))}, nil
+	return changes, nil
+}
+
+// shiftMoves reports whether a shift moves c: a pending, unfixed, not
+// excluded cue from the starting cue on, except one already overdue when
+// pulling earlier, which means nothing.
+func shiftMoves(c, from Cue, req ShiftRequest, now time.Time) bool {
+	if c.Seq < from.Seq || c.Status != Pending || c.IsFixed || slices.Contains(req.Excluded, c.ID) {
+		return false
+	}
+	return req.DeltaMin >= 0 || !c.EffectiveStart().Before(now)
 }
 
 // Conflicts lists pending or in-progress cues whose effective end is past
