@@ -198,7 +198,7 @@ func onlyOne(n int, attempt func(i int) error) []error {
 }
 
 // wantOneWinner wants exactly one nil and every other error to be lose.
-func wantOneWinner(t *testing.T, errs []error, lose error) {
+func wantOneCompanyWinner(t *testing.T, errs []error, lose error) {
 	t.Helper()
 	won := 0
 	for i, err := range errs {
@@ -221,7 +221,7 @@ func TestUS_CO_2_1_ConcurrentAddOfOneEmail(t *testing.T) {
 		_, _, err := c.f.s.AddMember(ctx, hash("sa"), "dup@x.tw", before)
 		return err
 	})
-	wantOneWinner(t, errs, ErrEmailTaken)
+	wantOneCompanyWinner(t, errs, ErrEmailTaken)
 	var n int
 	if err := c.f.s.r.QueryRow(`SELECT count(*) FROM members WHERE email = 'dup@x.tw'`).Scan(&n); err != nil || n != 1 {
 		t.Errorf("rows = %d (%v), want 1", n, err)
@@ -240,7 +240,7 @@ func TestUS_CO_2_5_ConcurrentAddOfTheLastSeat(t *testing.T) {
 		_, _, err := c.f.s.AddMember(ctx, hash("sa"), fmt.Sprintf("last%d@x.tw", i), before)
 		return err
 	})
-	wantOneWinner(t, errs, ErrTooManyMembers)
+	wantOneCompanyWinner(t, errs, ErrTooManyMembers)
 	var n int
 	if err := c.f.s.r.QueryRow(`SELECT count(*) FROM members`).Scan(&n); err != nil || n != MembersPerOrganization {
 		t.Errorf("members = %d (%v), want %d", n, err, MembersPerOrganization)
@@ -260,7 +260,7 @@ func TestUS_CO_3_4_ConcurrentCreateOfTheLastEvent(t *testing.T) {
 		}, before)
 		return err
 	})
-	wantOneWinner(t, errs, ErrTooManyEvents)
+	wantOneCompanyWinner(t, errs, ErrTooManyEvents)
 	var n int
 	if err := c.f.s.r.QueryRow(`SELECT count(*) FROM events WHERE organization_id = ?`, c.orgID).Scan(&n); err != nil || n != EventsPerOrganizationDay {
 		t.Errorf("events = %d (%v), want %d", n, err, EventsPerOrganizationDay)
@@ -275,7 +275,7 @@ func TestUS_O_11_2_ConcurrentCompaniesOfOneEmail(t *testing.T) {
 		_, err := c.f.s.CreateOrganization(ctx, hash("admin"), fmt.Sprintf("公司%d", i), "same@x.tw", before)
 		return err
 	})
-	wantOneWinner(t, errs, ErrEmailTaken)
+	wantOneCompanyWinner(t, errs, ErrEmailTaken)
 	var orgs, members int
 	if err := c.f.s.r.QueryRow(`SELECT (SELECT count(*) FROM organizations), (SELECT count(*) FROM members WHERE email = 'same@x.tw')`).
 		Scan(&orgs, &members); err != nil || orgs != 2 || members != 1 {
