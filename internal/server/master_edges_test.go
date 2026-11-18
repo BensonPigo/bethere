@@ -1,7 +1,6 @@
 package server
 
-// Coverage of the Master's operations on the day (US-M-2 to US-M-9), added
-// from the test audit: the edges the first tests left out.
+// The edges of the Master's operations on the day (US-M-2 to US-M-9).
 
 import (
 	"encoding/base64"

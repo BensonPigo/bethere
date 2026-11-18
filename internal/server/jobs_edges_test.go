@@ -10,7 +10,7 @@ import (
 	"github.com/BensonPigo/bethere/internal/domain"
 )
 
-// Coverage of the jobs' edges (api.md section 9): the Master's view of a
+// The jobs' edges (api.md section 9): the Master's view of a
 // claim, concurrent claims, limits, who sees what.
 
 // addTask has the Master add a task and returns its id.

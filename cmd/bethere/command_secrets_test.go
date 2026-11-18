@@ -1,6 +1,6 @@
 package main
 
-// Coverage added from the test audit: US-M-0.4 for every command that
+// US-M-0.4 for every command that
 // prints a secret, and the screen rule of add-role for Host.
 
 import (

@@ -1,8 +1,7 @@
 package server
 
-// Coverage of the preparation before the event (US-M-10 to US-M-13), added
-// from the test audit: version conflicts of every editing endpoint, the
-// inclusive limits, role names and the size limits of the import.
+// The edges of the preparation before the event (US-M-10 to US-M-13):
+// version conflicts of every editing endpoint, the inclusive limits, role names and the size limits of the import.
 
 import (
 	"net/http"

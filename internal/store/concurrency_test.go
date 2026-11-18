@@ -1,7 +1,6 @@
 package store
 
-// Races between devices and failures halfway through a transaction, added
-// from the test audit. A failure is made by a trigger that aborts the last
+// Races between devices and failures halfway through a transaction. A failure is made by a trigger that aborts the last
 // write of the transaction, so the test shows that everything written before
 // it is rolled back, without changing the production code.
 
