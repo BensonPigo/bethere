@@ -33,9 +33,9 @@ func env(m map[string]string) func(string) (string, bool) {
 func TestUS_CO_1_12_FromEnv(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 	smtpOK := map[string]string{"BETHERE_MAIL": "smtp", "BETHERE_MAIL_FROM": "bethere@gmail.com",
-		"BETHERE_MAIL_PASSWORD": "abcdabcdabcdabcd", "BETHERE_BASE_URL": "https://34-80-7-111.sslip.io"}
+		"BETHERE_MAIL_PASSWORD": "abcdabcdabcdabcd", "BETHERE_BASE_URL": "https://bethere.example.com"}
 	s, err := FromEnv(env(smtpOK), logger)
-	if err != nil || s.BaseURL != "https://34-80-7-111.sslip.io" ||
+	if err != nil || s.BaseURL != "https://bethere.example.com" ||
 		s.Sender != (SMTP{Addr: "smtp.gmail.com:587", From: "bethere@gmail.com", Password: "abcdabcdabcdabcd"}) {
 		t.Errorf("smtp = %+v %v", s, err)
 	}
