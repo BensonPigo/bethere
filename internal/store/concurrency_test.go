@@ -378,3 +378,29 @@ func TestUS_M_3_6_AdvanceOfADraftWithEveryCueSkippedStartsNothing(t *testing.T) 
 		}
 	}
 }
+
+// US-M-8.1: a cue added after the first one lands second, in draft and
+// live alike; live, the first cue may already be in progress.
+func TestUS_M_8_1_InsertAfterTheFirstCue(t *testing.T) {
+	f := newFixture(t)
+	insert := func(title string) {
+		t.Helper()
+		if _, err := f.s.InsertCue(ctx, f.eventID, f.version(t), NewCue{
+			AfterCueID: f.cueIDs[0], Start: at(10, 20), DurationMin: 10, Title: title,
+		}, f.masterBy, at(9, 0)); err != nil {
+			t.Fatalf("insert %s: %v", title, err)
+		}
+		cues, err := f.s.Cues(ctx, f.eventID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cues[0].ID != f.cueIDs[0] || cues[1].Title != title {
+			t.Errorf("after inserting %s: first %d, second %q; want %d then %q", title, cues[0].ID, cues[1].Title, f.cueIDs[0], title)
+		}
+	}
+	insert("草稿插入")
+	if _, _, err := f.s.Advance(ctx, f.eventID, f.version(t), f.masterBy, at(9, 0)); err != nil {
+		t.Fatal(err)
+	}
+	insert("現場插入")
+}

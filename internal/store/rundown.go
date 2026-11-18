@@ -282,18 +282,23 @@ func (rc *roleCheck) check(names []string) []string {
 
 // problem is what is wrong with one role name, or "" when nothing is.
 func (rc *roleCheck) problem(name string, again bool) string {
-	switch found := rc.byName[name]; {
-	case name == "":
+	found := rc.byName[name]
+	if name == "" {
 		return "roles 有空白的角色名稱"
-	case again:
+	}
+	if again {
 		return fmt.Sprintf("角色「%s」列了兩次", name)
-	case len(found) > 1:
+	}
+	if len(found) > 1 {
 		return fmt.Sprintf("有 %d 個角色都叫「%s」", len(found), name)
-	case len(found) == 1 && !found[0].Type.HasOwnCues():
-		return fmt.Sprintf("角色「%s」不能被指派環節（總召看全部、新人只看儀表板）", name)
-	case len(found) == 1:
+	}
+	if len(found) == 1 {
+		if !found[0].Type.HasOwnCues() {
+			return fmt.Sprintf("角色「%s」不能被指派環節（總召看全部、新人只看儀表板）", name)
+		}
 		return ""
-	case !rc.allowMissing:
+	}
+	if !rc.allowMissing {
 		return fmt.Sprintf("角色「%s」不存在", name)
 	}
 	return rc.addMissing(name)

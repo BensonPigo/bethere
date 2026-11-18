@@ -190,19 +190,31 @@ func masterTaskMove(t taskRow, state string) (sql.NullInt64, bool, error) {
 // runnerTaskMove: a runner may claim an open task, and release or finish
 // its own; asking for the state the task is in changes nothing.
 func runnerTaskMove(t taskRow, state string, roleID int64) (sql.NullInt64, bool, error) {
-	switch {
-	case t.state == TaskOpen && state == TaskClaimed:
+	if t.state == TaskOpen && state == TaskClaimed {
 		return sql.NullInt64{Int64: roleID, Valid: true}, false, nil
-	case t.state == TaskClaimed && t.claimedBy.Int64 != roleID:
-		return sql.NullInt64{}, false, ErrTaskTaken
-	case t.state == TaskClaimed && state == TaskOpen:
-		return sql.NullInt64{}, false, nil
-	case t.state == TaskClaimed && state == TaskDone:
-		return t.claimedBy, false, nil
-	case t.state == state:
+	}
+	if t.state == TaskClaimed {
+		return claimedTaskMove(t, state, roleID)
+	}
+	if t.state == state {
 		return sql.NullInt64{}, true, nil
 	}
 	return sql.NullInt64{}, false, ErrInvalidTaskState
+}
+
+// claimedTaskMove: only the runner who holds a claimed task may release or
+// finish it. state is open, claimed or done (taskMove checked it).
+func claimedTaskMove(t taskRow, state string, roleID int64) (sql.NullInt64, bool, error) {
+	if t.claimedBy.Int64 != roleID {
+		return sql.NullInt64{}, false, ErrTaskTaken
+	}
+	if state == TaskOpen {
+		return sql.NullInt64{}, false, nil
+	}
+	if state == TaskDone {
+		return t.claimedBy, false, nil
+	}
+	return sql.NullInt64{}, true, nil
 }
 
 // DeleteTask removes a task, logging it in full (ADR-0032).
