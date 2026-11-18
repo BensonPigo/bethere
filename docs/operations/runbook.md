@@ -7,7 +7,7 @@
 
 ## 1. 部署與回退
 
-- 專案：`ops/gcp/` 的每支腳本都要先設定 `PROJECT`（正式專案是 `export PROJECT=bethere-prod-0606`），沒設就拒絕執行，開始時印出操作的專案；演練一律用暫存專案的 ID。可用區不必指定，腳本跟著 VM 實際所在的可用區。
+- 專案：`ops/gcp/` 的每支腳本都要先設定 `PROJECT`（正式專案的 ID 只存在本機的 `ops/gcp/prod-project`，不進版本控制，所以是 `export PROJECT=$(cat ops/gcp/prod-project)`），沒設就拒絕執行，開始時印出操作的專案；演練一律用暫存專案的 ID。可用區不必指定，腳本跟著 VM 實際所在的可用區。
 - 部署：`ops/gcp/release.sh` 上傳發行版 → `ops/gcp/deploy.sh <版本>` 先確認發行版、Caddy 與 Litestream 都在 bucket 裡，把被換下的版本記為「上一版」（metadata `bethere-previous-version`），改 metadata、依本機的 `ops/gcp/vm-startup.sh` 重新佈置啟動腳本與服務設定，再重啟服務；最後在 VM 上確認版本，並從外部確認網站處於服務啟動時的模式（開放或維護）。`ops/gcp/deploy.sh` 不帶版本時只列出目前版本、上一版與最近上傳的版本；回退是 `ops/gcp/deploy.sh <上一版>`。上傳過的版本不一定部署過，回退一律照「上一版」，不照上傳順序。
 - 維護模式（規則見 `requirements/stories.md` US-O-2）：`ops/gcp/maintenance.sh on|off|status`。`on` 開啟並重啟；`off` 解除、刪除還原標記並重啟；`status` 顯示 metadata、還原標記與服務實際的模式。三者最後都從外部確認：維護中 `/api/ping` 回 503 `maintenance`，開放時回 200。從備份還原的資料庫會一直維持維護模式，直到 `off`。維護中只能部署支援維護模式的版本，要回退到更舊的版本先 `off`。
 - 重建：`ops/gcp/rebuild.sh`（第 2 節程序 2）刪掉舊 VM 後呼叫 `ops/gcp/create-vm.sh`；`create-vm.sh` 在專案已有 VM 時拒絕執行，確保恰好一台，每次都建一顆名稱不重複的新開機磁碟；新 VM 一律帶 `bethere-maintenance=1`。重建後測試服務的網域不會沿用，要再執行一次 `ops/gcp/e2e-setup.sh`。新 VM 的磁碟沒有資料庫時，服務啟動前會自動從備份 bucket 還原，並以維護模式啟動。第一次部署時以 `ops/gcp/init-db.sh` 建立空資料庫後，執行 `ops/gcp/maintenance.sh off`。
@@ -72,8 +72,8 @@ sequenceDiagram
 - 操作手冊只涵蓋兩件事，**由他本人在婚前演練一次**：
   1. **退回上一個發行版**：`ops/gcp/deploy.sh` 看「previous」那一行，再 `ops/gcp/deploy.sh <上一版>`。退版之後「previous」變成剛退掉的那版，不要再照它退一次。
   2. **VM 或磁碟故障**（啟動門檻：服務中斷超過約 10 分鐘仍未自行恢復；放棄條件：開始後超過 30 分鐘、`rebuild.sh` 同一步失敗兩次、舊 VM 刪不掉（靜態 IP 仍被佔用）或在兩個可用區都建不出新的 e2-micro，就停止並改靠離線快取與紙本）：
-     1. 執行 `PROJECT=bethere-prod-0606 ops/gcp/rebuild.sh <紙本上記錄的目前版本號> [可用區]`。版本號必須支援維護模式，否則還原後服務不會啟動。可用區省略時沿用舊 VM 的（沒有舊 VM 時是 `asia-east1-b`）；舊 VM 所在的可用區故障時，改指定 `asia-east1` 的另一個（例如 `asia-east1-c`）。腳本依序：
-        - **先檢查、不刪任何東西**：版本號格式；發行版、Caddy 與 Litestream 都在 bucket 裡；靜態 IP 存在；可用區在 `asia-east1`、確實存在且有 e2-micro；備份 bucket 裡有備份。殼層裡殘留的 `ZONE` 不算數，只有指令的第二個參數能換可用區。從舊 VM 讀出網域與上一版；舊 VM 已經不在時，照紙本另外設定 `DOMAIN` 與 `PREVIOUS_VERSION`（例如 `DOMAIN=34-80-7-111.sslip.io PREVIOUS_VERSION=c406027-20261027032903`；沒有上一版時寫 `PREVIOUS_VERSION=none`），網域只寫主機名稱，不加 `https://` 或斜線。殼層裡殘留的 `DOMAIN` 或 `PREVIOUS_VERSION` 與舊 VM 的不同時，腳本拒絕執行；照紙本給的上一版必須在發行版 bucket 裡；舊 VM 記錄的上一版若已從 bucket 刪掉，腳本提出警告，重建後不記上一版。
+     1. 執行 `PROJECT=$(cat ops/gcp/prod-project) ops/gcp/rebuild.sh <紙本上記錄的目前版本號> [可用區]`。版本號必須支援維護模式，否則還原後服務不會啟動。可用區省略時沿用舊 VM 的（沒有舊 VM 時是 `asia-east1-b`）；舊 VM 所在的可用區故障時，改指定 `asia-east1` 的另一個（例如 `asia-east1-c`）。腳本依序：
+        - **先檢查、不刪任何東西**：版本號格式；發行版、Caddy 與 Litestream 都在 bucket 裡；靜態 IP 存在；可用區在 `asia-east1`、確實存在且有 e2-micro；備份 bucket 裡有備份。殼層裡殘留的 `ZONE` 不算數，只有指令的第二個參數能換可用區。從舊 VM 讀出網域與上一版；舊 VM 已經不在時，照紙本另外設定 `DOMAIN` 與 `PREVIOUS_VERSION`（例如 `DOMAIN=203-0-113-10.sslip.io PREVIOUS_VERSION=c406027-20261027032903`；沒有上一版時寫 `PREVIOUS_VERSION=none`），網域只寫主機名稱，不加 `https://` 或斜線。殼層裡殘留的 `DOMAIN` 或 `PREVIOUS_VERSION` 與舊 VM 的不同時，腳本拒絕執行；照紙本給的上一版必須在發行版 bucket 裡；舊 VM 記錄的上一版若已從 bucket 刪掉，腳本提出警告，重建後不記上一版。
         - 列出要刪除的 VM（名稱、可用區、狀態、建立時間）與要用的網域、上一版，要你打出專案 ID 才繼續。看到的 VM 若是剛恢復正常、已經解除維護的那台，不要確認；沒有舊 VM 時，核對畫面上的網域與上一版和紙本相同。
         - 刪除所有 VM（保留磁碟，之後不再掛載）→ 建立恰好一台新 VM：新的、名稱不重複的空開機磁碟，沿用靜態 IP、網域與上一版，`bethere-maintenance=1`；啟動腳本自動從 GCS 還原。
         - 從外部等 `https://<網域>/api/ping` 回 503 `maintenance`，最多 10 分鐘：回得到就表示開機、還原、憑證與服務都好了，且停在維護模式。這不保證資料是最新的，資料由步驟 5 的總召核對。
@@ -92,7 +92,7 @@ sequenceDiagram
         - 備份時間點之後用掉的邀請碼又能用、之後才產生的邀請碼不見了，那段時間以邀請碼建立的活動也不在了：請那些建立者用原本的邀請碼重建，或發新的邀請碼。
         - 總召核對備份時間點之後重發或新增的連結：還原後這些連結不存在，解除維護時那些裝置會收到「連結已失效」並清除資料，要重發。
         - 資料明顯錯誤或是空的：**不解除維護模式**，當天改靠離線快取與紙本。
-     6. 執行 `PROJECT=bethere-prod-0606 ops/gcp/maintenance.sh off`（改 metadata、刪除還原標記並重啟，最後從外部確認已開放）；各端短暫離線後自動恢復。以備援操作者專用的**測試角色連結**確認 API 正常回應，並請總召確認維護橫幅已消失（`/healthz` 在維護模式下也正常，不能用來判斷）。目標 15 分鐘內恢復。
+     6. 執行 `PROJECT=$(cat ops/gcp/prod-project) ops/gcp/maintenance.sh off`（改 metadata、刪除還原標記並重啟，最後從外部確認已開放）；各端短暫離線後自動恢復。以備援操作者專用的**測試角色連結**確認 API 正常回應，並請總召確認維護橫幅已消失（`/healthz` 在維護模式下也正常，不能用來判斷）。目標 15 分鐘內恢復。
 - 紙本手冊：抄下本節程序 1、2 的指令，以及凍結時的「目前版本號」「上一版」與網域（`ops/gcp/deploy.sh` 不帶版本即可看到前兩者）；備援操作者的筆電上的程式碼固定在凍結時的版本（`deploy.sh` 會用筆電上的 `ops/gcp/vm-startup.sh` 重新佈置正式 VM）。
 - **演練**在另一個暫存專案進行（同一套腳本、另一組 bucket 與 IAM、另一個子網域），於凍結期之前完成，不碰正式專案。以**備援操作者本人的帳號與權限**執行，確認權限足夠。必做項目：
   - 「空磁碟 → 資料回來」。

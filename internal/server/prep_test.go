@@ -243,7 +243,7 @@ func TestUS_M_13_OriginMustBeThisSite(t *testing.T) {
 		t.Errorf("%d roles created with a bad origin", n)
 	}
 	e.get(e.stylist).wantResult(t, "ok") // never reissued
-	for _, good := range []string{"http://localhost:5173", "http://127.0.0.1:18090", "https://e2e.34-80-7-111.sslip.io"} {
+	for _, good := range []string{"http://localhost:5173", "http://127.0.0.1:18090", "https://e2e.bethere.example.com"} {
 		r := e.post(pathReissue, e.master, map[string]any{"roleId": e.stylistB, "origin": good})
 		r.wantResult(t, "ok")
 		wantKeys(t, "reissue with origin", r.body, "result", "snapshot", "token", "qr")

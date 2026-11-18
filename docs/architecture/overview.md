@@ -103,7 +103,7 @@ flowchart TB
     internet(("網際網路"))
     iap["IAP<br/>35.235.240.0/20"]
 
-    subgraph project["GCP 專案 bethere-prod-0606"]
+    subgraph project["正式 GCP 專案"]
         ip["區域性靜態 IP<br/>bethere-ip"]
         subgraph vpc["自訂 VPC bethere-vpc／子網路 bethere-asia-east1"]
             fw["防火牆<br/>80、443 對外；22 只給 IAP"]
@@ -119,8 +119,8 @@ flowchart TB
             end
         end
         sa["服務帳號 bethere-vm"]
-        rel[("bethere-prod-0606-releases<br/>bethere/版本/、caddy/版本/")]
-        bak[("bethere-prod-0606-backups<br/>soft delete 關閉")]
+        rel[("專案 ID-releases<br/>bethere/版本/、caddy/版本/")]
+        bak[("專案 ID-backups<br/>soft delete 關閉")]
     end
 
     internet --> ip --> fw --> caddyU --> betU

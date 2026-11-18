@@ -39,7 +39,7 @@
 **第一次**（只做一次）：
 
 ```bash
-export PROJECT=bethere-prod-0606                     # ops/gcp 的腳本都要先設定專案
+export PROJECT=$(cat ops/gcp/prod-project)           # ops/gcp 的腳本都要先設定專案
 cd web && npm ci && npx playwright install webkit   # 安裝測試用的瀏覽器
 ops/gcp/e2e-setup.sh                                 # 在 VM 上設定測試服務，印出它的網址
 ```
@@ -47,7 +47,7 @@ ops/gcp/e2e-setup.sh                                 # 在 VM 上設定測試服
 **每次部署後**：
 
 ```bash
-cd web && PROJECT=bethere-prod-0606 E2E_TARGET=vm E2E_BASE_URL=https://<測試服務網域> npm run e2e
+PROJECT=$(cat ops/gcp/prod-project) && cd web && PROJECT=$PROJECT E2E_TARGET=vm E2E_BASE_URL=https://<測試服務網域> npm run e2e
 ```
 
 **開發時先在本機跑**（從原始碼建置，不連 VM）：
