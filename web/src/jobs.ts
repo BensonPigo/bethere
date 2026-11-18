@@ -13,6 +13,11 @@ export function searchGuests(guests: Guest[], query: string): Guest[] {
     .slice(0, MAX_GUEST_RESULTS);
 }
 
+// The line under a search that found nobody; null when there is nothing to say.
+export function guestEmptyText(query: string, found: number): string | null {
+  return query.trim() !== "" && found === 0 ? `找不到「${query.trim()}」` : null;
+}
+
 // tableText adds 桌 to a table number only: 主桌 or Head Table stay as written.
 export function tableText(label: string): string {
   return /^\d+$/.test(label) ? `${label} 桌` : label;
