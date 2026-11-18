@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# A stand-in for systemctl on the fake VM ($FAKE/vm.fs): "restart bethere"
+# writes the mode the service would run in, as prepare.sh maintenance does:
+# the metadata value, forced to 1 by the restore marker.
+echo "systemctl $*" >> "$FAKE/calls"
+case "$1" in
+  restart)
+    m="$(cat "$FAKE/meta.bethere-maintenance" 2>/dev/null || echo 0)"
+    [ -e "$FAKE/vm.fs/lib/maintenance.forced" ] && m=1
+    mkdir -p "$FAKE/vm.fs/run"
+    echo "BETHERE_MAINTENANCE=$m" > "$FAKE/vm.fs/run/maintenance.env" ;;
+esac
+exit 0
