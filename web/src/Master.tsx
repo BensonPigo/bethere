@@ -10,7 +10,8 @@ import { dayStarted } from "./controls";
 import { AddRoleDialog, RolePreview } from "./RoleDialogs";
 import { ImportDialog, RundownEditor } from "./RundownEditor";
 import type { NewLink } from "./session";
-import { heldFixed, OVERRUN_PROMPT_MIN, signed, suggestedShift } from "./notice";
+import { heldFixed, signed, suggestedShift } from "./notice";
+import { elapsedText, overdueHeld, overrunShown } from "./uiLogic";
 import { OriginalTime } from "./OriginalTime";
 import { prep, prepDone } from "./prepGuide";
 import type { Prep } from "./prepGuide";
@@ -86,7 +87,7 @@ export function Master(props: Props) {
   else if (draft && !isEventDay) advanceReason = "活動日當天才能開始";
 
   const canShift = !draft && !lock && nextPending !== null;
-  const overrun = !draft && snap.overrunMin >= OVERRUN_PROMPT_MIN ? snap.overrunMin : 0;
+  const overrun = overrunShown(draft, snap.overrunMin);
 
   return (
     <div class="master">
@@ -267,6 +268,7 @@ export function Master(props: Props) {
           tz={tz}
           from={nextPending}
           delta={shiftDelta}
+          correctedNow={correctedNow}
           disabled={lock}
           preview={preview}
           apply={async (req) => {
@@ -324,6 +326,7 @@ type PanelProps = {
   tz: string;
   from: MasterCue;
   delta: number;
+  correctedNow: number;
   disabled: boolean;
   preview: (req: ShiftRequest) => Promise<ShiftPreview | string>;
   apply: (req: ShiftRequest) => Promise<void>;
@@ -332,7 +335,7 @@ type PanelProps = {
 
 // The shift preview (US-M-2.1–2.5): every cue the shift would move, each
 // can be unticked; nothing is written until confirmed.
-function ShiftPanel({ snap, tz, from, delta, disabled, preview, apply, close }: PanelProps) {
+function ShiftPanel({ snap, tz, from, delta, correctedNow, disabled, preview, apply, close }: PanelProps) {
   const [excluded, setExcluded] = useState<(string | number)[]>([]);
   const [candidates, setCandidates] = useState<(string | number)[] | null>(null);
   const [result, setResult] = useState<ShiftPreview | string | null>(null);
@@ -356,6 +359,7 @@ function ShiftPanel({ snap, tz, from, delta, disabled, preview, apply, close }: 
   const moves = new Map(typeof result === "object" && result ? result.changes.map((c) => [String(c.cueId), c]) : []);
   const tooEarly = typeof result === "object" && result ? result.tooEarly : null;
   const conflicts = typeof result === "object" && result ? result.conflicts : [];
+  const overdue = typeof result === "object" && result ? overdueHeld(snap.cues, from, excluded, delta, correctedNow) : [];
   const toggle = (id: string | number) =>
     setExcluded((ex) => (ex.some((x) => String(x) === String(id)) ? ex.filter((x) => String(x) !== String(id)) : [...ex, id]));
 
@@ -372,9 +376,23 @@ function ShiftPanel({ snap, tz, from, delta, disabled, preview, apply, close }: 
       )}
       <div class="moves">
         {candidates !== null &&
-          [...candidates.map((id) => byId.get(String(id))).filter((c): c is MasterCue => !!c), ...heldFixed(snap.cues, from)]
+          [
+            ...candidates.map((id) => byId.get(String(id))).filter((c): c is MasterCue => !!c),
+            ...heldFixed(snap.cues, from),
+            ...overdue,
+          ]
             .sort((a, b) => a.seq - b.seq)
             .map((c) => {
+              // US-M-2.4: already overdue, the server leaves it out of a shift earlier.
+              if (overdue.some((o) => o.id === c.id)) {
+                return (
+                  <div class="move overdue" key={String(c.id)}>
+                    <span class="mark">⊘</span>
+                    <span class="title">{c.title}</span>
+                    <span class="times">{formatHM(c.effectiveStart, tz)} 已逾時，不移動</span>
+                  </div>
+                );
+              }
               if (c.isFixed) {
                 return (
                   <div class="move fixed" key={String(c.id)}>
@@ -417,12 +435,6 @@ function ShiftPanel({ snap, tz, from, delta, disabled, preview, apply, close }: 
       </div>
     </div>
   );
-}
-
-function elapsedText(active: MasterCue, correctedNow: number): string {
-  const started = active.actualStart ? Date.parse(active.actualStart) : NaN;
-  const elapsed = Number.isFinite(started) ? Math.max(0, Math.floor((correctedNow - started) / 60000)) : 0;
-  return `已進行 ${elapsed} 分 / 預計 ${active.durationMin} 分`;
 }
 
 type RowProps = { cue: MasterCue; tz: string; conflict: boolean; outOfOrder: boolean; open: () => void };

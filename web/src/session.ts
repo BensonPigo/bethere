@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { fetchSnapshot, postImportPreview, postRolePreview, postShiftPreview, postWrite, shouldWipeLocalData } from "./api";
 import type { ImportPreview, NewRole, Notice, Outcome, ShiftPreview, ShiftRequest, Snapshot, WriteRequest } from "./api";
 import { freshNotice } from "./notice";
+import { conflictNotice } from "./uiLogic";
 import { addSkewSample, currentSkew } from "./clock";
 import { deleteSnapshot, loadSnapshot, pruneStale, saveSnapshot, snapKey } from "./storage";
 
@@ -174,7 +175,7 @@ export function useSession(token: string | null) {
         if (o.kind === "ok") done = apply(o, startedAt) ? o : null;
         else if (o.kind === "conflict") {
           apply(o, startedAt);
-          flash("畫面已更新，請重新確認");
+          flash(conflictNotice(w.path));
         } else if (o.kind === "rejected") flash(REJECTED[o.error] ?? "操作失敗，請稍後再試");
         else if (o.kind === "failure" || o.kind === "preview" || o.kind === "notModified") flash("操作失敗，請稍後再試");
         else apply(o, startedAt);

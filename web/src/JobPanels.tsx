@@ -3,7 +3,7 @@
 // guest search and call for help, the cashier's checklist.
 import { useState } from "preact/hooks";
 import type { Guest, RoleSnapshot, Task, WriteRequest } from "./api";
-import { callRunnerTitle, doneCount, searchGuests, tableText, TASK_STATE_TEXT } from "./jobs";
+import { callRunnerTitle, doneCount, guestEmptyText, searchGuests, tableText, TASK_STATE_TEXT } from "./jobs";
 
 type Write = (w: WriteRequest) => Promise<boolean>;
 type Props = { snap: RoleSnapshot; lock: boolean; write: Write };
@@ -107,7 +107,7 @@ function Reception({ snap, lock, write }: Props) {
           {g.note && <span class="note">{g.note}</span>}
         </div>
       ))}
-      {q.trim() !== "" && found.length === 0 && <div class="empty">找不到「{q.trim()}」</div>}
+      {guestEmptyText(q, found.length) && <div class="empty">{guestEmptyText(q, found.length)}</div>}
     </div>
   );
 }
